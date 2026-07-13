@@ -1,5 +1,7 @@
 @inherits LayoutComponentBase
+@using AlphaLab.Core.Arenas
 @inject ArenaEntry Arena
+@inject ArenaRegistry Registry
 
 <div class="page">
     <div class="sidebar">
@@ -11,6 +13,18 @@
             @* finding 121: the header renders the active arena's DisplayName — no external tutorial links. *@
             <span class="arena-header">Active arena: <strong>@Arena.DisplayName</strong> (@Arena.Id)</span>
         </div>
+
+        @if (Registry.IsFallback)
+        {
+            @* Hard rule 10 (fail-closed, P0-6): no Arenas registry configured -> the client has no
+               real API address. Name the exact cause instead of leaking opaque transport errors. *@
+            <div class="alert alert-danger mx-4 mt-3" role="alert">
+                <strong>Configuration error:</strong> the <code>Arenas</code> registry is missing from
+                <code>wwwroot/appsettings.json</code>, so the client has no API address and every screen
+                will fail to load. Add at least one arena entry
+                (<code>{ "id", "displayName", "baseUrl" }</code>) matching the API's <code>Urls</code> value.
+            </div>
+        }
 
         <article class="content px-4">
             @Body

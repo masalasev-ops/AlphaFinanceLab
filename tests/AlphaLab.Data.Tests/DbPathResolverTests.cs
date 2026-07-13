@@ -9,11 +9,14 @@ public class DbPathResolverTests
     {
         const string cs = "Data Source=E:\\AlphaLabDatabase\\{Arena.Id}\\alphalab.db";
 
-        var resolved = DbPathResolver.ResolvePath(cs, "sp500");
+        var sp500 = DbPathResolver.GetDataSourcePath(DbPathResolver.ResolvePath(cs, "sp500"));
+        var sp100 = DbPathResolver.GetDataSourcePath(DbPathResolver.ResolvePath(cs, "sp100"));
 
-        Assert.DoesNotContain("{Arena.Id}", resolved);
-        var path = DbPathResolver.GetDataSourcePath(resolved);
-        Assert.EndsWith(Path.Combine("sp500", "alphalab.db"), path);
+        Assert.DoesNotContain("{Arena.Id}", sp500);
+        Assert.EndsWith(Path.Combine("sp500", "alphalab.db"), sp500);
+        // Two configs differing only in Arena.Id resolve to distinct, non-colliding paths (FR-37 / D71).
+        Assert.EndsWith(Path.Combine("sp100", "alphalab.db"), sp100);
+        Assert.NotEqual(sp500, sp100);
     }
 
     [Fact]
@@ -22,9 +25,13 @@ public class DbPathResolverTests
         var tempBase = Path.Combine(Path.GetTempPath(), "alphalab-pure-" + Guid.NewGuid().ToString("N"));
         var cs = $"Data Source={tempBase}\\{{Arena.Id}}\\alphalab.db";
 
-        _ = DbPathResolver.ResolvePath(cs, "sp500");
+        var sp500 = DbPathResolver.GetDataSourcePath(DbPathResolver.ResolvePath(cs, "sp500"));
+        var sp100 = DbPathResolver.GetDataSourcePath(DbPathResolver.ResolvePath(cs, "sp100"));
 
+        // Purely functional: neither arena's directory is created, and the two arenas are distinct.
         Assert.False(Directory.Exists(Path.Combine(tempBase, "sp500")));
+        Assert.False(Directory.Exists(Path.Combine(tempBase, "sp100")));
+        Assert.NotEqual(sp500, sp100);
     }
 
     [Fact]

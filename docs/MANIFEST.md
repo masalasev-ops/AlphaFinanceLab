@@ -31,8 +31,6 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   per FR-37).
 - `docs/TEST_PLAN_v1.9.md` — the fixtures and tests each phase must pass (§8 is the canonical
   39-case Phase-0 test inventory; the BUILD Phase-0 prompt is structured as checkpoints 0.1–0.6).
-- `docs/reviews/DEEP_DIVE_REVIEW_2026-07-12.md` — the archived deep-dive review behind the v1.9.7
-  errata (findings R-1…R-18 with full rationale); read it for the *why* behind any v1.9.7 change.
 - `docs/PROGRESS.md` — the phase-gate checklist to tick as you go.
 - `docs/SETUP_v1.9.md` — day-zero environment + provider setup.
 - `docs/RUNBOOK_v1.9.md` — operating the lab, backups, and running more than one arena.
@@ -77,7 +75,7 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   `Api:Bind`; hardened CI greps) into the BUILD Phase-0 prompt + DoD + PROGRESS gate + TEST_PLAN,
   so a from-scratch build is correct on the first pass. No schema or decision change.
 - v1.9.7 deep-dive errata (findings 108–121; decisions D72–D73; FR-38) — merged. A full review of
-  the design + Phase-0 code (archived in `docs/reviews/`): WAL is established and verified at schema
+  the design + Phase-0 code (rationale traced in `docs/CHANGELOG_v1.9.md`; review prose not retained): WAL is established and verified at schema
   startup; `config` gains the composite `(key, version)` PK so versioned config rows are
   implementable; the Worker's process model is completed (OnDemand drains queued jobs; a crashed
   `run_in_progress` flag is heartbeat-recovered — D72); the regime proxy becomes a named, validated,
@@ -85,5 +83,15 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   edge-plant-survival floor and a joint any-signal false-alarm bound; the control populations gain
   turnover-match verification; the allocator floor gets its feasibility rule; and every Phase-0 fix
   is back-ported into the BUILD Phase-0 prompt so a from-scratch rebuild is correct first-pass.
+- v1.9.8 Phase-0 skeleton review errata (findings 122–127 = P0-1…P0-6) — merged. A second review, of
+  the shipped skeleton at commit `462b8fd` (rationale in `docs/CHANGELOG_v1.9.md`; review prose not
+  retained): the Blazor client now renders all 13 non-parameterized §21 screens, not 8 (P0-1, the one
+  unmet DoD claim); the design-time factory comment matches the `E:`-literal three-spots reality
+  (P0-2); `ci.ps1` enforces the **full** reference graph at the `<ProjectReference>` level and its git
+  call is EAP-safe (P0-3); the resolver tests assert two-arena path distinctness (P0-4, 39-count
+  intact); the review-file references redirect to the CHANGELOG since review prose is not retained as
+  files (P0-5); and a missing `Arenas` registry now raises a visible config-error banner instead of a
+  silent self-call (P0-6, fail-closed rule 10). No architecture, schema, or decision change; two
+  decision proposals (FR-23 hypotheses action; the Phase-4 detection-power sweep) logged in PROGRESS.
 - The mockups are byte-identical to the original v1.9.1 upload (never needed changes). SCHEMA
   received its first post-v1.9.1 edit in v1.9.7 (the `config` composite PK + invariant notes).

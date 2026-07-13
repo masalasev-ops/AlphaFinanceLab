@@ -37,8 +37,23 @@ function Get-CommittableFiles {
     # appsettings.Secrets.json is excluded). Falls back to a working-tree scan if git is absent.
     Push-Location $repoRoot
     try {
-        $files = git ls-files --cached --others --exclude-standard 2>$null
-        if ($LASTEXITCODE -ne 0 -or -not $files) {
+        # Relax EAP around the native git call: under $ErrorActionPreference='Stop', a missing git
+        # executable throws before $LASTEXITCODE can be read (defeating the fallback), and native
+        # stderr can raise a terminating NativeCommandError (PS 5.1). Same guard the repo uses in
+        # Invoke-Native / migrate.ps1 (finding 119 class). Gate on presence + exit code, not stderr.
+        $files = $null
+        $previousEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            if (Get-Command git -ErrorAction SilentlyContinue) {
+                $files = git ls-files --cached --others --exclude-standard 2>$null
+                if ($LASTEXITCODE -ne 0) { $files = $null }
+            }
+        }
+        catch { $files = $null }
+        finally { $ErrorActionPreference = $previousEap }
+
+        if (-not $files) {
             $files = Get-ChildItem -Recurse -File |
                 Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' } |
                 ForEach-Object { Resolve-Path -Relative $_.FullName }
@@ -46,6 +61,40 @@ function Get-CommittableFiles {
         return $files | ForEach-Object { Join-Path $repoRoot $_ } | Where-Object { Test-Path $_ }
     }
     finally { Pop-Location }
+}
+
+function Assert-ReferenceGraph {
+    # Full reference-graph guard (D57 — CI-enforced at the <ProjectReference> level, matching BUILD
+    # 0.1). Each src project may reference ONLY the AlphaLab.* projects in its allowlist; an illegal
+    # edge (e.g. Web -> Data, or Evaluation -> Strategies) fails CI. This makes D57's swappable-UI
+    # promise and D58's honesty placement structural, not aspirational.
+    $allowed = @{
+        'AlphaLab.Core'       = @()
+        'AlphaLab.Data'       = @('AlphaLab.Core')
+        'AlphaLab.Strategies' = @('AlphaLab.Core', 'AlphaLab.Data')
+        'AlphaLab.Llm'        = @('AlphaLab.Core')
+        'AlphaLab.Evaluation' = @('AlphaLab.Core', 'AlphaLab.Data')
+        'AlphaLab.Api'        = @('AlphaLab.Core', 'AlphaLab.Data', 'AlphaLab.Evaluation')
+        'AlphaLab.Worker'     = @('AlphaLab.Core', 'AlphaLab.Data', 'AlphaLab.Evaluation', 'AlphaLab.Strategies', 'AlphaLab.Llm')
+        'AlphaLab.Web'        = @('AlphaLab.Core')
+    }
+    $violations = @()
+    foreach ($proj in $allowed.Keys) {
+        $csproj = Join-Path $repoRoot "src/$proj/$proj.csproj"
+        if (-not (Test-Path $csproj)) { $violations += "${proj}: csproj not found at src/$proj/"; continue }
+        $refs = Select-String -Path $csproj -Pattern '<ProjectReference[^>]*Include="[^"]*[\\/](AlphaLab\.[A-Za-z]+)\.csproj"' -AllMatches |
+            ForEach-Object { $_.Matches } | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
+        foreach ($ref in $refs) {
+            if ($allowed[$proj] -notcontains $ref) {
+                $violations += "$proj must not reference $ref (allowed: $($allowed[$proj] -join ', '))."
+            }
+        }
+    }
+    if ($violations) {
+        Write-Host 'GUARD FAILED: reference graph (D57)' -ForegroundColor Red
+        $violations | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }
+        throw 'Guard failed: reference-graph violation (D57).'
+    }
 }
 
 Push-Location $repoRoot
@@ -75,14 +124,16 @@ try {
         throw 'Guard failed: appsettings.Secrets.json is committable - it must be gitignored (D67).'
     }
 
-    # 3. AlphaLab.Web references AlphaLab.Core ONLY (D57) - never Evaluation/Data, at source or project level.
+    # 3. The full reference graph is CI-enforced at the <ProjectReference> level (D57, BUILD 0.1):
+    #    every src project may reference only the AlphaLab.* projects in its allowlist.
+    Assert-ReferenceGraph
+
+    # 3b. Belt-and-suspenders at the SOURCE level for the UI boundary: AlphaLab.Web must not even
+    #     `using` Evaluation/Data (a source reach the graph check cannot see, e.g. a transitive type).
     $webDir = Join-Path $repoRoot 'src/AlphaLab.Web'
     $webCs = Get-ChildItem -Path $webDir -Recurse -File -Include *.cs, *.razor -ErrorAction SilentlyContinue |
         Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' } | ForEach-Object { $_.FullName }
     Assert-NoMatch -Files $webCs -Pattern 'using\s+AlphaLab\.(Evaluation|Data)' -Message 'AlphaLab.Web must not use AlphaLab.Evaluation/AlphaLab.Data (D57).'
-
-    $webProj = Get-ChildItem -Path $webDir -Recurse -File -Include *.csproj -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
-    Assert-NoMatch -Files $webProj -Pattern '<ProjectReference[^>]*AlphaLab\.(Evaluation|Data)\.csproj' -Message 'AlphaLab.Web must not ProjectReference AlphaLab.Evaluation/AlphaLab.Data (D57).'
 
     Write-Host 'CI OK' -ForegroundColor Green
 }

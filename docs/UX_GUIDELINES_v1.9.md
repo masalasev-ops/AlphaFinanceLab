@@ -75,6 +75,26 @@ The v5 screens were shaped like a leaderboard; the system's own statistics (MAST
 **Why:** the population channel cannot falsify a cost-matched edgeless strategy (D63) — without this chip, the honest common case degenerates into years of silent `TooEarly`, which reads as "the lab has nothing to say." Non-separation *is* the lab's fast product; the UI must say it plainly.
 **Where:** Strategies + Live + strategy cards (Phase 3 read-model; rendered wherever the UI workstream lands per D65); test `UX12_SeparationChip_RendersWhenTrackExceedsMinAndStateNone`. *(Note: this rule is specified in text only — none of the four mockups depicts the chip; `lab_honesty_ux_mockups.html` predates D63. Follow this rule's text, not the mockup's absence.)*
 
+## Visual system — design tokens (v5 direction) *(client-side; not a read-model rule)*
+*Consolidated from the v5 mockups (`paper_trading_ui_mockups.html`, `decision_and_strategies_mockups.html`, `lab_honesty_ux_mockups.html`) so the palette is one named reference, not scattered across rules. The mockups are the authoritative visual source; this table restates their tokens. Unlike UX-1…UX-13, this is a **client rendering** concern, not a read-model rule — but three tokens are **semantic honesty encodings**, and reserving them matters from day one (see below).*
+
+| Token | Value | Role |
+|---|---|---|
+| `--bg` | `#0E1220` | app background |
+| `--panel` / `--panel2` | `#161B2E` / `#121729` | cards, table surfaces |
+| `--ink` | `#E8ECF5` | body text |
+| `--line` | `#2A3350` | hairlines, table rules |
+| `--gold` | `#E9B44C` | **live-strategy encoding only** (marker, left edge, glow) — UX-9 |
+| `--cyan` / `--band` | `#4CC9E0` / 10% | population bands (colorblind-safe) — UX-4 |
+| `--violet` | `#8B7CF6` | replay quarantine field — UX-8a |
+| `--up` / `--down` | `#3FD68C` / `#F2555A` | reserved for verdicts/warnings, **not** raw P&L — UX-5 |
+| `--amber` | `#E2A23B` | admin/intervention treatment — UX-11c |
+| `--disp` / `--body` / `--mono` | Archivo / Inter / IBM Plex Mono | display / body / **all numerics** |
+
+**Reserve the semantic colors from day one.** `--gold` (means *live*), `--violet` (means *replay quarantine*), and `--band`/`--cyan` (means *the matched population*) are **honesty devices, not decoration** — gold-means-live and violet-means-replay are how a screenshot is prevented from lying (UX-8a/UX-9). Even before the data screens are built, no surface may reuse these three for ornament, or a later screen inherits a false signal. All numerics render in the mono face (`--mono`); strong red/green (`--up`/`--down`) is reserved for verdicts/warnings, never raw P&L (UX-5).
+
+**Shell theming may lead; data screens follow (D65).** Applying these tokens to the app *chrome* (dark sidebar/panel surfaces, hairline top bar, the arena name in the display face, mono numerics, the Replay nav item's violet chip, empty-state notices as quiet panel cards) is a **shell-only** job that can be done any time — it is the deferred BUILD checkpoint **0.7g**, distinct from building tables/charts/data screens (the D65 UI workstream due before Phase 7). If pixel-faithfulness to the mockups is wanted, **self-host** the three font files under `wwwroot` rather than adding a CDN dependency to a localhost-only tool. Housekeeping to fold in when theming: trim the committed Bootstrap dist (or drop Bootstrap once the token system lands — the mockups need only the custom CSS), and keep `NotFound.razor`'s copy in the app's voice (not the raw template sentence).
+
 ## What deliberately does not change
 The plain-naming system, gold-means-live, the mono data typography, dual benchmarks on-screen, the four-part decision explanation, and the "no number stands alone" footer discipline — the v5 direction stays; v6 re-weights it so the honesty devices lead.
 

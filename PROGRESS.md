@@ -3,25 +3,30 @@
 *Repo root. Updated every working session — what shipped, what's red, what was deliberately deferred, and any decision proposals. This file is the month-one discipline instrument (MASTER §17.1): if it stops being truthful, the phase gates stop working.*
 
 ## Current state
-- **Phase:** 0 COMPLETE (skeleton) through the v1.9.7 gates; ready for Phase 1.
+- **Phase:** 0 COMPLETE (skeleton) through the v1.9.8 gates; ready for Phase 1.
 - **Blocking:** none.
-- **Last session:** 2026-07-13 — Phase 0 complete: 8 src + 7 test projects, infra-only schema (WAL + composite `config` PK + plain `INTEGER PRIMARY KEY`), Worker/Api/Web wired end-to-end; `tools/ci.ps1` green (build + **39 tests** + guard greps). See the session-log entry.
+- **Last session:** 2026-07-13 (later) — v1.9.8 skeleton review fix-up (P0-1…P0-6): the client renders all 13 non-parameterized screens (was 8), `ci.ps1` enforces the full reference graph with an EAP-safe git call, the factory comment matches the `E:`-literal reality, the resolver tests assert two-arena distinctness, and a missing `Arenas` registry fails closed with a visible banner; `tools/ci.ps1` green (build + **39 tests** + guards). See the two session-log entries.
 
 ## Phase gates (a phase is DONE only when every box is checked and committed)
 
 ### Phase 0 — Skeleton
-- [x] Solution layout per CLAUDE.md incl. AlphaLab.Api (D57); CI green (build + tests + greps + AlphaLab.Web-isolation grep)
+- [x] Solution layout per CLAUDE.md incl. AlphaLab.Api (D57); CI green (build + tests + greps + the **full reference-graph guard** over every src project at the `<ProjectReference>` level, plus the AlphaLab.Web source-level `using`-isolation grep — P0-3)
 - [x] AlphaLab.Worker: OnDemand launch catches up (nothing yet) and exits cleanly; --serve idles (sole writer, D59/D61)
 - [x] AlphaLab.Api boots and serves OpenAPI (/openapi/v1.json) + Scalar UI (/scalar/v1), localhost; error-envelope middleware; dev CORS for the AlphaLab.Web origin (Api:CorsAllowedOrigins); stub read endpoints return empty read-models with ReadModelStamp status=no_run_yet (D66)
 - [x] ConnectionStrings resolved via the shared DbPathResolver ({Arena.Id} token from the Arena config block, FR-37/D71, + {LocalAppData} token via Environment.GetFolderPath still supported — no env-var reads, D67 — + directory create); Worker, Api, and the EF design-time factory all open the SAME arena-namespaced file (this deployment: `E:\AlphaLabDatabase\sp500\alphalab.db`); bare `dotnet ef` defaults to sp500
 - [x] Arena identity wired (FR-37/D71): Arena.Id=sp500 in config; logs tagged arena=sp500; AlphaLab.Web loads the one-entry Arenas registry and targets its baseUrl; FR37 tests green
 - [x] EF infra-only InitialCreate (runs/catchup_log/config/worker_state/jobs — D59/D60; worker_state row seeded) + snapshot script working
-- [x] Empty-DB Blazor client renders every screen by calling AlphaLab.Api (NFR-3)
+- [x] Empty-DB Blazor client renders every **non-parameterized §21 screen (Home + 13)** by calling AlphaLab.Api (NFR-3, P0-1); the two parameterized screens (`/strategies/{id}`, `/why-trade/{strategyId}/{date}`) are deliberately excluded from the flat catalog (drilled into from a real row) and noted in a `ScreenCatalog` comment
 - [x] appsettings.Secrets.json gitignored & untracked; no key patterns in committed files (D67)
 - [x] v1.9.7 fix-up (finding 118): `SchemaStartup` executes `PRAGMA journal_mode=WAL` post-migrate, verifies `wal`, fails startup otherwise; `R1_SchemaStartup_EnablesWal` green
 - [x] v1.9.7 fix-up (finding 108): `config` PK is composite `(key, version)` in `InitialCreate` (built fresh, no hand-edit — `Version` is `ValueGeneratedNever()`); two versions of one key insertable, duplicate `(key,version)` rejected by the store (`SchemaFidelityTests`)
 - [x] v1.9.7 fix-up (finding 119): `tools/migrate.ps1` resolves the DB path from the Worker appsettings and passes `--connection` — snapshots and migrates the same file (verified: snapshot written, update idempotent, exit 0)
 - [x] v1.9.7 fix-up (finding 121): index.html title `AlphaLab`; layout tutorial link removed (header renders arena DisplayName); ScreenCatalog `EmptyHint` per screen + day-one home note (UX-8c); Api comments say "reader plus bounded Phase-3 command writes (D59)"; `.gitignore` DB comment present
+- [x] v1.9.8 fix-up (P0-1): `ScreenCatalog` carries all 13 non-parameterized §21 screens (was 8) — the empty-DB client renders every one; the 2 parameterized screens excluded by design (comment)
+- [x] v1.9.8 fix-up (P0-2): `AlphaLabDbContextFactory` comment matches the `E:`-literal three-spots reality (no longer invites the `%LOCALAPPDATA%` "fix" that reddens `ConfigConsistencyTests`)
+- [x] v1.9.8 fix-up (P0-3): `ci.ps1` enforces the **full** reference graph at the `<ProjectReference>` level (`Assert-ReferenceGraph`, not just Web) and its `git ls-files` call is EAP-safe (git-absent falls back to a working-tree scan, never throws)
+- [x] v1.9.8 fix-up (P0-4): the two resolver tests assert two-arena path distinctness (`sp500` vs `sp100`, `Assert.NotEqual`); canonical **39** count unchanged; TEST_PLAN §8 erratum records the substituted bare-factory case
+- [x] v1.9.8 fix-up (P0-6): `ArenaRegistry.IsFallback` + a visible config-error banner when the `Arenas` registry is missing (fail-closed, hard rule 10) instead of a silent self-call; `FromEntries_Empty` asserts the flag
 
 ### Phase 1 — Data foundation
 - [ ] Security master + ticker_history; FX-TickerChange green
@@ -72,6 +77,7 @@
 - [ ] D56 S3 trajectory curves calibrated + frozen; FX-S3Trajectory green
 - [ ] Edge-plant survival KPI (v1.9.7 finding 113): fraction promotable at 5y: ___ (floor `Replay.EdgePlantSurvivalFloor5y` = 0.90) / at 10y: ___; every edge-plant auto-retire logged with its trigger
 - [ ] Joint any-signal false-alarm fraction (v1.9.7 finding 114): ___ (bound `Replay.JointFalseAlarmMaxFrac` = 0.10); per-signal contribution archived in the calibration report
+- [ ] (v1.9.8, C-2) S3 percentile-threshold sampling band archived alongside the curves (~±1.5 members at M=200) — evidence for a future "should M be 500?" question
 
 ### Phase 5 — LLM layer
 - [ ] Batches + caching + tiering; news budget; all §6 TEST_PLAN tests green
@@ -97,6 +103,13 @@
 - [ ] If pass: D49 logged; Value/Quality + quarterly population + leakage extensions green
 
 ## Session log (newest first)
+
+### 2026-07-13 (later) — Phase 0 skeleton review fix-up (v1.9.8, P0-1…P0-6)
+**Shipped.** Applied the six findings of the 2026-07-13 deep-dive review of the shipped skeleton (findings **P0-1…P0-6**; the review prose is not retained — all findings folded into the docs + CHANGELOG v1.9.8). **P0-1 (High, the one unmet DoD claim):** `ScreenCatalog` now carries all **13** non-parameterized §21 screens (added trades, go-live-log, regimes, risk, admin-interventions with UX-8c hints; was 8) — the empty-DB client renders every one; the 2 parameterized screens are excluded by design (comment). **P0-2:** the `AlphaLabDbContextFactory` doc comment matches the `E:`-literal three-spots reality. **P0-3:** `ci.ps1` gains `Assert-ReferenceGraph` (full graph at the `<ProjectReference>` level, per BUILD 0.1) and an EAP-safe `git ls-files` call. **P0-4:** the two resolver tests assert `sp500` vs `sp100` path distinctness (`Assert.NotEqual`); 39-count intact. **P0-5:** the dangling `docs/reviews/DEEP_DIVE_REVIEW_2026-07-12.md` references (8 sites) redirect to `CHANGELOG_v1.9.md` — policy: review prose is not kept as files, findings live in the docs. **P0-6:** `ArenaRegistry.IsFallback` + a fail-closed config-error banner when the `Arenas` registry is missing (hard rule 10) instead of a silent self-call.
+**Verified.** `tools/ci.ps1` green — build + **39 tests** + guards (now incl. the full reference-graph guard). No architecture/schema/decision change; D1–D73 unchanged.
+**Deferred (deliberately) — UI workstream (D65, due before Phase 7 exit):** the review's §B UI recommendations are now captured in the docs (they were **not** implemented — D65 sanctions API-only operation through Phase 4): the v5 design-token table + the semantic-color reservation (`--gold`=live, `--violet`=replay, `--band`=population) live in `UX_GUIDELINES_v1.9` ("Visual system — design tokens"); the shell-theming pass is documented as deferred BUILD **checkpoint 0.7g** (dark chrome, mono numerics, self-hosted fonts, restyled empty-state cards, `NotFound.razor` in-voice, Bootstrap-dist trim) — do it whenever the shell's look is worth the time. Residual-risk recommendations captured: C-2 (S3 percentile sampling band → MONITOR 8½ + Phase-4 gate), C-3 (verdict-time expectation → root README), C-4 (IVV CSV header fixture → Phase-1 prompt), C-5 (GSPC.INDX EOD verify — already on the Phase-1 checklist, no action); C-1 and C-6 logged as decision proposals below.
+**Decision proposals (need a D-number):** FR-23 "hypotheses" research action has no §21/`jobs.kind` home; Phase-4 detection-power sweep across ~3 alpha levels. Both recorded below.
+**Next session starts with:** Phase 1 (data foundation) — MASTER §13–14 + §20.5, SCHEMA, INTEGRATIONS, TEST_PLAN §2.
 
 ### 2026-07-13 — Phase 0 complete (skeleton)
 **Shipped.** The full Phase-0 skeleton — repo + solution + all wiring, no business logic yet. `git init` + `.gitignore` (secrets / bin / obj / db). 8 src + 7 test projects in `AlphaLab.slnx` (SDK-10 XML solution); Central Package Management (`Directory.Packages.props` + `Directory.Build.props`, no `UserSecretsId`); `dotnet-ef` as a local tool. Versions pinned: `Microsoft.*`/EF/`dotnet-ef` = runtime **10.0.9**, `Scalar.AspNetCore` **2.16.11**, `Quartz.Extensions.Hosting` **3.18.2**, test stack (`Microsoft.NET.Test.Sdk 17.14.1` / `xunit 2.9.3` / `xunit.runner.visualstudio 3.1.4` / `coverlet.collector 6.0.4`).
@@ -125,3 +138,5 @@
 
 ## Decision proposals awaiting a D-number
 <!-- Anything the docs don't cover. Approved ones move to MASTER §2. -->
+- **(2026-07-13, from the v1.9.8 review / A.3-2 / C-6) FR-23's "hypotheses" research action has no home.** FR-23 lists research-assistant endpoints as "briefs, **hypotheses**, skeptic", but §21's command list has only `POST /analysis/brief` + `POST /analysis/skeptic`, and the `jobs.kind` CHECK allows only `('replay','analysis_brief','analysis_skeptic')`. Before Phase 5 planning, decide: either add a snapshot-gated migration extending the CHECK + a §21 command entry (per finding 121's "enum CHECKs extend only via migration"), or strike "hypotheses" from FR-23. No action until then.
+- **(2026-07-13, from the v1.9.8 review / C-1) Phase-4 detection-power sweep.** `Calibration.Plant.AlphaAnnualPct` defaults to a single 2.0% edge, so the Phase-4 report certifies edge-plant *survival* at one alpha but never answers "how big must an edge be before this lab certifies it within my patience horizon?". Proposal: sweep the edge plant across ~3 alpha levels (e.g. 2/4/8% ann, same seeds/plant) and archive an empirical detection-power section (P(promoted by t | α) curves + median days-to-promotion per level), validating the analytic MDE end-to-end against the machinery. Changes a Phase-4 deliverable (D64 territory) → awaiting a D-number before editing D64.

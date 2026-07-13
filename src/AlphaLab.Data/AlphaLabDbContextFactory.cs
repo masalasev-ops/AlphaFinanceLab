@@ -5,14 +5,22 @@ namespace AlphaLab.Data;
 
 /// <summary>
 /// Design-time factory so `dotnet ef` can build the model without a running host. When invoked
-/// bare (no --connection), it defaults to arena "sp500" and the portable compiled fallback
-/// connection string (%LOCALAPPDATA%\AlphaLab\sp500\alphalab.db), resolving as a WRITER
-/// (ensureDirectory:true — creating the store is a writer's job, D59).
+/// bare (no --connection), it defaults to arena "sp500" and <see cref="DbPathResolver.DefaultConnectionString"/>
+/// — the E: literal `Data Source=E:\AlphaLabDatabase\{Arena.Id}\alphalab.db`, resolving to
+/// `E:\AlphaLabDatabase\sp500\alphalab.db` — as a WRITER (ensureDirectory:true — creating the store
+/// is a writer's job, D59). This constant is INTENTIONALLY the E: literal, byte-identical to both
+/// appsettings (the three-spots rule, DB_RELOCATION.md, guarded by ConfigConsistencyTests). Do NOT
+/// "correct" it to a {LocalAppData} form to match a portability assumption — that would redden
+/// ConfigConsistencyTests or, worse, make the three spots disagree with the deployed store. To move
+/// the store off E:, change all three spots together per DB_RELOCATION.md.
 ///
 /// Real migrations do NOT rely on this fallback: tools/migrate.ps1 reads
-/// ConnectionStrings:AlphaLab from the Worker's appsettings.json and passes it via
-/// `dotnet dotnet-ef database update --connection ...`, which overrides the value below
-/// (finding 119). EF passes the explicit --connection to this factory as args[…]; we honor it.
+/// ConnectionStrings:AlphaLab from the Worker's appsettings.json, resolves the `{Arena.Id}` /
+/// `{LocalAppData}` tokens itself, and passes the fully-resolved string via
+/// `dotnet dotnet-ef database update --connection ...`, which overrides the constant below
+/// (finding 119). EF passes that explicit --connection to this factory as args[…]; we honor it and
+/// expect it to be already token-resolved (a still-tokenized value would resolve under the default
+/// arena "sp500", not any -Arena the caller intended).
 /// </summary>
 public sealed class AlphaLabDbContextFactory : IDesignTimeDbContextFactory<AlphaLabDbContext>
 {

@@ -19,6 +19,15 @@ in Phases 1–8 (see [`docs/BUILD_AND_PROMPTS_v1.9.md`](docs/BUILD_AND_PROMPTS_v
 [`PROGRESS.md`](PROGRESS.md)). Every screen currently returns an empty, `no_run_yet`-stamped
 read-model. `tools/ci.ps1` is green: build + 39 tests + guard greps.
 
+**What "working" will look like — set expectations now.** By construction, the lab's *fast* outputs
+are the honest-but-unglamorous ones: **anti-predictive kills** (a strategy the monitor can show is
+worse than random) and **`IndistinguishableFromRandom`** findings (an edgeless strategy that costs
+nothing to its cost-matched null). **Promotions are slow.** Because every head-to-head gap is judged
+against its Newey–West-corrected MDE, a small real edge can take *years* of paper trading to clear
+the noise — inside the MDE the verdict is `TooEarly`, not a number. This is the design working as
+intended, not a bug: a lab that promoted quickly would be lying about its statistical power. Don't
+judge it broken for being honest about how long real evidence takes to accrue.
+
 ## Architecture
 
 Three processes over one SQLite file (per arena), so a UI, a scheduler, and the writer never race:
