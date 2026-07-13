@@ -96,7 +96,7 @@ public class SchemaFidelityTests
     }
 
     [Fact]
-    public void Schema_ExactlyTheFiveInfraTables_Exist()
+    public void Schema_ExactlyTheFourteenTables_Exist()
     {
         var dbPath = TempDb();
         try
@@ -113,7 +113,14 @@ public class SchemaFidelityTests
             using var reader = cmd.ExecuteReader();
             while (reader.Read()) tables.Add(reader.GetString(0));
 
-            Assert.Equal(new[] { "catchup_log", "config", "jobs", "runs", "worker_state" }, tables);
+            // Phase 0 infra(5) + Phase 1 data(9). regime_labels/regime_episodes/features/factor_* and
+            // the ux_runs_ok_forward partial index are deliberately deferred to Phase 2.
+            Assert.Equal(new[]
+            {
+                "api_usage_log", "bars", "catchup_log", "config", "corporate_actions",
+                "index_membership", "index_membership_log", "jobs", "runs", "sector_changes",
+                "securities", "ticker_history", "trading_calendar", "worker_state"
+            }, tables);
         }
         finally { TryDelete(dbPath); }
     }
@@ -182,17 +189,96 @@ public class SchemaFidelityTests
         {
             using (var db = NewContext(dbPath)) db.Database.Migrate();
 
-            // Plain INTEGER PRIMARY KEY per SCHEMA — the migration hand-edit removed AUTOINCREMENT.
-            Assert.DoesNotContain("AUTOINCREMENT", TableDdl(dbPath, "runs"), StringComparison.OrdinalIgnoreCase);
-            Assert.DoesNotContain("AUTOINCREMENT", TableDdl(dbPath, "jobs"), StringComparison.OrdinalIgnoreCase);
+            // Every bare INTEGER PRIMARY KEY per SCHEMA — the migration hand-edit removed AUTOINCREMENT.
+            // Phase 0: runs, jobs. Phase 1: securities, corporate_actions, index_membership_log.
+            foreach (var table in new[] { "runs", "jobs", "securities", "corporate_actions", "index_membership_log" })
+            {
+                Assert.DoesNotContain("AUTOINCREMENT", TableDdl(dbPath, table), StringComparison.OrdinalIgnoreCase);
+            }
 
-            // sqlite_sequence exists iff some table uses AUTOINCREMENT — assert it was never created.
+            // sqlite_sequence exists iff SOME table uses AUTOINCREMENT — belt-and-suspenders: asserting it
+            // was never created fails automatically if any table (missed or new) slips one through.
             using var db2 = NewContext(dbPath);
             var conn = db2.Database.GetDbConnection();
             conn.Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='sqlite_sequence';";
             Assert.Equal(0L, Convert.ToInt64(cmd.ExecuteScalar()));
+        }
+        finally { TryDelete(dbPath); }
+    }
+
+    [Fact]
+    public void Schema_Phase1IntegerPrimaryKeys_StillAutoAssignOnInsert()
+    {
+        var dbPath = TempDb();
+        try
+        {
+            using (var db = NewContext(dbPath)) db.Database.Migrate();
+
+            long securityId;
+            using (var db = NewContext(dbPath))
+            {
+                var sec = new SecurityRow { CurrentSymbol = "ACME", Exchange = "US", FirstSeen = "2020-01-01" };
+                db.Securities.Add(sec);
+                db.SaveChanges();
+                securityId = sec.SecurityId;
+                Assert.True(securityId > 0); // rowid auto-assigned even without AUTOINCREMENT
+            }
+
+            using (var db = NewContext(dbPath))
+            {
+                var ca = new CorporateActionRow
+                {
+                    SecurityId = securityId, Type = "dividend", EffectiveDate = "2020-02-01",
+                    ObservedAt = "2020-02-01T00:00:00Z", Source = "eodhd"
+                };
+                db.CorporateActions.Add(ca);
+                db.SaveChanges();
+                Assert.True(ca.ActionId > 0);
+            }
+        }
+        finally { TryDelete(dbPath); }
+    }
+
+    [Fact]
+    public void Schema_Phase1CheckConstraints_ArePresent_AndAbsentWhereSchemaHasNone()
+    {
+        var dbPath = TempDb();
+        try
+        {
+            using (var db = NewContext(dbPath)) db.Database.Migrate();
+
+            Assert.Contains("ck_corporate_actions_type", TableDdl(dbPath, "corporate_actions"));
+            Assert.Contains("ck_trading_calendar_session", TableDdl(dbPath, "trading_calendar"));
+            // These data tables carry no CHECK in SCHEMA.
+            Assert.Equal(0, Regex.Matches(TableDdl(dbPath, "securities"), "CHECK", RegexOptions.IgnoreCase).Count);
+            Assert.Equal(0, Regex.Matches(TableDdl(dbPath, "bars"), "CHECK", RegexOptions.IgnoreCase).Count);
+            Assert.Equal(0, Regex.Matches(TableDdl(dbPath, "index_membership"), "CHECK", RegexOptions.IgnoreCase).Count);
+        }
+        finally { TryDelete(dbPath); }
+    }
+
+    [Fact]
+    public void Schema_CorporateActionsType_CheckRejectsUnknownType()
+    {
+        var dbPath = TempDb();
+        try
+        {
+            using (var db = NewContext(dbPath)) db.Database.Migrate();
+
+            using var db2 = NewContext(dbPath);
+            db2.Securities.Add(new SecurityRow { CurrentSymbol = "ACME", Exchange = "US", FirstSeen = "2020-01-01" });
+            db2.SaveChanges();
+            var secId = db2.Securities.Single().SecurityId;
+
+            using var db3 = NewContext(dbPath);
+            db3.CorporateActions.Add(new CorporateActionRow
+            {
+                SecurityId = secId, Type = "not_a_real_type", EffectiveDate = "2020-02-01",
+                ObservedAt = "2020-02-01T00:00:00Z", Source = "eodhd"
+            });
+            Assert.ThrowsAny<Exception>(() => db3.SaveChanges());
         }
         finally { TryDelete(dbPath); }
     }

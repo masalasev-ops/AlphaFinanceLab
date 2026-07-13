@@ -32,3 +32,6 @@ coverage/
 *.trx
 *.coverage
 *.coverml
+
+# ---- Raw provider payload cache (INTEGRATIONS §9; 30-day retention, never committed) ----
+tools/raw-cache/
