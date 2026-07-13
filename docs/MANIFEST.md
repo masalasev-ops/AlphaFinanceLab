@@ -52,7 +52,7 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `docs/lab_honesty_ux_mockups.html`
 
 **Revision history**
-- `docs/CHANGELOG_v1.9.md` — every consistency finding and decision, v1.9.1 through v1.9.6.
+- `docs/CHANGELOG_v1.9.md` — every consistency finding and decision, v1.9.1 through v1.9.8.
 
 ## Revision state
 - v1.9.1 errata (findings 59–75; D68–D69) — merged.
