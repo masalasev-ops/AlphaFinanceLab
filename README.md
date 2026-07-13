@@ -53,19 +53,35 @@ Blazor WebAssembly · xUnit. Package versions are pinned centrally in `Directory
    Shape: `{ "Secrets": { "EodhdApiToken": "...", "AnthropicApiKey": "...", "AlpacaKeyId": "", "AlpacaSecretKey": "" } }`
    (see [`docs/SETUP_v1.9.md`](docs/SETUP_v1.9.md) §5).
 
-2. **Database location** — the committed connection string points at `E:\AlphaLabDatabase\{Arena.Id}\alphalab.db`
-   (this deployment). To run on a machine without an `E:` drive, relocate it per
-   [`docs/DB_RELOCATION.md`](docs/DB_RELOCATION.md) (edit the three connection-string spots together —
-   `ConfigConsistencyTests` guards them).
+2. **Database setup (first run / new machine)** — the database is **not** in the repo; there is no
+   `.db` to import. It is created from EF migrations the first time you run the Worker. Two things to
+   know on a fresh clone:
+   - **Where it lives.** The committed connection string points at `E:\AlphaLabDatabase\{Arena.Id}\alphalab.db`
+     (this deployment). On a machine without an `E:` drive, repoint it to the portable form — the
+     **same value in all three spots** (they must be byte-identical or `ConfigConsistencyTests` fails):
+     `ConnectionStrings:AlphaLab` in both `src/AlphaLab.Worker/appsettings.json` and
+     `src/AlphaLab.Api/appsettings.json`, and `DefaultConnectionString` in
+     `src/AlphaLab.Data/DbPathResolver.cs` — each set to:
+     ```
+     Data Source={LocalAppData}\AlphaLab\{Arena.Id}\alphalab.db
+     ```
+     `{LocalAppData}` resolves to `%LOCALAPPDATA%` (known-folders API) and `{Arena.Id}` to `sp500`, so it
+     lands under your user profile on any Windows machine. Full procedure:
+     [`docs/DB_RELOCATION.md`](docs/DB_RELOCATION.md).
+   - **How it gets created.** Running **`AlphaLab.Worker` creates the store** — its `SchemaStartup`
+     makes the directory, creates the SQLite file, applies `InitialCreate` (the five infra tables +
+     the seeded `worker_state` row), and enables WAL. The **Api never creates the store** (it's a
+     reader), so on a fresh clone **run the Worker before the Api** (step 4). Equivalently,
+     `dotnet tool restore` then `pwsh tools/migrate.ps1 -Arena sp500` creates it via `dotnet-ef`.
 
 3. **Build, test, and lint:**
    ```
    pwsh tools/ci.ps1          # build + all tests + guard greps
    ```
 
-4. **Run it (three terminals):**
+4. **Run it (Worker first, then two more terminals):**
    ```
-   dotnet run --project src/AlphaLab.Worker     # migrate + WAL, catch up (nothing yet), exit 0
+   dotnet run --project src/AlphaLab.Worker     # FIRST RUN: creates the DB (migrate + WAL), then exits 0
    dotnet run --project src/AlphaLab.Api        # http://127.0.0.1:5230  (Scalar UI at /scalar/v1)
    dotnet run --project src/AlphaLab.Web         # http://localhost:5210  (empty-state client)
    ```
