@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paper Trading UI — v6 UX Honesty Pass</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,500;0,700;1,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0E1220; --panel:#161B2E; --panel2:#121729; --line:#2A3350; --line-soft:#222a44;
+  --ink:#E8ECF5; --ink-dim:#8A93AD; --ink-faint:#59617A;
+  --gold:#E9B44C; --gold-soft:rgba(233,180,76,.14); --gold-line:rgba(233,180,76,.45);
+  --cyan:#4CC9E0; --cyan-soft:rgba(76,201,224,.13); --violet:#8B7CF6;
+  --up:#3FD68C; --down:#F2555A; --amber:#E2A23B; --amber-soft:rgba(226,162,59,.14);
+  --band:rgba(76,201,224,.10); --band-line:rgba(76,201,224,.35);
+  --disp:'Archivo',system-ui,sans-serif; --body:'Inter',system-ui,sans-serif; --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --r:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.55;padding:48px 20px 80px}
+.wrap{max-width:1100px;margin:0 auto}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-dim)}
+h1{font-family:var(--disp);font-weight:700;font-size:clamp(30px,4.6vw,46px);line-height:1.08;margin:14px 0 16px;max-width:22ch}
+h1 em{font-style:italic;color:var(--gold)}
+.lede{color:var(--ink-dim);max-width:66ch;margin-bottom:26px}
+.lede b{color:var(--ink);font-weight:600}
+
+/* ---------- hero signature: the evidence meter ---------- */
+.hero{border:1px solid var(--line);border-radius:var(--r);background:linear-gradient(180deg,var(--panel),var(--panel2));padding:26px 26px 22px;margin:8px 0 56px}
+.hero .cap{font-family:var(--mono);font-size:12px;color:var(--ink-dim);letter-spacing:.08em;text-transform:uppercase;margin-bottom:14px}
+.meter{position:relative;height:14px;border-radius:99px;background:#0b0f1c;border:1px solid var(--line-soft);overflow:hidden}
+.meter .fill{position:absolute;inset:0;width:40%;background:linear-gradient(90deg,rgba(233,180,76,.25),var(--gold));border-radius:99px}
+.meter .today{position:absolute;top:-5px;left:40%;width:2px;height:24px;background:var(--gold)}
+.meter-row{display:flex;justify-content:space-between;font-family:var(--mono);font-size:12.5px;color:var(--ink-dim);margin-top:10px;gap:12px;flex-wrap:wrap}
+.meter-row b{color:var(--ink);font-weight:500}
+.hero .why{margin-top:14px;color:var(--ink-dim);font-size:14px;max-width:76ch}
+.hero .why b{color:var(--gold);font-weight:600}
+
+/* ---------- section scaffold ---------- */
+.sec{margin:60px 0}
+.sec-head{display:flex;align-items:baseline;gap:14px;margin-bottom:6px}
+.sec-num{font-family:var(--mono);color:var(--gold);font-size:13px;letter-spacing:.12em}
+h2{font-family:var(--disp);font-weight:700;font-size:24px}
+.sec-sub{color:var(--ink-dim);font-size:14px;margin:2px 0 18px 46px;max-width:78ch}
+.sec-sub b{color:var(--ink);font-weight:600}
+
+/* frames */
+.frame{border:1px solid var(--line);border-radius:var(--r);background:var(--panel);overflow:hidden}
+.frame .bar{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line-soft);background:var(--panel2)}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--line)}
+.urlchip{font-family:var(--mono);font-size:11.5px;color:var(--ink-faint);border:1px solid var(--line-soft);border-radius:8px;padding:3px 10px;margin-left:8px}
+.pad{padding:18px 20px}
+.grid2{display:grid;grid-template-columns:1fr 340px;gap:22px;align-items:start}
+@media(max-width:900px){.grid2{grid-template-columns:1fr}}
+
+/* phone */
+.phone{width:320px;border:1px solid var(--line);border-radius:30px;background:var(--panel);overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.35)}
+.status{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;color:var(--ink-faint);padding:10px 18px 4px}
+.phone .pad{padding:12px 16px 18px}
+
+/* chips & pills */
+.chip{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11.5px;padding:3px 10px;border-radius:99px;border:1px solid var(--line);color:var(--ink-dim);white-space:nowrap}
+.chip.lead{border-color:var(--gold-line);color:var(--gold);background:var(--gold-soft)}
+.chip.early{border-color:var(--line);color:var(--ink-dim);background:rgba(255,255,255,.03)}
+.chip.suspect{border-color:rgba(242,85,90,.5);color:#F58A8D;background:rgba(242,85,90,.10)}
+.chip.warn{border-color:rgba(226,162,59,.5);color:var(--amber);background:var(--amber-soft)}
+.chip.ok{border-color:rgba(63,214,140,.45);color:var(--up);background:rgba(63,214,140,.10)}
+.pct{display:inline-flex;font-family:var(--mono);font-size:11.5px;color:var(--cyan);background:var(--cyan-soft);border:1px solid rgba(76,201,224,.35);border-radius:8px;padding:2px 8px;white-space:nowrap}
+.note-i{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;border:1px solid var(--ink-faint);color:var(--ink-faint);font-size:10px;font-family:var(--mono);cursor:help}
+
+/* attention strip */
+.att{display:grid;grid-template-columns:auto 1fr 1fr 1fr;gap:12px;align-items:stretch}
+@media(max-width:900px){.att{grid-template-columns:1fr}}
+.att .cell{border:1px solid var(--line-soft);border-radius:10px;padding:10px 12px;background:var(--panel2)}
+.att .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:6px}
+.att .v{font-size:13.5px}
+.att .v b{font-weight:600}
+.att .need{border-color:rgba(226,162,59,.45)}
+.att .runok{display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:118px;border-color:rgba(63,214,140,.4)}
+.att .runok .big{font-family:var(--mono);color:var(--up);font-size:13px}
+.li{display:flex;gap:8px;align-items:baseline;margin:4px 0;font-size:13px}
+.li .m{font-family:var(--mono);font-size:11px;color:var(--ink-faint);min-width:44px}
+.li a{color:var(--cyan);text-decoration:none}
+
+/* leaderboard */
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);text-align:left;padding:8px 10px;border-bottom:1px solid var(--line-soft)}
+td{padding:9px 10px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
+td.num,th.num{text-align:right;font-family:var(--mono);font-size:13px}
+.tier td{background:rgba(255,255,255,.025);font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-dim);padding:6px 10px}
+.tier.top td{color:var(--gold)}
+tr.live td{background:var(--gold-soft);border-left:3px solid var(--gold)}
+.sname{font-weight:600}
+.skind{font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
+.dimalpha{color:var(--ink-faint)}
+.dimalpha::before{content:"~ "}
+.rowmeter{height:5px;border-radius:99px;background:#0b0f1c;border:1px solid var(--line-soft);position:relative;min-width:90px}
+.rowmeter i{position:absolute;inset:0;border-radius:99px;background:var(--gold);opacity:.75}
+.rowmeter span{display:block;font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);margin-top:4px}
+.bandcell{position:relative;height:12px;min-width:110px;border-radius:6px;background:var(--band);border:1px solid var(--band-line)}
+.bandcell .med{position:absolute;top:-3px;bottom:-3px;left:46%;width:2px;background:var(--band-line)}
+.bandcell .you{position:absolute;top:-4px;bottom:-4px;left:88%;width:3px;background:var(--gold);border-radius:2px}
+.mde-teach{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-left:3px solid var(--cyan);border-radius:10px;background:var(--panel2);padding:12px 14px;margin-top:14px;font-size:13.5px;color:var(--ink-dim)}
+.mde-teach b{color:var(--ink)}
+.mde-teach .m{font-family:var(--mono);color:var(--cyan)}
+
+/* chart w/ band */
+.chart{position:relative;height:150px;border:1px solid var(--line-soft);border-radius:10px;background:var(--panel2);overflow:hidden}
+.chart .bandarea{position:absolute;left:0;right:0;top:34%;height:38%;background:var(--band);border-top:1px dashed var(--band-line);border-bottom:1px dashed var(--band-line)}
+.chart svg{position:absolute;inset:0;width:100%;height:100%}
+.chart .lbl{position:absolute;font-family:var(--mono);font-size:10.5px;color:var(--ink-faint)}
+.legend{display:flex;gap:16px;font-family:var(--mono);font-size:11px;color:var(--ink-dim);margin-top:8px;flex-wrap:wrap}
+.sw{display:inline-block;width:16px;height:3px;border-radius:2px;vertical-align:middle;margin-right:6px}
+
+/* health disclosure */
+details.health{border:1px solid var(--line);border-radius:10px;background:var(--panel2);margin:8px 0}
+details.health summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;padding:11px 14px;font-size:13.5px}
+details.health summary::-webkit-details-marker{display:none}
+details.health .body{border-top:1px solid var(--line-soft);padding:12px 14px;font-size:13px;color:var(--ink-dim)}
+.sigrow{display:grid;grid-template-columns:180px 1fr auto;gap:10px;padding:6px 0;border-bottom:1px dashed var(--line-soft);align-items:center}
+.sigrow:last-child{border-bottom:0}
+.sigrow .plain{color:var(--ink);font-weight:500}
+.sigrow .code{font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
+
+/* near misses / exit */
+.miss{display:grid;grid-template-columns:70px 1fr auto;gap:10px;align-items:baseline;padding:8px 0;border-bottom:1px dashed var(--line-soft);font-size:13.5px}
+.miss:last-child{border-bottom:0}
+.miss .sym{font-family:var(--mono);font-weight:500}
+.exitline{display:flex;align-items:center;gap:12px;margin-top:8px}
+.exittrack{flex:1;height:8px;border-radius:99px;background:#0b0f1c;border:1px solid var(--line-soft);position:relative}
+.exittrack .now{position:absolute;left:42%;top:-4px;width:3px;height:16px;background:var(--gold);border-radius:2px}
+.exittrack .edge{position:absolute;left:80%;top:-2px;width:2px;height:12px;background:var(--down)}
+
+/* replay + regimes */
+.replay{position:relative;border:1px solid rgba(139,124,246,.5);border-radius:10px;background:repeating-linear-gradient(-45deg,rgba(139,124,246,.06),rgba(139,124,246,.06) 12px,transparent 12px,transparent 24px),var(--panel2);padding:16px;overflow:hidden}
+.replay::after{content:"REPLAY — validates the machinery · never evidence a strategy works";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) rotate(-8deg);font-family:var(--mono);font-size:13px;letter-spacing:.12em;color:rgba(139,124,246,.55);white-space:nowrap;pointer-events:none}
+.replaytag{display:inline-flex;font-family:var(--mono);font-size:11px;color:var(--violet);border:1px solid rgba(139,124,246,.5);border-radius:8px;padding:2px 9px;background:rgba(139,124,246,.10)}
+.epis{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-radius:8px;padding:2px 8px;color:var(--ink-dim)}
+.anec{border-color:rgba(226,162,59,.5);color:var(--amber);background:var(--amber-soft)}
+
+/* empty state */
+.empty-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:14px}
+@media(max-width:860px){.empty-cards{grid-template-columns:1fr}}
+.ecard{border:1px dashed var(--line);border-radius:10px;padding:14px;background:var(--panel2)}
+.ecard .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);margin-bottom:6px}
+.ecard p{font-size:13px;color:var(--ink-dim)}
+
+/* mobile home bits */
+.mrow{display:flex;justify-content:space-between;align-items:center;padding:10px 2px;border-bottom:1px solid var(--line-soft);font-size:13.5px}
+.mrow:last-child{border-bottom:0}
+.badge{display:inline-flex;min-width:18px;height:18px;align-items:center;justify-content:center;border-radius:99px;background:var(--amber);color:#1a1408;font-family:var(--mono);font-size:11px;font-weight:600;padding:0 5px}
+.tabbar{display:flex;justify-content:space-around;border-top:1px solid var(--line-soft);padding:10px 6px 4px;font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
+.tabbar .on{color:var(--gold)}
+
+.footnote{border:1px solid var(--line);border-radius:var(--r);background:var(--panel);padding:20px 22px;color:var(--ink-dim);font-size:13.5px;margin-top:64px}
+.footnote b{color:var(--ink)}
+.legal{font-family:var(--mono);font-size:11px;color:var(--ink-faint);margin-top:14px}
+:focus-visible{outline:2px solid var(--cyan);outline-offset:2px;border-radius:4px}
+@media (prefers-reduced-motion:no-preference){ .meter .fill{transition:width .6s ease} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="eyebrow">UI Mockups · v6 · UX honesty pass</div>
+  <h1>The verdict leads. The evidence <em>accrues on screen.</em></h1>
+  <p class="lede">Companion to the v5 mockups — same chrome, palette, and plain names. This pass fixes one contradiction and adds the v6 machinery: the old screens looked like a <b>leaderboard</b>, but the lab's own statistics say most rank gaps are unjudgeable for months. So here, verdict chips outrank return numbers, unjudgeable alphas <b>look</b> unjudgeable, ranks become <b>tiers</b>, the 200-member random population appears as a band and a percentile, and the wait for significance is drawn as <b>progress, not absence</b>.</p>
+
+  <div class="hero">
+    <div class="cap">Signature element · the evidence meter — every head-to-head shows how close it is to a verdict</div>
+    <div class="meter" role="img" aria-label="Evidence progress: 84 of an estimated 210 days"><div class="fill" style="width:40%"></div><div class="today"></div></div>
+    <div class="meter-row">
+      <span><b>Sentiment-Blend vs Live</b> · gap +1.9% ann (β-adj, net)</span>
+      <span>evidence <b>84d</b> of ≈ <b>210d</b> needed for this gap</span>
+      <span>verdict possible ≈ <b>Feb 2027</b> at current pairing</span>
+    </div>
+    <p class="why">"Too early" used to be a dead end. The meter turns it into a journey: the target length comes straight from the <b>MDE formula</b> run backwards — how many days until the current gap clears the smallest-detectable bar. If the gap grows, the target date moves closer. Waiting is the product; show it accruing.</p>
+  </div>
+
+  <!-- ============ 01 MORNING GLANCE ============ -->
+  <div class="sec">
+    <div class="sec-head"><span class="sec-num">01</span><h2>Morning glance — an attention queue, not a status poster</h2></div>
+    <p class="sec-sub">The daily ritual is ten seconds: <b>did the run succeed · does anything need me · what changed since I last looked.</b> A strip at the top of Live answers all three; on mobile it <b>is</b> the home screen, and positions move down a level (tick-watching a paper account is the wrong habit to reward).</p>
+
+    <div class="grid2">
+      <div class="frame">
+        <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="urlchip">live strategy · attention strip</span></div>
+        <div class="pad">
+          <div class="att">
+            <div class="cell runok"><span class="big">✓ run ok</span><span class="k" style="margin:4px 0 0">watermark 06:12</span></div>
+            <div class="cell need">
+              <div class="k">Needs you · 2</div>
+              <div class="li"><span class="m">ledger</span><span><b>XYZ frozen</b> — unmapped corporate action · <a href="#">resolve</a></span></div>
+              <div class="li"><span class="m">data</span><span>membership sources disagree (IVV vs Wikipedia) · day 1 of 2 · <a href="#">view diff</a></span></div>
+            </div>
+            <div class="cell">
+              <div class="k">Changed since your last visit</div>
+              <div class="li"><span class="m">health</span><span>Logistic-L2 · Healthy → <b>Warning</b> (backtest gap)</span></div>
+              <div class="li"><span class="m">gate</span><span>MeanRev-K7 vs Live · verdict <b>too early</b> · meter 61%</span></div>
+            </div>
+            <div class="cell">
+              <div class="k">Quiet & on track</div>
+              <div class="li"><span class="m">budget</span><span>Claude spend $0.11 · cache hit</span></div>
+              <div class="li"><span class="m">arena</span><span>7 strategies · 650 controls · all evaluated</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>◐ ▾ ▮▮▮</span></div>
+        <div class="pad">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <b style="font-family:var(--disp)">This morning</b><span class="badge">2</span>
+          </div>
+          <div class="mrow"><span>Nightly run</span><span class="chip ok">✓ ok · 06:12</span></div>
+          <div class="mrow"><span>XYZ position frozen</span><span class="chip warn">! needs you</span></div>
+          <div class="mrow"><span>Membership sources disagree</span><span class="chip warn">! day 1/2</span></div>
+          <div class="mrow"><span>Logistic-L2 health</span><span class="chip warn">→ Warning</span></div>
+          <div class="mrow"><span>MeanRev-K7 vs Live</span><span class="chip early">too early · 61%</span></div>
+          <div class="mrow"><span>Live equity</span><span style="font-family:var(--mono)">$118,420 ▲</span></div>
+          <div class="tabbar"><span class="on">◔ Today</span><span>◧ Live</span><span>▤ Strategies</span><span>◇ Health</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 02 VERDICT-FIRST LEADERBOARD ============ -->
+  <div class="sec">
+    <div class="sec-head"><span class="sec-num">02</span><h2>Strategies — tiers and verdicts outrank returns</h2></div>
+    <p class="sec-sub">Ordinal ranks implied an order the statistics can't support, so rows group into <b>tiers</b>; the verdict chip is the loudest element in each row; alphas still inside the MDE render dimmed with a <b>~</b> so unjudgeable numbers look unjudgeable; every strategy carries its <b>percentile among 200 matched randoms</b>; and the two old Random rows collapse into one population band. MDE stops being a footnote and becomes a sentence a human can use.</p>
+
+    <div class="frame">
+      <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="urlchip">strategies · 1 live · 3 candidates · 2 benchmarks · 1 population</span></div>
+      <div class="pad">
+        <table aria-label="Strategy tiers">
+          <tr><th>Strategy</th><th>Verdict vs Live</th><th class="num">α (β-adj) ann</th><th>vs 200 randoms</th><th>Evidence → verdict</th><th>Health</th></tr>
+
+          <tr class="tier top"><td colspan="6">Tier · distinguishable — above its noise floor</td></tr>
+          <tr class="live">
+            <td><span class="sname" style="color:var(--gold)">● TA-Momentum v3</span><br><span class="skind">live · 84d · technical</span></td>
+            <td><span class="chip lead">★ live · earned &gt; MDE</span></td>
+            <td class="num">+4.9%</td>
+            <td><span class="pct">97th pct</span></td>
+            <td>—</td>
+            <td><span class="chip ok">✓ Healthy</span></td>
+          </tr>
+
+          <tr class="tier"><td colspan="6">Tier · not yet distinguishable (gap inside MDE)</td></tr>
+          <tr>
+            <td><span class="sname">Sentiment-Blend</span><br><span class="skind">candidate · 84d · blend + Claude read</span></td>
+            <td><span class="chip early">too early · gap +1.9%</span></td>
+            <td class="num dimalpha">+3.0%</td>
+            <td><span class="pct">88th pct</span></td>
+            <td><div class="rowmeter"><i style="width:40%"></i></div><span>84 / ≈210d · ≈ Feb 2027</span></td>
+            <td><span class="chip ok">✓ Healthy</span></td>
+          </tr>
+          <tr>
+            <td><span class="sname">MeanRev-K7</span><br><span class="skind">candidate · 52d · reversal · trade-track n=212</span></td>
+            <td><span class="chip early">too early · gap −0.5%</span></td>
+            <td class="num dimalpha">−0.5%</td>
+            <td><span class="pct">61st pct</span></td>
+            <td><div class="rowmeter"><i style="width:22%"></i></div><span>52 / ≈240d</span></td>
+            <td><span class="chip ok">✓ Healthy</span></td>
+          </tr>
+
+          <tr class="tier"><td colspan="6">Tier · below its noise floor / flagged</td></tr>
+          <tr>
+            <td><span class="sname">Logistic-L2</span><br><span class="skind">candidate · 30d · learned blend</span></td>
+            <td><span class="chip suspect">✕ Suspect — promotion vetoed</span></td>
+            <td class="num dimalpha">−2.9%</td>
+            <td><span class="pct" style="color:var(--ink-dim);border-color:var(--line);background:transparent">34th pct</span></td>
+            <td><div class="rowmeter"><i style="width:13%"></i></div><span>30d · verdict paused</span></td>
+            <td><span class="chip warn">! backtest gap</span></td>
+          </tr>
+
+          <tr class="tier"><td colspan="6">Reference · benchmarks & the noise floor</td></tr>
+          <tr>
+            <td><span class="sname">Buy &amp; hold — cap-wt / equal-wt</span><br><span class="skind">permanent benchmarks</span></td>
+            <td><span class="chip">benchmark</span></td>
+            <td class="num" style="color:var(--ink-dim)">—</td><td>—</td><td>—</td><td>—</td>
+          </tr>
+          <tr>
+            <td><span class="sname">Random population</span><br><span class="skind">200 matched controls · banded cadence</span></td>
+            <td><span class="chip">the noise floor</span></td>
+            <td class="num" style="color:var(--ink-dim)">band −3.1 … +2.8%</td>
+            <td>
+              <div class="bandcell" role="img" aria-label="Population band with live strategy at the 97th percentile"><div class="med"></div><div class="you"></div></div>
+              <span class="skind">5–95% band · <span style="color:var(--gold)">▮ Live sits here</span></span>
+            </td>
+            <td>—</td><td>—</td>
+          </tr>
+        </table>
+
+        <div class="mde-teach">
+          <span class="note-i" aria-hidden="true">i</span>
+          <div><b>Smallest gap this track can judge: <span class="m">±4.2% ann</span></b> (84 paired days). Gaps inside that band aren't "close" — they're <b>invisible at this sample size</b>, so the gate says <i>too early</i> and this screen dims them. The bar shrinks with √time; each row's meter shows the countdown. <a href="#" style="color:var(--cyan);text-decoration:none">How this is computed →</a> <span class="skind">(Appendix M, in plain language)</span></div>
+        </div>
+
+        <div style="margin-top:18px">
+          <div class="skind" style="margin-bottom:6px">LIVE EQUITY · the population band is always underfoot</div>
+          <div class="chart" role="img" aria-label="Live equity line above the shaded band of 200 random controls">
+            <div class="bandarea"></div>
+            <svg viewBox="0 0 600 150" preserveAspectRatio="none" aria-hidden="true">
+              <path d="M0,118 C60,112 90,120 140,108 S240,96 300,86 S440,64 520,52 L600,44" fill="none" stroke="#E9B44C" stroke-width="2.4"/>
+              <path d="M0,120 C80,118 160,112 240,108 S420,98 600,92" fill="none" stroke="#8A93AD" stroke-width="1.6" stroke-dasharray="5 5"/>
+            </svg>
+            <span class="lbl" style="right:10px;top:44%">random band · 5–95% of 200</span>
+            <span class="lbl" style="left:10px;top:8px;color:var(--gold)">TA-Momentum v3</span>
+          </div>
+          <div class="legend">
+            <span><span class="sw" style="background:var(--gold)"></span>live</span>
+            <span><span class="sw" style="background:#8A93AD"></span>SPX cap-wt (dashed)</span>
+            <span><span class="sw" style="background:var(--band-line)"></span>matched-random band — skill means living above it</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 03 WHY THIS TRADE ADDITIONS ============ -->
+  <div class="sec">
+    <div class="sec-head"><span class="sec-num">03</span><h2>Why this trade — show the near-misses, and make the exit live</h2></div>
+    <p class="sec-sub">Two additions to the v5 screen. <b>What almost happened</b> builds trust in the funnel — nothing proves a filter works like seeing what it declined today. And the exit plan stops being a static rule: it shows <b>where the position is right now</b> relative to its exit condition.</p>
+
+    <div class="grid2">
+      <div class="frame">
+        <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="urlchip">why this trade · NVDA · buy · what almost happened</span></div>
+        <div class="pad">
+          <div class="skind" style="margin-bottom:6px">WHAT ALMOST HAPPENED TODAY · same funnel, other outcomes</div>
+          <div class="miss"><span class="sym">AVGO</span><span>combined signal <b style="font-family:var(--mono)">0.63</b> — under the 0.65 buy bar by a hair</span><span class="chip early">not selected</span></div>
+          <div class="miss"><span class="sym">META</span><span>signal 0.71, but order at <b style="font-family:var(--mono)">2.6% ADV</b> — participation cap trims to 2.0%</span><span class="chip warn">! trimmed</span></div>
+          <div class="miss"><span class="sym">TSLA</span><span>signal 0.66, rejected — correlation-aware heat already at <b style="font-family:var(--mono)">8.7 / 9%</b> vol</span><span class="chip suspect">✕ guardrail</span></div>
+          <p class="skind" style="margin-top:10px">Every rejection carries its reason and links to the guardrail's log row — the funnel is auditable in both directions.</p>
+        </div>
+      </div>
+
+      <div class="frame">
+        <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="urlchip">exit plan · live</span></div>
+        <div class="pad">
+          <div class="skind" style="margin-bottom:6px">EXIT PLAN · rank buffer</div>
+          <p style="font-size:13.5px">Rule: exit when momentum rank falls below <b style="font-family:var(--mono)">80</b> · horizon: to rank exit</p>
+          <div class="exitline">
+            <span class="skind">rank 1</span>
+            <div class="exittrack" role="img" aria-label="Current rank 34 of exit threshold 80"><span class="now"></span><span class="edge"></span></div>
+            <span class="skind">exit &lt;80</span>
+          </div>
+          <p style="font-family:var(--mono);font-size:12px;margin-top:8px">currently <b style="color:var(--gold)">rank 34</b> · held 11d · distance to exit: 46 ranks</p>
+          <p class="skind" style="margin-top:10px">A trade isn't specified until you know when it ends — and it isn't <i>legible</i> until you can see how close the end is.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 04 HEALTH, REGIMES, REPLAY ============ -->
+  <div class="sec">
+    <div class="sec-head"><span class="sec-num">04</span><h2>Health in layers · regime honesty · replay you can't mistake</h2></div>
+    <p class="sec-sub">Health pills expand in place — plain words first, signal codes second, evidence a tap deeper. Regime claims carry <b>episode counts</b>, and anything with fewer than three episodes wears an <b>anecdote</b> badge. Replay content sits on a hatched violet field with a watermark: no screenshot of it can ever pass as a track record.</p>
+
+    <div class="grid2">
+      <div>
+        <div class="frame"><div class="pad">
+          <div class="skind" style="margin-bottom:8px">HEALTH · Logistic-L2 — tap the pill, get the plain-language why</div>
+          <details class="health" open>
+            <summary><span class="chip warn">! Warning</span><span style="color:var(--ink-dim);font-size:13px">1 signal elevated · promotion needs your sign-off</span><span style="margin-left:auto;font-family:var(--mono);color:var(--ink-faint)">▾</span></summary>
+            <div class="body">
+              <div class="sigrow"><span class="plain">Backtest gap</span><span>forward alpha is running at 31% of its seeding-replay level — below the 40% bar</span><span class="code">S1 · elevated</span></div>
+              <div class="sigrow"><span class="plain">Selection pressure</span><span>deflated Sharpe still positive across 14 registered trials</span><span class="code">S2 · ok</span></div>
+              <div class="sigrow"><span class="plain">Above its noise floor?</span><span>34th percentile of 200 matched randoms — inside the band</span><span class="code">S3 · watching</span></div>
+              <div class="sigrow"><span class="plain">Edge decay</span><span>rolling 63d alpha flat, not yet decaying into the band</span><span class="code">S6 · ok</span></div>
+            </div>
+          </details>
+
+          <div class="skind" style="margin:16px 0 8px">REGIMES · claims wear their sample size</div>
+          <table>
+            <tr><th>Regime (PIT)</th><th class="num">α (β-adj)</th><th>Episodes seen</th><th>Read as</th></tr>
+            <tr><td>Bull · low vol</td><td class="num">+5.8%</td><td><span class="epis">n = 4 episodes</span></td><td><span class="chip ok">✓ pattern forming</span></td></tr>
+            <tr><td>High vol</td><td class="num">+1.1%</td><td><span class="epis">n = 2 episodes</span></td><td><span class="epis anec">! anecdote</span></td></tr>
+            <tr><td>Bear</td><td class="num dimalpha">−3.4%</td><td><span class="epis">n = 1 episode</span></td><td><span class="epis anec">! anecdote — one story</span></td></tr>
+          </table>
+        </div></div>
+      </div>
+
+      <div>
+        <div class="replay">
+          <span class="replaytag">run_kind · replay</span>
+          <div class="chart" style="margin-top:10px;background:transparent;border-color:rgba(139,124,246,.35)">
+            <svg viewBox="0 0 600 150" preserveAspectRatio="none" aria-hidden="true">
+              <path d="M0,120 C80,110 160,118 240,100 S420,70 600,58" fill="none" stroke="rgba(139,124,246,.8)" stroke-width="2"/>
+            </svg>
+          </div>
+          <p class="skind" style="margin-top:10px;position:relative">15 simulated years · calibrating monitor thresholds · promotions among 200 randoms: 4.6% (≤ chance ✓). Replay lives on this hatched field, is never co-plotted with forward lines, and never appears on Strategies or in the Go-live log.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 05 DAY ONE ============ -->
+  <div class="sec">
+    <div class="sec-head"><span class="sec-num">05</span><h2>Day one — the empty state teaches</h2></div>
+    <p class="sec-sub">The real first months are baselines, populations, and zero verdicts. An empty screen is an invitation to act — and here, an invitation to <b>understand what's accruing.</b></p>
+
+    <div class="frame">
+      <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="urlchip">strategies · day 1 · nothing judgeable yet — by design</span></div>
+      <div class="pad">
+        <p style="font-family:var(--disp);font-size:18px;font-weight:600">The arena is open. The evidence starts tonight.</p>
+        <div class="empty-cards">
+          <div class="ecard"><div class="k">Running now</div><p>2 buy-&amp;-hold benchmarks and 650 random controls are trading from tonight's close. They are the honesty bar every future strategy must clear.</p></div>
+          <div class="ecard"><div class="k">First verdicts</div><p>With good pairing, the smallest judgeable gap after 6 months is ≈ ±8%. Your first real candidates enter in Phase 6 — their meters start at zero, on purpose.</p></div>
+          <div class="ecard"><div class="k">While you wait</div><p>Ask the analyst for a skeptic review of your first strategy spec, or open the go-live log — empty is what an honest log looks like on day one.</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footnote">
+    <b>What this pass changes, in one paragraph.</b> Verdict chips lead every row and returns follow; ranks become tiers because ordering inside the MDE band is a claim the data can't back; unjudgeable alphas render dimmed with a ~; the two Random rows become one 200-member population shown as a band under every chart and a percentile chip on every strategy; "too early" becomes an <b>evidence meter</b> with an estimated verdict date; the daily glance becomes an attention queue (run status · needs-you · changed-since-last-visit) and is the mobile home; health pills disclose in layers with plain-language signal names before S-codes; MDE gets teach-in-place microcopy wired to the Appendix M primer; "Why this trade" gains near-misses and a live exit-distance readout; regime claims carry episode counts with anecdote badges; replay sits on an unmistakable hatched, watermarked field; and the empty state is a designed teaching screen, not a fallback. Pills always pair icon + text (never color alone); strong red/green is reserved for verdicts and warnings, not raw P&amp;L.
+    <div class="legal">Static mockups · placeholder numbers · paper-trading research tool · not investment advice.</div>
+  </div>
+
+</div>
+</body>
+</html>

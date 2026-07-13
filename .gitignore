@@ -1,0 +1,34 @@
+# ---- Secrets (D67) — MUST stay untracked; add before any real key is written ----
+appsettings.Secrets.json
+appsettings.*.Secrets.json
+**/appsettings.Secrets.json
+**/appsettings.*.Secrets.json
+
+# ---- Build output ----
+bin/
+obj/
+[Bb]in/
+[Oo]bj/
+artifacts/
+
+# ---- SQLite store (arena DBs live outside the repo, but ignore any stray copies) ----
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# ---- .NET tooling / IDE ----
+.vs/
+*.user
+*.suo
+*.userprefs
+.idea/
+*.DotSettings.user
+
+# ---- Test / coverage ----
+[Tt]est[Rr]esults/
+coverage/
+*.trx
+*.coverage
+*.coverml

@@ -1,0 +1,71 @@
+@page "/"
+@inject ReadModelClient Client
+@inject ArenaEntry Arena
+
+<PageTitle>AlphaLab</PageTitle>
+
+<h1>AlphaLab &middot; @Arena.DisplayName</h1>
+
+<p class="lead">
+    A personal paper-trading research laboratory. <strong>Research only</strong> — never investment
+    advice, never real orders, never real money. Every screen is served by the API as an honest
+    read-model; this client renders those fields verbatim.
+</p>
+
+<div class="alert alert-info" role="alert">
+    <strong>What runs from day one.</strong> Before any strategy is added, the lab already stands up
+    its benchmarks — the cap-weight and equal-weight accounts — and the random control populations
+    that every strategy is later ranked against. Those are the yardsticks; strategy rows appear once
+    the first daily run commits.
+</div>
+
+<h2>API connection</h2>
+@if (_state is null)
+{
+    <p><em>Contacting the API…</em></p>
+}
+else if (!_state.Reached)
+{
+    <div class="alert alert-warning">
+        Could not reach the API at <code>@Arena.BaseUrl</code>: @_state.Error
+        <br />Start it with <code>dotnet run --project src/AlphaLab.Api</code>, then reload.
+    </div>
+}
+else if (_state.NoRunYet)
+{
+    <div class="alert alert-secondary">
+        Connected. The store reports <code>no_run_yet</code> — no daily run has committed yet, so every
+        screen is empty. This is the expected Phase-0 state, not an error.
+    </div>
+}
+else
+{
+    <div class="alert alert-success">Connected. A run has committed — screens carry data.</div>
+}
+
+<h2>Screens</h2>
+<div class="row">
+    @foreach (var screen in ScreenCatalog.Screens)
+    {
+        <div class="col-md-6 mb-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">
+                        <a href="@($"screen/{screen.Key}")">@screen.Title</a>
+                    </h5>
+                    <p class="card-text text-muted">@screen.EmptyHint</p>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private ScreenState? _state;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Renders via the API (NFR-3): probe the strategies read-model's stamp.
+        _state = await Client.GetScreenStateAsync("api/v1/strategies");
+    }
+}

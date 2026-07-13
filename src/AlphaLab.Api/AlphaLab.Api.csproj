@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- The single UI boundary (D57). Thin read/command HTTP layer under /api/v1 (D60).
+       A reader of the store plus bounded Phase-3 command writes (D59) — it never
+       migrates, never runs the WAL pragma, and never creates the store. -->
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Scalar.AspNetCore" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AlphaLab.Core\AlphaLab.Core.csproj" />
+    <ProjectReference Include="..\AlphaLab.Data\AlphaLab.Data.csproj" />
+    <ProjectReference Include="..\AlphaLab.Evaluation\AlphaLab.Evaluation.csproj" />
+  </ItemGroup>
+
+</Project>

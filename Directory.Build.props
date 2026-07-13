@@ -1,0 +1,13 @@
+<Project>
+
+  <!-- Common properties for every AlphaLab project (Phase 0). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- D67: no UserSecretsId anywhere. The config builder loads exactly
+         appsettings.json + appsettings.Secrets.json (optional) — no User Secrets store. -->
+  </PropertyGroup>
+
+</Project>

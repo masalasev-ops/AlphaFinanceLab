@@ -1,0 +1,53 @@
+@page "/screen/{Key}"
+@inject ReadModelClient Client
+
+<PageTitle>@(_descriptor?.Title ?? "Screen") · AlphaLab</PageTitle>
+
+@if (_descriptor is null)
+{
+    <h1>Unknown screen</h1>
+    <p>No screen is registered for <code>@Key</code>.</p>
+}
+else
+{
+    <h1>@_descriptor.Title</h1>
+
+    @if (_state is null)
+    {
+        <p><em>Loading…</em></p>
+    }
+    else if (!_state.Reached)
+    {
+        <div class="alert alert-warning">Could not reach the API: @_state.Error</div>
+    }
+    else if (_state.NoRunYet)
+    {
+        <div class="alert alert-secondary">
+            <strong>No run yet.</strong> Nothing has been computed for this screen.
+        </div>
+        @* finding 121 / UX-8c: the EmptyHint teaches what will appear and which run produces it. *@
+        <p class="text-muted">@_descriptor.EmptyHint</p>
+    }
+    else
+    {
+        <div class="alert alert-success">This screen carries data (run @_state.Stamp?.RunId).</div>
+        <p class="text-muted">@_descriptor.EmptyHint</p>
+    }
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = "";
+
+    private ScreenDescriptor? _descriptor;
+    private ScreenState? _state;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _descriptor = ScreenCatalog.Screens.FirstOrDefault(s => s.Key == Key);
+        _state = null;
+        if (_descriptor is not null)
+        {
+            _state = await Client.GetScreenStateAsync(_descriptor.ApiPath);
+        }
+    }
+}

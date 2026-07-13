@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+  <!-- Standalone Blazor WebAssembly client of AlphaLab.Api (D57). A pure HTTP client:
+       it references AlphaLab.Core ONLY (never Evaluation/Data). CI enforces both the
+       `using` rule and the ProjectReference rule. -->
+
+  <PropertyGroup>
+    <OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AlphaLab.Core\AlphaLab.Core.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- EF Core + providers. Owns AlphaLabDbContext, DbPathResolver, AddAlphaLabData,
+       and the design-time factory. Design package lives here so `dotnet ef` can run
+       against this project as its own startup. -->
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AlphaLab.Core\AlphaLab.Core.csproj" />
+  </ItemGroup>
+
+</Project>

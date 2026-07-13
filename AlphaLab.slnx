@@ -1,0 +1,21 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AlphaLab.Api/AlphaLab.Api.csproj" />
+    <Project Path="src/AlphaLab.Core/AlphaLab.Core.csproj" />
+    <Project Path="src/AlphaLab.Data/AlphaLab.Data.csproj" />
+    <Project Path="src/AlphaLab.Evaluation/AlphaLab.Evaluation.csproj" />
+    <Project Path="src/AlphaLab.Llm/AlphaLab.Llm.csproj" />
+    <Project Path="src/AlphaLab.Strategies/AlphaLab.Strategies.csproj" />
+    <Project Path="src/AlphaLab.Web/AlphaLab.Web.csproj" />
+    <Project Path="src/AlphaLab.Worker/AlphaLab.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AlphaLab.Api.Tests/AlphaLab.Api.Tests.csproj" />
+    <Project Path="tests/AlphaLab.Core.Tests/AlphaLab.Core.Tests.csproj" />
+    <Project Path="tests/AlphaLab.Data.Tests/AlphaLab.Data.Tests.csproj" />
+    <Project Path="tests/AlphaLab.Evaluation.Tests/AlphaLab.Evaluation.Tests.csproj" />
+    <Project Path="tests/AlphaLab.Llm.Tests/AlphaLab.Llm.Tests.csproj" />
+    <Project Path="tests/AlphaLab.Strategies.Tests/AlphaLab.Strategies.Tests.csproj" />
+    <Project Path="tests/AlphaLab.Worker.Tests/AlphaLab.Worker.Tests.csproj" />
+  </Folder>
+</Solution>

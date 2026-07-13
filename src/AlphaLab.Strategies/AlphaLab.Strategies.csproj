@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- IModel implementations. Phase 0: empty placeholder. -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\AlphaLab.Core\AlphaLab.Core.csproj" />
+    <ProjectReference Include="..\AlphaLab.Data\AlphaLab.Data.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,221 @@
+# CONFIG_REFERENCE_v1.9 — every key, default, unit, owning decision
+
+*Single source of truth for configuration. Non-secret values live in `appsettings.json` (shape below); secrets only in the gitignored `appsettings.Secrets.json` (D67 — never in env vars). Claude Code: never hard-code a value that belongs here; never invent a key — extend this file in the same PR.*
+
+> **v1.9.7 errata note (findings 110–116).** New keys, merged below: `Regime.ProxySource` names the regime proxy feed (D73/FR-38, finding 110; INTEGRATIONS §9); `Worker.DrainQueuedJobsOnLaunch` / `Worker.HeartbeatSeconds` / `Worker.StaleRunThresholdSeconds` complete the D72 process model (findings 111–112); `Populations.TurnoverMatchTolerancePct` backs the cost-match verification (finding 115); `Replay.EdgePlantSurvivalFloor5y` and `Replay.JointFalseAlarmMaxFrac` are the new Phase-4 calibration bounds (findings 113–114); the `Allocator` block carries the floor-feasibility rule (finding 116). No secret changes.
+
+## Secrets (D67 — single gitignored `appsettings.Secrets.json`; no env vars, no User Secrets store)
+This is a local-only, single-machine tool. Secrets live in **one gitignored JSON file layered on top of `appsettings.json`** — no environment variables and no .NET User Secrets store anywhere. The config builder is exactly `AddJsonFile("appsettings.json", optional:false).AddJsonFile("appsettings.Secrets.json", optional:true)` in **AlphaLab.Api and AlphaLab.Worker** — **no** `AddEnvironmentVariables`, **no** `AddUserSecrets`. The standalone-WASM **AlphaLab.Web** client cannot hold secrets (its `wwwroot/appsettings.json` is served to the browser); it loads **only** the non-secret **`Arenas` registry** (id / displayName / baseUrl per arena — D71; a single `sp500` entry at launch, see the AlphaLab.Web section below) and never reads `appsettings.Secrets.json`. There is no bare `Api:BaseUrl` key — the active arena's registry `baseUrl` plays that role.
+
+```jsonc
+// appsettings.Secrets.json  — GITIGNORED, never committed (CI grep enforces)
+{
+  "Secrets": {
+    "EodhdApiToken":   "…",        // EODHD data APIs (D35/D49)
+    "AnthropicApiKey": "…",        // Claude Messages + Batches (D46) — Phase 5
+    "AlpacaKeyId":     "…",        // optional — Alpaca cross-check
+    "AlpacaSecretKey": "…"
+  }
+}
+```
+
+Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `Secrets:AlpacaKeyId`, `Secrets:AlpacaSecretKey`) — only their *source* is fixed to this file. `.gitignore` must list `appsettings.Secrets.json` (and `appsettings.*.Secrets.json`). The keys never enter git; the committed `appsettings.json` holds only non-secret config. No `UserSecretsId` is needed in `Directory.Build.props`.
+
+## appsettings.json (defaults; every change is a versioned `config` row with a reason)
+
+```jsonc
+{
+  "Arena": {                                       // D71 — the isolation identity (see ARENA_ARCHITECTURE_v1.9.3)
+    "Id": "sp500",                                 // stable slug; drives the DB path, snapshot/backup dirs, and log tags. lowercase, no spaces
+    "DisplayName": "S&P 500"                       // human label for the UI arena switcher and reports
+  },
+  "Universe": {
+    "Index": "GSPC.INDX",            // S&P 500 (D20) — the membership machinery always tracks this index
+    "MembershipCountSanity": [495, 510],          // D35 fail-closed band
+    "MembershipPrimary": "ivv_csv",               // D49 launch: ivv_csv; post-upgrade: eodhd
+    "MembershipCrossCheck": "wikipedia",          // D49 launch: wikipedia; post-upgrade: ivv_csv
+    "SectorSource": "ivv_csv",                    // D49 launch; post-upgrade: eodhd
+    "HistoricalMembershipSource": "community_csv",// D49/D70 launch: fja05680/sp500; post-upgrade: eodhd
+    "Bootstrap": {                                // D65/D70 — the S&P 100 slice (forward universe through Phase 4 sign-off)
+      "Universe": "sp100",                        // consumed by the backfill CLI and Stage-1 eligibility until the post-Phase-4 widen
+      "MembershipPrimary": "oef_csv",             // iShares OEF holdings CSV (same BlackRock pattern as IVV)
+      "MembershipCrossCheck": "wikipedia_sp100",  // en.wikipedia.org/wiki/S%26P_100 constituents table
+      "CountSanity": [99, 103]                    // fail-closed band for the slice
+    }                                             // replay NEVER uses the slice — S&P 500 as-of membership only (D70)
+  },
+
+  "Data": {
+    "Provider": "eodhd",                          // D35; fallback: alpaca
+    "BackfillYears": 20,
+    "BarCrossCheckSampleSize": 10,                // rotating names/day vs Alpaca (FR-6)
+    "BarCrossCheckTolerancePct": 0.5,
+    "OutlierZ": 8.0                               // quality gate daily-return z cutoff
+  },
+
+  "Costs": {                                       // D43 — the falsifiable cost model
+    "ModelVersion": "cm-1.0",
+    "CommissionPerTrade": 0.0,
+    "HalfSpreadBpByBucket": { "mega": 1.0, "large": 2.5, "other": 5.0 },
+    "BucketAdvUsdThresholds": { "mega": 4.0e8, "large": 1.0e8 },   // 21d ADV notional
+    "ImpactK": 0.1,
+    "AdvWindowDays": 21,
+    "ParticipationCapPctAdv": 2.0                 // excess rejected + logged
+  },
+
+  "Sizing": {                                      // D32/D42
+    "Mode": "inverse_vol",                        // inverse_vol | equal(dummies) | kelly(P6+)
+    "PortfolioVolTargetAnn": 0.12,
+    "PositionCapPct": 0.05,
+    "Covariance": { "Estimator": "ledoit_wolf", "WindowDays": 252,
+                    "Fallback": "ewma_single_index", "EwmaLambda": 0.97 },
+    "Kelly": { "FractionCap": 0.25, "MinTradesForB": 30, "ShrinkBToward": 1.0 }
+  },
+
+  "Guardrails": {                                  // DESIGN_IMPROVEMENTS §3.4; fail closed
+    "MinScore": 0.0,                              // per-strategy override in config_json
+    "MaxConcurrentPositions": 60,
+    "HeatMaxPredictedVolAnn": 0.15,
+    "ReentryCooldownDays": 3,
+    "DrawdownCircuitBreakerPct": 25.0
+  },
+
+  "Gate": {                                        // D31/D48
+    "EvaluationCadenceDays": 21,
+    "MinTrackDays": 63,
+    "Confidence": 0.95, "Power": 0.80,
+    "NwLagCapDays": 21
+  },
+
+  "Populations": {                                 // D36
+    "Size": 200, "CostFreeSize": 50,
+    "FamilySeeds": { "daily": 1001, "banded": 1002, "monthly": 1003, "quarterly": 1004 },
+    "AuditFullLedgerSample": 5,                   // members with full trade logs
+    "TurnoverMatchTolerancePct": 30.0             // v1.9.7 finding 115: cost-match verification — flag a strategy whose realized annualized turnover is outside ±this% of its matched population's median (caveat on the S3 panel + StrategyRow read-model)
+  },
+
+  "Allocator": {                                   // D51 — full spec: MASTER §20.2
+    "BandPts": 5.0, "CadenceDays": 21,
+    "TooEarlyTiltCapPts": 10.0, "SuspectDecayPctPerEval": 25.0,
+    "TemperaturePctAlpha": 2.0,                    // softmax temperature (%/yr shrunk alpha)
+    "TauMinPctAlpha": 0.5,                         // shrinkage dispersion floor
+    "WeightFloorPct": 5.0, "WeightCeilingPct": 60.0
+    // v1.9.7 finding 116: floors apply PRE-renormalization and scale down proportionally when Σfloors
+    // would exceed 100% (equivalently the promotable roster caps at floor(100/WeightFloorPct) — 20 at
+    // the default). MASTER §20.2 carries the normative sentence.
+  },
+
+  "Regime": {                                      // D50 — full spec: MASTER §20.1
+    "ProxySecurityId": null,                       // resolved at Phase 1 from ProxySource: the cap-weight proxy's security_id
+    "ProxySource": "eodhd_gspc",                   // D73/FR-38 (v1.9.7 finding 110): eodhd_gspc (GSPC.INDX EOD, primary) | self_built_capweight (fallback);
+                                                   // validated vs SPY.US daily returns — INTEGRATIONS §9. Pinned to the S&P 500 proxy even during the D70
+                                                   // S&P 100 slice (regimes are market-level facts). ≈3.8y warm-up backfill required before the first label
+    "TrendSmaDays": 200, "TrendHysteresisPct": 1.0, "TrendConfirmDays": 5,
+    "VolWindowDays": 21, "VolPercentile": 80, "VolLookbackYears": 3
+  },
+
+  "Urls": "http://127.0.0.1:5230",              // D71 — the API's listen URL (standard ASP.NET Core key; committed, non-secret; NEVER via the ASPNETCORE_URLS env var — D67 bans env-var reads). Per-arena profiles change only the port (convention: sp500 → 5230, next arena → 5231, …); the Web arena registry's baseUrl for the arena must match this value exactly
+
+  "ConnectionStrings": {
+    "AlphaLab": "Data Source=E:\\AlphaLabDatabase\\{Arena.Id}\\alphalab.db"  // D71: arena-namespaced so each arena has its own file and no two arenas collide; absolute-anchored so Worker, Api, and the design-time factory all resolve the SAME file (never a relative path — three CWDs would mean three DBs). THIS deployment uses a literal absolute base (E:\AlphaLabDatabase) — the sanctioned "a literal absolute path is also valid" option below. The portable default is the {LocalAppData} token, which the shared AlphaLab.Data DbPathResolver still expands via Environment.GetFolderPath(SpecialFolder.LocalApplicationData) — the Windows known-folders API, NOT an environment variable (D67: no env-var reads anywhere). Either form has {Arena.Id} resolved and its directory auto-created. Wired in Phase 0; used by the Worker, the Api, and the EF design-time factory. THREE-SPOTS RULE: this string must be BYTE-IDENTICAL in three places — this key (Worker appsettings), the Api appsettings, and DbPathResolver.DefaultConnectionString — pick ONE form (this deployment: the E:\AlphaLabDatabase literal) and use it in all three; do NOT set the const to the {LocalAppData} form while appsettings uses the E: literal. ConfigConsistencyTests asserts the equality; to relocate the DB, edit all three together per docs/DB_RELOCATION.md (snapshot-db.ps1 reads this value, so tooling follows automatically)
+  },
+
+  "Api": {                                         // D57/D60 — the API's bind (host + port) is carried by the top-level `Urls` key above; the former `Api.Bind` key is RETIRED (v1.9.5 finding 103: once finding 94 moved binding to `Urls`, `Api.Bind` was never read — a dead key in a "never invent a key" system). Localhost-only remains the posture: keep the `Urls` host at 127.0.0.1; changing it is the (future) LAN-exposure switch
+    "OpenApi": "native",                           // Microsoft.AspNetCore.OpenApi + Scalar (recommended on .NET 10; Swashbuckle dropped from ASP.NET Core templates in .NET 9). Route /swagger preserved (redirect to Scalar) for the CLAUDE.md/DoD reference. Fallback: "swashbuckle"
+    "CorsAllowedOrigins": [ "http://localhost:5210" ]  // dev-only: the AlphaLab.Web WASM origin(s) — the browser-served client is cross-origin to the API even on localhost. Set the real dev URL(s) in Phase 0; the API itself stays localhost-bound
+  },
+
+  "Worker": {                                      // D59/D61
+    "Mode": "OnDemand",                            // OnDemand (default): launch -> catch up -> exit
+                                                   // Scheduled: stay resident, Quartz triggers at close+offset
+    "ProcessThroughLastCompletedSessionOnly": true, // never half-run a day whose close hasn't happened (D61)
+    "DrainQueuedJobsOnLaunch": true,               // D72 (v1.9.7 finding 111): OnDemand launch = schema → catch-up → drain queued jobs → backup → exit;
+                                                   // jobs never run inside the daily write transaction; catch-up always precedes them
+    "HeartbeatSeconds": 30,                        // D72 (finding 112): the running Worker writes worker_state.heartbeat_at at least this often
+    "StaleRunThresholdSeconds": 300                // D72 (finding 112): on launch, a run_in_progress=1 whose heartbeat is older than this is treated as a
+                                                   // crashed run — cleared, its runs row marked 'failed', logged; the Api's 409 decision ignores stale flags
+  },
+
+  "Calendar": {                                    // D54
+    "Exchange": "NYSE",
+    "RunAfterCloseOffsetMinutes": 150              // trigger = session close (ET) + offset; used only in Scheduled mode
+  },
+
+  "Monitor": "see OVERFITTING_MONITOR_v1.9 Appendix A (values land here after Phase-4 calibration; every change = versioned config row)",
+
+  "Replay": {                                      // D37
+    "ValidationYears": 15,
+    "PrunePerMemberLedgersAfterSignoff": true,
+    "EdgePlantSurvivalFloor5y": 0.90,              // v1.9.7 finding 113: Phase-4 DoD floor — fraction of D64 edge plants still promotable at 5y of simulated
+                                                   // track; a floor failure recalibrates S6's patience, never the plant (the lab must not kill its own honest winners)
+    "JointFalseAlarmMaxFrac": 0.10                 // v1.9.7 finding 114: bound on the fraction of no-edge plants ever reaching Suspect via ANY signal over the
+                                                   // replay window; per-signal contribution is a permanent calibration-report section
+  },
+
+  "Calibration": {                                 // D64 — plants under P_noise(t)/P_edge(t)
+    "Plant": {
+      "AlphaAnnualPct": 2.0,                       // edge plant target (§1.1 realistic prize)
+      "AntiAlphaAnnualPct": -2.0,                  // anti-predictive plant (the Suspect fixture)
+      "ActiveDayFrac": 0.25,                       // lumpy delivery — edge arrives in streaks
+      "PersistencePhi": 0.9,                       // run persistence, scaled to family horizon
+      "RegimeMultipliers": { "bull": 1.25, "bear": 0.5 },  // renormalized to the target
+      "SeedsPerPlant": 50,                         // curves = multi-seed medians + 25–75% bands
+      "SensitivityMaxGapPts": 10                   // naive-vs-realistic P_edge divergence trigger
+    }
+  },
+
+  "Verdicts": {                                    // D63 — separation state (read-models)
+    "SeparationMinTrackDays": 252,                 // chip renders past this track length
+    "SeparationBandCentralFrac": 0.50              // 'none' = inside the 25th–75th pct region
+  },
+
+  "Llm": {                                         // D24/D46
+    "Tasks": {
+      "news_extraction": { "Model": "claude-haiku-4-5-20251001" },
+      "regime_brief":    { "Model": "claude-sonnet-4-6" },
+      "research_brief":  { "Model": "claude-sonnet-4-6" },
+      "skeptic":         { "Model": "claude-sonnet-4-6" }
+    },
+    "UseBatchesApiForScheduled": true,
+    "PromptCacheStaticBlock": true,
+    "NewsBudget": { "MaxArticlesPerRead": 25, "MaxCharsPerArticle": 2000,
+                    "DedupeBy": "title_hash" },
+    "DailyBudget": { "MaxCostUsd": 1.00, "MaxCalls": 10 },
+    "DegradationOrder": ["held_positions", "cached", "neutral_fallback"],
+    "ScopeLevel": 1                               // 1 market-read; 2 shortlist(<=20); 3 unreachable
+  },
+
+  "Ops": {                                         // RUNBOOK
+    "BackupNightlyLocal": "02:00",                // Scheduled mode only; in OnDemand mode (the default) the backup runs as the final step of each Worker launch (RUNBOOK §3)
+    "BackupRetentionDays": 30,
+    "AlertSink": "log+gui"                        // extend: email/webhook later
+  },
+
+  "FactorData": { "RefreshDayOfMonth": 5 }         // D41 French library pull
+}
+```
+
+## AlphaLab.Web `wwwroot/appsettings.json` (non-secret, browser-served — D71/FR-37)
+
+The standalone-WASM client's only configuration is the **arena registry**. It replaces any single
+`Api:BaseUrl` key; the active arena (default: the first entry) drives which Api the
+`ReadModelClient` targets. Adding an arena later = one new entry (ARENA_ARCHITECTURE_v1.9.3 §4.1).
+
+```jsonc
+{
+  "Arenas": [
+    { "id": "sp500", "displayName": "S&P 500", "baseUrl": "http://127.0.0.1:5230" }
+    // future: { "id": "russell2000", "displayName": "Russell 2000", "baseUrl": "http://127.0.0.1:5231" }
+  ]
+}
+```
+
+Each entry's `baseUrl` must equal that arena's Api `Urls` value above. This file is served to the
+browser — it must never contain a secret (D67).
+
+## Key rules
+1. Per-strategy parameters (lookbacks, N, exit params, seeds) live in `strategies.config_json` — **frozen** (D17); this file holds only system-level knobs.
+2. Monitor thresholds start from Appendix A values but are **replay-calibrated in Phase 4** before forward trust; the calibration report references the exact config version it produced.
+3. Any config change at runtime inserts a versioned `config` row with a reason — the system's knobs have an audit trail like everything else.
+4. **v1.8:** the Phase-4 calibration job writes the D56 `P_noise(t)` / `P_edge(t)` S3 curves as versioned config rows referencing the archived report; the flat S3 anchors (Healthy ≥ 95 / Suspect < 25 — MONITOR Appendix A) apply only before that.
+5. **v1.9.1 (D69):** ledger money properties are C# `decimal` persisted as TEXT; never bind a money value to `double`. The D60 API serialization (strings/minor units) is unchanged.
+6. Where a key also appears in OVERFITTING_MONITOR Appendix A (gate/verdicts/calibration blocks), **this file is authoritative**; the appendix mirrors values for reading convenience.

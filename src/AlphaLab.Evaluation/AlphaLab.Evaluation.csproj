@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Metrics, MDE, gate, allocator, monitor, populations, replay, and the
+       read-model builders that resolve the honesty rules into DTO fields (D58).
+       Phase 0: empty placeholder. -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\AlphaLab.Core\AlphaLab.Core.csproj" />
+    <ProjectReference Include="..\AlphaLab.Data\AlphaLab.Data.csproj" />
+  </ItemGroup>
+
+</Project>

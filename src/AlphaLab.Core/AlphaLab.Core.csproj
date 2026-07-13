@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Domain: models, funnel, ledger, ExitPolicy, read-model DTOs (D58).
+       The one src project AlphaLab.Web is allowed to reference. No package deps. -->
+
+</Project>

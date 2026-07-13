@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- IAnalysisProvider, INewsProvider budget, research assistant. Phase 0: empty placeholder. -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\AlphaLab.Core\AlphaLab.Core.csproj" />
+  </ItemGroup>
+
+</Project>
