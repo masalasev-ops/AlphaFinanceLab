@@ -29,7 +29,7 @@
 - [x] v1.9.8 fix-up (P0-6): `ArenaRegistry.IsFallback` + a visible config-error banner when the `Arenas` registry is missing (fail-closed, hard rule 10) instead of a silent self-call; `FromEntries_Empty` asserts the flag
 
 ### Phase 1 — Data foundation
-- [ ] Security master + ticker_history; FX-TickerChange green
+- [x] Security master + ticker_history; FX-TickerChange green (checkpoint 1.1)
 - [ ] EODHD bars backfill (S&P 100) + daily delta; versioned bars; FX-BarCorrection green
 - [ ] Membership per D49 launch wiring (IVV primary + Wikipedia cross-check; EODHD provider built but dormant); FX-MembershipDiverge/Agree green
 - [ ] D70 S&P 100 slice sourced (OEF CSV + Wikipedia S&P 100 cross-check, count sanity 99–103); fja05680 community CSV ingested into historical membership; FX-AsOfMembership green
@@ -103,6 +103,12 @@
 - [ ] If pass: D49 logged; Value/Quality + quarterly population + leakage extensions green
 
 ## Session log (newest first)
+
+### 2026-07-13 (Phase 1) — Checkpoint 1.1: security master + ticker_history (FR-3)
+**Shipped.** `ISecurityMaster`/`SecurityMaster` in `AlphaLab.Data/Services`: permanent `security_id` identity (D39), time-ranged `ticker_history` aliases, `ResolveAsOf` (interval `valid_from ≤ asOf < valid_to`, ordinal ISO compare in memory — no dependence on EF string.Compare translation), `Register`, `ResolveOrRegister`, and `RecordTickerChange` (closes the open alias, opens a new one under the SAME id, renames `securities.current_symbol`, writes a `corporate_actions(type='ticker_change')` row — all in one atomic SaveChanges, zero identity break). Added a shared `TestDb` helper (throwaway migrated on-disk SQLite).
+**Verified.** **FX-TickerChange green** (ACME→ACMX on day 40 of an 80-day series, position held through): same id on both sides of the rename, valid_from-inclusive/valid_to-exclusive boundary, one security + two aliases + one ticker_change action (zero churn), and 80 continuous bar rows joining to the single id with no break. Data tests **33** (was 30); full suite green via `dotnet test`.
+**Red / known-broken:** none.
+**Next:** 1.2 — `IMarketDataProvider`/`EodhdMarketDataProvider` + versioned-bar ingestion + watermark read service + `FX-BarCorrection`.
 
 ### 2026-07-13 (Phase 1) — Checkpoint 1.0: data-domain schema + shared plumbing
 **Shipped.** The Phase-1 schema foundation and the provider plumbing every later checkpoint stands on. **Nine data-domain tables** added to `AlphaLabDbContext` and migration `20260713232437_Phase1DataFoundation` (SCHEMA §Identity & Market Data + §v1.8, verbatim): `securities` (+ partial unique `ux_securities_active_symbol WHERE delisted_on IS NULL`), `ticker_history` (+ `ix_ticker_hist_symbol`), `sector_changes`, `bars` (PK `(security_id,date,version)` + `ix_bars_observed`), `corporate_actions` (8-value `type` CHECK; `cash_per_share` decimal→TEXT D69, `ratio` REAL), `index_membership_log`, `index_membership`, `trading_calendar` (`session` CHECK), `api_usage_log`. Deferred to Phase 2 (unbuilt by design): `regime_labels`, `regime_episodes`, `features`, `factor_returns`, `factor_refresh_log`, the `ux_runs_ok_forward` partial index. **Rule-14 hand-edit** applied to exactly the three new bare-INTEGER-PK tables (`securities.security_id`, `corporate_actions.action_id`, `index_membership_log.log_id`) — `.Annotation("Sqlite:Autoincrement", true)` stripped; the other six new tables are composite/TEXT PKs and needed no edit. **Shared plumbing** in `AlphaLab.Data`: `Http/ResilientHttpClient` (hand-rolled, no Polly — 30s timeout, 3 retries exp-backoff + injectable jitter, circuit-break after 5 consecutive failures), `Http/RawCache` (`FileRawCache` + `NullRawCache`, archives to `tools/raw-cache/{source}/{date}/`, gitignored), `Services/ApiUsageLog` (`ApiUsageHeadroom.HasHeadroom` ≥50% rule + `ApiUsageLogWriter` upsert).
