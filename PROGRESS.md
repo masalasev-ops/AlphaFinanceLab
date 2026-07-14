@@ -3,9 +3,9 @@
 *Repo root. Updated every working session — what shipped, what's red, what was deliberately deferred, and any decision proposals. This file is the month-one discipline instrument (MASTER §17.1): if it stops being truthful, the phase gates stop working.*
 
 ## Current state
-- **Phase:** 1 IN PROGRESS — checkpoints 1.0–1.5 shipped (of 1.0–1.10).
+- **Phase:** 1 IN PROGRESS — checkpoints 1.0–1.6 shipped (of 1.0–1.10).
 - **Blocking:** none.
-- **Last session:** 2026-07-14 — Checkpoint 1.5 (S&P 100 slice via OEF + fja05680 historical membership, FR-4/D70); Data tests **88**, `tools/ci.ps1` green (**110** total). See the session-log entry.
+- **Last session:** 2026-07-14 — Checkpoint 1.6 (sector ingestion + change log, FR-5); Data tests **93**, `tools/ci.ps1` green (**115** total). See the session-log entry.
 
 ## Phase gates (a phase is DONE only when every box is checked and committed)
 
@@ -33,7 +33,7 @@
 - [ ] EODHD bars backfill (S&P 100) + daily delta; versioned bars; FX-BarCorrection green
 - [x] Membership per D49 launch wiring (IVV primary + Wikipedia cross-check; EODHD provider built but dormant); FX-MembershipDiverge/Agree green (checkpoint 1.4; + C-4 header guard)
 - [x] D70 S&P 100 slice sourced (OEF CSV + Wikipedia S&P 100 cross-check, count sanity 99–103); fja05680 community CSV ingested into historical membership; FX-AsOfMembership green (checkpoint 1.5 — OEF slice + historical ingestion + a data-layer as-of read tested; the replay-engine FX-AsOfMembership validation is Phase 4 per D70)
-- [ ] Sector ingestion + change log; quality gate + FX-QualityGate green
+- [ ] Sector ingestion + change log; quality gate + FX-QualityGate green (sector half + FX-SectorReclass done in checkpoint 1.6; the data-quality gate + FX-QualityGate is checkpoint 1.7 — box stays open until then)
 - [ ] Trading calendar seeded + ICalendarService (FR-30); FX-HolidayOutage, FX-HalfDay green
 - [ ] INTEGRATIONS_v1.9 ⚠VERIFY items confirmed and file updated
 - [ ] Regime proxy feed (FR-38/D73, v1.9.7): `GSPC.INDX` backfilled ≥3.8y + SPY.US returns cross-check; `Regime.ProxySecurityId` resolved from `Regime.ProxySource`; `FX-RegimeProxyBackfill` green (label fails closed pre-warm-up)
@@ -103,6 +103,13 @@
 - [ ] If pass: D49 logged; Value/Quality + quarterly population + leakage extensions green
 
 ## Session log (newest first)
+
+### 2026-07-14 (Phase 1) — Checkpoint 1.6: sector ingestion + change log (FR-5)
+**Shipped.** `ISectorIngestion`/`SectorIngestion` + `SectorAssignment`: apply the GICS sector (from the IVV/OEF holdings CSV's Sector column, `Universe.SectorSource=ivv_csv`) to `securities`. A **reclassification** — a prior NON-NULL classification changing — writes a `sector_changes` row (old/new sector+industry, `changed_on`) and updates `securities.sector`; an **initial** classification (null → X) sets the baseline WITHOUT a change row; an **unchanged** apply is a no-op (idempotent). Never deletes. A null assignment field leaves the current value. Dormant **`EodhdFundamentalsSectorProvider`** (D49) is the post-upgrade sector source (adds industry + a staleness alarm) — throws until `Universe.SectorSource='eodhd'`. Registered `ISectorIngestion` in `AddAlphaLabMembership`.
+**Verified.** Data tests **93** (was 88); `tools/ci.ps1` green (**115** total). **FX-SectorReclass:** an IT→"Communication Services" mid-period change logs a `sector_changes` row (old/new + `changed_on`) and updates the current value; an unchanged apply writes nothing; an initial null→X sets the baseline with no change row; the real IVV NVDA sector "Information Technology" applies end-to-end with **industry null** (the CSV has no industry column); the dormant EODHD sector provider fails loud.
+**Red / known-broken:** none.
+**Deferred (deliberately):** the **LowVol-at-next-rebalance consumption** of the sector-change log is a later phase (Phase 6 strategies) — 1.6 lands the log + the current-value update. **Industry** classification (and a sector staleness alarm) arrive with the EODHD-fundamentals upgrade (dormant, D49) — the IVV/OEF CSV supplies sector only. The **data-quality gate + reconciliation (FR-6, FX-QualityGate)** is checkpoint 1.7 (the other half of that DoD box).
+**Next:** 1.7 — data-quality gate (gaps/NaNs/outliers) + dividend/split reconciliation + a dormant Alpaca bar cross-check seam (FR-6); FX-QualityGate.
 
 ### 2026-07-14 (Phase 1) — Checkpoint 1.5: S&P 100 slice (OEF) + fja05680 historical membership (FR-4/D70)
 **Shipped.** Generalized the 1.4 IVV provider to **`ISharesHoldingsMembershipProvider`** parameterized by `ISharesHoldingsOptions` with `Ivv()`/`Oef()` presets (239726/`ivv_csv`, 239723/`oef_csv`) — one class serves both named feeds (the named-source distinction, Golden Rule 25, is the config source label; one C-4 fixture covers both, §2b), and the **OEF S&P 100 slice** reconciles at the **[99,103]** band via the same `MembershipReconciler`. New `HistoricalMembershipCsvParser` (fja05680 §8: `date,tickers`, the roster is one quoted field → sorted snapshots; dot `BRK.B` and bankruptcy `*Q` preserved raw) + `HistoricalMembershipIngestion` — reconstructs half-open `[added_on, removed_on)` intervals into `index_membership` (a name added/dropped/re-added gets distinct intervals; **never deletes**), as a **bulk writer** (securities registered in ~2 SaveChanges, intervals in one) so the 30-year file ingests in ~2s. `IndexMembershipReadService.MembersAsOf(date)` — the as-of read foundation (ordinal ISO compare, half-open). `*Q` is kept verbatim + dot→dash only (never stripped), so `AAMRQ`/`ENRNQ` become securities and legit Q-tickers `HPQ`/`CPQ` survive. New services registered in `AddAlphaLabMembership`.

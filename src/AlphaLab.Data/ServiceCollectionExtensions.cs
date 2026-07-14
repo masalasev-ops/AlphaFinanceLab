@@ -47,6 +47,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IMembershipReconciler, MembershipReconciler>();
         services.AddScoped<IHistoricalMembershipIngestion, HistoricalMembershipIngestion>();
         services.AddScoped<IIndexMembershipRead, IndexMembershipReadService>();
+        services.AddScoped<ISectorIngestion, SectorIngestion>();
         return services;
     }
 }
