@@ -52,6 +52,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISectorIngestion, SectorIngestion>();
         services.TryAddSingleton(new DataQualityOptions());
         services.AddScoped<IDataQualityGate, DataQualityGate>();
+        services.TryAddSingleton(new CalendarOptions());
+        services.AddScoped<ICalendarService, CalendarService>();
+        services.AddScoped<ICalendarSeeder, CalendarSeeder>();
         return services;
     }
 }
