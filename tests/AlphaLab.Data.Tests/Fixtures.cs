@@ -18,4 +18,8 @@ internal static class Fixtures
     /// <summary>Re-saved rendered Wikipedia constituents page (§7).</summary>
     public static string Wikipedia(string fileName) =>
         File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", fileName));
+
+    /// <summary>fja05680/sp500 historical components CSV (§8).</summary>
+    public static string Historical(string fileName) =>
+        File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", fileName));
 }

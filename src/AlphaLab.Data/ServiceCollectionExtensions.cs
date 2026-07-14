@@ -34,7 +34,7 @@ public static class ServiceCollectionExtensions
     /// <summary>
     /// Registers the writer-side membership building blocks (FR-4): the resilient HTTP client, a
     /// default no-op raw cache, the security master, and the reconciler. This establishes the
-    /// provider-wiring convention; the concrete membership providers (<c>IvvHoldingsMembershipProvider</c>,
+    /// provider-wiring convention; the concrete membership providers (<c>ISharesHoldingsMembershipProvider</c>,
     /// <c>WikipediaMembershipCrossCheck</c>) and their options / raw-cache root are wired by the
     /// backfill CLI (1.10), which owns the config + the archive directory. Not registered by the
     /// read-only API path.
@@ -45,6 +45,8 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IRawCache>(NullRawCache.Instance);
         services.AddScoped<ISecurityMaster, SecurityMaster>();
         services.AddScoped<IMembershipReconciler, MembershipReconciler>();
+        services.AddScoped<IHistoricalMembershipIngestion, HistoricalMembershipIngestion>();
+        services.AddScoped<IIndexMembershipRead, IndexMembershipReadService>();
         return services;
     }
 }
