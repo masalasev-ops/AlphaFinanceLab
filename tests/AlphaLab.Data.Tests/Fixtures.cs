@@ -10,4 +10,12 @@ internal static class Fixtures
 {
     public static string Eodhd(string fileName) =>
         File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "eodhd", fileName));
+
+    /// <summary>Byte-real iShares holdings CSV (IVV/OEF) copied next to the assembly (§2/§2b).</summary>
+    public static string Holdings(string fileName) =>
+        File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", fileName));
+
+    /// <summary>Re-saved rendered Wikipedia constituents page (§7).</summary>
+    public static string Wikipedia(string fileName) =>
+        File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", fileName));
 }

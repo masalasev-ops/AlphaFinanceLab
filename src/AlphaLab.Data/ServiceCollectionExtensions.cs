@@ -1,5 +1,8 @@
+using AlphaLab.Data.Http;
+using AlphaLab.Data.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace AlphaLab.Data;
 
@@ -25,6 +28,23 @@ public static class ServiceCollectionExtensions
             : DbPathResolver.ResolvePath(connectionString, arenaId);
 
         services.AddDbContext<AlphaLabDbContext>(options => options.UseSqlite(resolved));
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the writer-side membership building blocks (FR-4): the resilient HTTP client, a
+    /// default no-op raw cache, the security master, and the reconciler. This establishes the
+    /// provider-wiring convention; the concrete membership providers (<c>IvvHoldingsMembershipProvider</c>,
+    /// <c>WikipediaMembershipCrossCheck</c>) and their options / raw-cache root are wired by the
+    /// backfill CLI (1.10), which owns the config + the archive directory. Not registered by the
+    /// read-only API path.
+    /// </summary>
+    public static IServiceCollection AddAlphaLabMembership(this IServiceCollection services)
+    {
+        services.AddSingleton<IResilientHttpClient>(_ => new ResilientHttpClient(new HttpClient()));
+        services.TryAddSingleton<IRawCache>(NullRawCache.Instance);
+        services.AddScoped<ISecurityMaster, SecurityMaster>();
+        services.AddScoped<IMembershipReconciler, MembershipReconciler>();
         return services;
     }
 }

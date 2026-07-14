@@ -30,6 +30,16 @@
       <Link>Fixtures\eodhd\%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- iShares IVV/OEF holdings + fja05680 historical membership CSVs (byte-real downloads). -->
+    <Content Include="..\Fixtures\*.csv">
+      <Link>Fixtures\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- Re-saved rendered Wikipedia S&amp;P 500 / S&amp;P 100 constituents pages (byte-real). -->
+    <Content Include="..\Fixtures\*.html">
+      <Link>Fixtures\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>
