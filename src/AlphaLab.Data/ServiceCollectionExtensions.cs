@@ -32,12 +32,14 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Registers the writer-side membership building blocks (FR-4): the resilient HTTP client, a
-    /// default no-op raw cache, the security master, and the reconciler. This establishes the
-    /// provider-wiring convention; the concrete membership providers (<c>ISharesHoldingsMembershipProvider</c>,
-    /// <c>WikipediaMembershipCrossCheck</c>) and their options / raw-cache root are wired by the
-    /// backfill CLI (1.10), which owns the config + the archive directory. Not registered by the
-    /// read-only API path.
+    /// Registers the writer-side data-foundation building blocks (FR-4/FR-5/FR-6): the resilient HTTP
+    /// client, a default no-op raw cache, the security master, the reconciler, sector ingestion, and
+    /// the data-quality gate. This establishes the provider-wiring convention; the concrete membership
+    /// providers (<c>ISharesHoldingsMembershipProvider</c>, <c>WikipediaMembershipCrossCheck</c>) and
+    /// their options / raw-cache root are wired by the backfill CLI (1.10), which owns the config + the
+    /// archive directory. The dormant Alpaca cross-check (<c>AlpacaBarCrossCheck</c>) is intentionally
+    /// NOT registered — it activates via CLI wiring once the optional Alpaca keys exist (FR-6). Not
+    /// registered by the read-only API path.
     /// </summary>
     public static IServiceCollection AddAlphaLabMembership(this IServiceCollection services)
     {
@@ -48,6 +50,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IHistoricalMembershipIngestion, HistoricalMembershipIngestion>();
         services.AddScoped<IIndexMembershipRead, IndexMembershipReadService>();
         services.AddScoped<ISectorIngestion, SectorIngestion>();
+        services.TryAddSingleton(new DataQualityOptions());
+        services.AddScoped<IDataQualityGate, DataQualityGate>();
         return services;
     }
 }
