@@ -23,4 +23,13 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <!-- Real captured provider payloads (tests/Fixtures) copied next to the test assembly so parse
+       tests read byte-real inputs. Shared across test projects via the ..\Fixtures link. -->
+  <ItemGroup>
+    <Content Include="..\Fixtures\eodhd\*.json">
+      <Link>Fixtures\eodhd\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>
