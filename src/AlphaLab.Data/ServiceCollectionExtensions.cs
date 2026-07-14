@@ -55,6 +55,9 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton(new CalendarOptions());
         services.AddScoped<ICalendarService, CalendarService>();
         services.AddScoped<ICalendarSeeder, CalendarSeeder>();
+        services.TryAddSingleton(new RegimeOptions());
+        services.AddScoped<IRegimeProxyIngestion, RegimeProxyIngestion>();
+        services.AddScoped<IRegimeProxyReadiness, RegimeProxyReadiness>();
         return services;
     }
 }
