@@ -27,12 +27,18 @@ public sealed record SplitEvent(string Date, double Ratio, string RawRatio);
 /// </summary>
 public interface IMarketDataProvider
 {
-    /// <summary>Daily bars for a symbol over [from, to] (inclusive), completed sessions only.</summary>
-    Task<IReadOnlyList<EodBar>> GetEodAsync(string symbol, string from, string to, CancellationToken ct = default);
+    // <paramref name="asOf"/> is the run's OBSERVATION date — the day WE saw this data. It is the raw
+    // cache's partition key (INTEGRATIONS §9: provenance-by-observation-day), threaded through the
+    // contract so archival never rests on a caller convention (P1R-4): the query bounds (from/to) and
+    // the observation day are distinct, even when a backfill happens to pass to == asOf.
 
-    /// <summary>Dividend events for a symbol from a start date (FR-3 corporate-action feed).</summary>
-    Task<IReadOnlyList<DividendEvent>> GetDividendsAsync(string symbol, string from, CancellationToken ct = default);
+    /// <summary>Daily bars for a symbol over [from, to] (inclusive), completed sessions only; the raw
+    /// payload is archived under <paramref name="asOf"/> (the observation day, not the query bound).</summary>
+    Task<IReadOnlyList<EodBar>> GetEodAsync(string symbol, string from, string to, string asOf, CancellationToken ct = default);
 
-    /// <summary>Split events for a symbol from a start date (FR-3 corporate-action feed).</summary>
-    Task<IReadOnlyList<SplitEvent>> GetSplitsAsync(string symbol, string from, CancellationToken ct = default);
+    /// <summary>Dividend events for a symbol from a start date (FR-3); archived under <paramref name="asOf"/>.</summary>
+    Task<IReadOnlyList<DividendEvent>> GetDividendsAsync(string symbol, string from, string asOf, CancellationToken ct = default);
+
+    /// <summary>Split events for a symbol from a start date (FR-3); archived under <paramref name="asOf"/>.</summary>
+    Task<IReadOnlyList<SplitEvent>> GetSplitsAsync(string symbol, string from, string asOf, CancellationToken ct = default);
 }

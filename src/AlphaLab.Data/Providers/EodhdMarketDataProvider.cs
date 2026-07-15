@@ -33,27 +33,27 @@ public sealed class EodhdMarketDataProvider(
 
     private string Sym(string symbol) => $"{symbol}.{options.ExchangeSuffix}";
 
-    public async Task<IReadOnlyList<EodBar>> GetEodAsync(string symbol, string from, string to, CancellationToken ct = default)
+    public async Task<IReadOnlyList<EodBar>> GetEodAsync(string symbol, string from, string to, string asOf, CancellationToken ct = default)
     {
         var url = $"{options.BaseUrl}/eod/{Sym(symbol)}?api_token={options.ApiToken}&fmt=json&from={from}&to={to}&period=d";
         var json = await http.GetStringAsync(url, Source, ct).ConfigureAwait(false);
-        _rawCache.Save(Source, to, $"{symbol}.eod.json", json);
+        _rawCache.Save(Source, asOf, $"{symbol}.eod.json", json); // partition by observation day, not the query bound
         return ParseEod(json);
     }
 
-    public async Task<IReadOnlyList<DividendEvent>> GetDividendsAsync(string symbol, string from, CancellationToken ct = default)
+    public async Task<IReadOnlyList<DividendEvent>> GetDividendsAsync(string symbol, string from, string asOf, CancellationToken ct = default)
     {
         var url = $"{options.BaseUrl}/div/{Sym(symbol)}?api_token={options.ApiToken}&fmt=json&from={from}";
         var json = await http.GetStringAsync(url, Source, ct).ConfigureAwait(false);
-        _rawCache.Save(Source, from, $"{symbol}.div.json", json);
+        _rawCache.Save(Source, asOf, $"{symbol}.div.json", json); // was `from` (20y off) — P1R-4
         return ParseDividends(symbol, json);
     }
 
-    public async Task<IReadOnlyList<SplitEvent>> GetSplitsAsync(string symbol, string from, CancellationToken ct = default)
+    public async Task<IReadOnlyList<SplitEvent>> GetSplitsAsync(string symbol, string from, string asOf, CancellationToken ct = default)
     {
         var url = $"{options.BaseUrl}/splits/{Sym(symbol)}?api_token={options.ApiToken}&fmt=json&from={from}";
         var json = await http.GetStringAsync(url, Source, ct).ConfigureAwait(false);
-        _rawCache.Save(Source, from, $"{symbol}.splits.json", json);
+        _rawCache.Save(Source, asOf, $"{symbol}.splits.json", json); // was `from` (20y off) — P1R-4
         return ParseSplits(json);
     }
 

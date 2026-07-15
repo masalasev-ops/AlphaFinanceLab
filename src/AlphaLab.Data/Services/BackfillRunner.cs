@@ -158,7 +158,7 @@ public sealed class BackfillRunner(
     public async Task BackfillRegimeProxyStep(BackfillOptions o, CancellationToken ct = default)
     {
         var id = new RegimeProxyIngestion(db).ResolveProxySecurityId(o.RegimeProxySource, o.AsOf);
-        var bars = await regimeProxy.GetProxyBarsAsync(o.From, o.AsOf, ct).ConfigureAwait(false);
+        var bars = await regimeProxy.GetProxyBarsAsync(o.From, o.AsOf, o.AsOf, ct).ConfigureAwait(false);
         Count(o.RegimeProxySource);
         var written = new RegimeProxyIngestion(db).IngestProxyBars(id, bars, o.ObservedAt);
         Log($"[regime] proxy security_id={id}; {bars.Count} bars fetched, {written} written.");
@@ -200,11 +200,13 @@ public sealed class BackfillRunner(
     public async Task BackfillSecurityStep(long securityId, string symbol, BackfillOptions o, CancellationToken ct = default)
     {
         // Count each call as it returns (not 3-at-once) so a partial security still logs its spent calls.
-        var bars = await marketData.GetEodAsync(symbol, o.From, o.AsOf, ct).ConfigureAwait(false);
+        // o.AsOf is passed as both the eod query bound (`to`) and the observation day (`asOf`) — they
+        // coincide for a backfill, but the archival date is now the explicit asOf, not the bound (P1R-4).
+        var bars = await marketData.GetEodAsync(symbol, o.From, o.AsOf, o.AsOf, ct).ConfigureAwait(false);
         Count("eodhd");
-        var dividends = await marketData.GetDividendsAsync(symbol, o.From, ct).ConfigureAwait(false);
+        var dividends = await marketData.GetDividendsAsync(symbol, o.From, o.AsOf, ct).ConfigureAwait(false);
         Count("eodhd");
-        var splits = await marketData.GetSplitsAsync(symbol, o.From, ct).ConfigureAwait(false);
+        var splits = await marketData.GetSplitsAsync(symbol, o.From, o.AsOf, ct).ConfigureAwait(false);
         Count("eodhd");
 
         var barsWritten = new BarIngestionService(db).IngestEod(securityId, bars, o.ObservedAt);

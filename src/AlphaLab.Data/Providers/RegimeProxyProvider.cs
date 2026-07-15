@@ -21,7 +21,9 @@ public static class RegimeProxySource
 /// </summary>
 public interface IRegimeProxyProvider
 {
-    Task<IReadOnlyList<EodBar>> GetProxyBarsAsync(string from, string to, CancellationToken ct = default);
+    /// <summary>Proxy daily bars over [from, to]; the raw payload is archived under <paramref name="asOf"/>
+    /// (the observation day, not the query bound `to` — P1R-4, matching <see cref="IMarketDataProvider"/>).</summary>
+    Task<IReadOnlyList<EodBar>> GetProxyBarsAsync(string from, string to, string asOf, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -42,11 +44,11 @@ public sealed class EodhdGspcRegimeProxyProvider(
 
     private readonly IRawCache _rawCache = rawCache ?? NullRawCache.Instance;
 
-    public async Task<IReadOnlyList<EodBar>> GetProxyBarsAsync(string from, string to, CancellationToken ct = default)
+    public async Task<IReadOnlyList<EodBar>> GetProxyBarsAsync(string from, string to, string asOf, CancellationToken ct = default)
     {
         var url = $"{options.BaseUrl}/eod/{ProxySymbol}?api_token={options.ApiToken}&fmt=json&from={from}&to={to}&period=d";
         var json = await http.GetStringAsync(url, RegimeProxySource.EodhdGspc, ct).ConfigureAwait(false);
-        _rawCache.Save(RegimeProxySource.EodhdGspc, to, $"{ProxySymbol}.eod.json", json);
+        _rawCache.Save(RegimeProxySource.EodhdGspc, asOf, $"{ProxySymbol}.eod.json", json); // observation day, not `to` — P1R-4
         return EodhdMarketDataProvider.ParseEod(json);
     }
 }
@@ -66,6 +68,6 @@ public sealed class SelfBuiltCapWeightRegimeProxyProvider : IRegimeProxyProvider
         "the primary EODHD GSPC.INDX proxy is used (INTEGRATIONS §9, verified on the tier); activate this " +
         "fallback via Regime.ProxySource='self_built_capweight' only if the index EOD becomes unavailable.";
 
-    public Task<IReadOnlyList<EodBar>> GetProxyBarsAsync(string from, string to, CancellationToken ct = default) =>
+    public Task<IReadOnlyList<EodBar>> GetProxyBarsAsync(string from, string to, string asOf, CancellationToken ct = default) =>
         throw new NotSupportedException(DormantReason);
 }

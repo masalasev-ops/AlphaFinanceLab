@@ -171,7 +171,7 @@ public class RegimeProxyTests
     {
         Assert.Throws<NotSupportedException>(() =>
         {
-            _ = new SelfBuiltCapWeightRegimeProxyProvider().GetProxyBarsAsync("2020-01-01", "2020-12-31");
+            _ = new SelfBuiltCapWeightRegimeProxyProvider().GetProxyBarsAsync("2020-01-01", "2020-12-31", "2020-12-31");
         });
     }
 
