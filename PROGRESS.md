@@ -5,7 +5,7 @@
 ## Current state
 - **Phase:** 1 — **all gate boxes green (phase-complete)**. The live `--universe sp100 --years 20` backfill ran clean on 2026-07-15 (304 EODHD calls / 99.7% headroom; 101 members, 488,217 bars, GSPC proxy 5,029 bars over 20y) and the INTEGRATIONS §1 call-limits ⚠VERIFY is confirmed. **Next:** Phase 2 (funnel + ledger + costs + the D53 staged pipeline in AlphaLab.Worker).
 - **Blocking:** none.
-- **Last session:** 2026-07-15 — **v1.9.9 doc self-containment pass** (docs only, no version bump): deleted the three stale reading-PDF snapshots + removed their refs; rolled the remaining stale D1–D73 ranges (CLAUDE.md map, root `README.md`) to D1–D75; completed the CLAUDE.md doc map; synced the drifted root `START_HERE.md` to the `docs/` copy; CHANGELOG finding **134**. Earlier same-day: the v1.9.9 Phase-1 reconciliation (D74/D75; findings 128–133) and the live sp100 backfill + Stage-3 INTEGRATIONS §1 VERIFIED (Data tests 178, ci.ps1 green / 200 total). See the session-log entries.
+- **Last session:** 2026-07-15 — **v1.9.9 entry-doc dedup + setup-narrative fix** (docs only, no version bump): deleted the redundant `docs/START_HERE.md` (root copy is canonical); reworded the setup narrative so a fresh cloner isn't told to copy non-existent `docs/CLAUDE.md`/`docs/PROGRESS.md` (they live at root); CHANGELOG findings **135–136**. Earlier same-day: the doc self-containment pass (finding 134), the v1.9.9 reconciliation (D74/D75), the live sp100 backfill + Stage-3 INTEGRATIONS §1 VERIFIED (Data tests 178, ci.ps1 green / 200 total). See the session-log entries.
 
 ## Phase gates (a phase is DONE only when every box is checked and committed)
 
@@ -103,6 +103,10 @@
 - [ ] If pass: D49 logged; Value/Quality + quarterly population + leakage extensions green
 
 ## Session log (newest first)
+
+### 2026-07-15 (docs) — v1.9.9 entry-doc dedup + setup-narrative fix (no version bump)
+
+**Docs only, no code, no version bump.** Closed the two structural drift risks flagged last pass. **Deduplicated `START_HERE.md`:** the repo carried two hand-synced copies (root + `docs/`); the root one had silently drifted three revisions before finding 134 caught it. **Root `START_HERE.md` is now canonical; `docs/START_HERE.md` deleted** — no reference needed repointing (MANIFEST, the CLAUDE.md map, and the doc's own links already pointed at the root copy). **Fixed the setup narrative:** START_HERE step 2 and MANIFEST told a fresh cloner to *copy* `docs/CLAUDE.md` + `docs/PROGRESS.md` into the repo root, but the repo is the deliverable and already keeps them at root (no `docs/` source exists) — step 2 now reads "clone it; the layout is already in place, nothing to copy," and MANIFEST lists both as repo-root files. Recorded as CHANGELOG findings **135** (dedup) + **136** (narrative); v1.9.9 range refs bumped to 128–136. **README overlap review (report-only, as requested):** root `README.md` and `docs/README_v1.9.md` are **distinct and both kept** — root is the GitHub repo landing (pitch / status / architecture / clone-build-run, plus a 7-row key-docs pointer table), `docs/README_v1.9.md` is the design-set index (the full Tier-1/Tier-2 doc map, the build-from-docs workflow, and the per-phase doc diet). Their overlap is **partial and purposeful** (both list docs; root's table is a curated subset that points *into* the full index) — not the redundant-copy class the two START_HERE files were, so no dedup. **Left for your decision:** `docs/README_v1.9.md` §3 step 2 and its Tier-2 rows carry the *same* 'copy CLAUDE.md/PROGRESS.md to repo root' wording as the narrative just fixed — not changed this pass, per the "gate README changes" instruction.
 
 ### 2026-07-15 (docs) — v1.9.9 doc self-containment pass (no version bump)
 
