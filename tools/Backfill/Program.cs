@@ -84,6 +84,9 @@ var runner = new BackfillRunner(
 try
 {
     await runner.RunAsync(options);
+    // Enforce the documented raw-cache retention (INTEGRATIONS §9) after a successful run.
+    var pruned = rawCache.Prune(DateTime.UtcNow);
+    Log($"[cache] pruned {pruned} raw payload(s) older than {FileRawCache.RetentionDays} days.");
     return 0;
 }
 catch (Exception ex)
