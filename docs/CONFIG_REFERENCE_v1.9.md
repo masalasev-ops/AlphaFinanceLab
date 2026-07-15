@@ -4,6 +4,8 @@
 
 > **v1.9.7 errata note (findings 110–116).** New keys, merged below: `Regime.ProxySource` names the regime proxy feed (D73/FR-38, finding 110; INTEGRATIONS §9); `Worker.DrainQueuedJobsOnLaunch` / `Worker.HeartbeatSeconds` / `Worker.StaleRunThresholdSeconds` complete the D72 process model (findings 111–112); `Populations.TurnoverMatchTolerancePct` backs the cost-match verification (finding 115); `Replay.EdgePlantSurvivalFloor5y` and `Replay.JointFalseAlarmMaxFrac` are the new Phase-4 calibration bounds (findings 113–114); the `Allocator` block carries the floor-feasibility rule (finding 116). No secret changes.
 
+> **v1.9.12 errata note (findings 158–159).** The bootstrap CLI's own config surface is now documented: a new **`tools/Backfill/appsettings.json`** subsection below carries the `Eodhd` (`BaseUrl`, `ExchangeSuffix`) and `Backfill` (`BackfillYears`, `ApiPlanLimit`, `RawCacheRoot`, `WikipediaSp100Url`, `HistoricalMembershipUrl`) sections the CLI actually consumes — previously absent from this "only source of truth" (finding 158). `BackfillYears` moved out of the `Data` block: the live key is **`Backfill:BackfillYears`**, not `Data:BackfillYears`. And a **binding caveat** was added to Key rules — `CalendarOptions`/`RegimeOptions`/`DataQualityOptions` declare a `SectionName` but are currently DI-registered as default instances, so a value placed in those sections is ignored until the consuming phase wires the bind (finding 159). No new keys, no secret changes. The `Universe.Bootstrap.Universe` "consumed by the backfill CLI" line is **unchanged** — correcting it is the parked **D76** decision (finding 151).
+
 ## Secrets (D67 — single gitignored `appsettings.Secrets.json`; no env vars, no User Secrets store)
 This is a local-only, single-machine tool. Secrets live in **one gitignored JSON file layered on top of `appsettings.json`** — no environment variables and no .NET User Secrets store anywhere. The config builder is exactly `AddJsonFile("appsettings.json", optional:false).AddJsonFile("appsettings.Secrets.json", optional:true)` in **AlphaLab.Api and AlphaLab.Worker** — **no** `AddEnvironmentVariables`, **no** `AddUserSecrets`. The standalone-WASM **AlphaLab.Web** client cannot hold secrets (its `wwwroot/appsettings.json` is served to the browser); it loads **only** the non-secret **`Arenas` registry** (id / displayName / baseUrl per arena — D71; a single `sp500` entry at launch, see the AlphaLab.Web section below) and never reads `appsettings.Secrets.json`. There is no bare `Api:BaseUrl` key — the active arena's registry `baseUrl` plays that role.
 
@@ -44,12 +46,12 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     }                                             // replay NEVER uses the slice — S&P 500 as-of membership only (D70)
   },
 
-  "Data": {
+  "Data": {                                        // NOTE: bound by DataQualityOptions (SectionName="Data") — see Key rules caveat; `Provider` is aspirational (unread today)
     "Provider": "eodhd",                          // D35; fallback: alpaca
-    "BackfillYears": 20,
     "BarCrossCheckSampleSize": 10,                // rotating names/day vs Alpaca (FR-6)
     "BarCrossCheckTolerancePct": 0.5,
     "OutlierZ": 8.0                               // quality gate daily-return z cutoff
+    // BackfillYears moved to the Backfill CLI section — the live key is `Backfill:BackfillYears` (v1.9.12 finding 158)
   },
 
   "Costs": {                                       // D43 — the falsifiable cost model
@@ -194,6 +196,28 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
 }
 ```
 
+## tools/Backfill/appsettings.json (the one-time bootstrap CLI — D65/D70)
+
+The backfill CLI is a **separate runnable** with its own `appsettings.json`; it does **not** read the Worker/Api superset above. Besides the shared `Arena` + `ConnectionStrings` keys (the connection string is byte-identical across all four spots — the four-spot rule), it carries two sections the other processes don't:
+
+```jsonc
+{
+  "Eodhd": {                                       // the EODHD market-data feed (INTEGRATIONS §1)
+    "BaseUrl": "https://eodhd.com/api",            // no trailing slash; endpoints appended (/eod, /div, /splits)
+    "ExchangeSuffix": "US"                          // ticker suffix, e.g. AAPL.US
+  },
+  "Backfill": {
+    "BackfillYears": 20,                           // history depth for the bootstrap — the LIVE key (NOT Data:BackfillYears)
+    "ApiPlanLimit": 100000,                        // EODHD 100k/day cap; the headroom check (INTEGRATIONS §1, VERIFIED 2026-07-15)
+    "RawCacheRoot": "tools/raw-cache",             // dated raw-payload archive root; 30-day retention (v1.9.10 finding 144)
+    "WikipediaSp100Url": "https://en.wikipedia.org/wiki/S%26P_100",                                    // S&P 100 cross-check (INTEGRATIONS §7)
+    "HistoricalMembershipUrl": "tests/Fixtures/S_P_500_Historical_Components___Changes__Updated.csv"   // D49/D70 community CSV (a fixture path at launch)
+  }
+}
+```
+
+The slice is selected by the CLI's **`--universe`** argument (default `sp100`), not by a config key; `--universe sp500` is **rejected at parse** until the D70 widening is wired (findings 149/151, awaiting **D76**). `Eodhd:BaseUrl` is also stated in INTEGRATIONS §1.
+
 ## AlphaLab.Web `wwwroot/appsettings.json` (non-secret, browser-served — D71/FR-37)
 
 The standalone-WASM client's only configuration is the **arena registry**. It replaces any single
@@ -219,3 +243,4 @@ browser — it must never contain a secret (D67).
 4. **v1.8:** the Phase-4 calibration job writes the D56 `P_noise(t)` / `P_edge(t)` S3 curves as versioned config rows referencing the archived report; the flat S3 anchors (Healthy ≥ 95 / Suspect < 25 — MONITOR Appendix A) apply only before that.
 5. **v1.9.1 (D69):** ledger money properties are C# `decimal` persisted as TEXT; never bind a money value to `double`. The D60 API serialization (strings/minor units) is unchanged.
 6. Where a key also appears in OVERFITTING_MONITOR Appendix A (gate/verdicts/calibration blocks), **this file is authoritative**; the appendix mirrors values for reading convenience.
+7. **v1.9.12 binding caveat (finding 159):** some blocks documented here are the *designed* surface for a later phase and are **not yet section-bound**. `CalendarOptions`, `RegimeOptions`, and `DataQualityOptions` declare a `SectionName` (`Calendar`/`Regime`/`Data`) but are currently DI-registered as **default instances** (not `GetSection(...).Bind`), so a value placed in those sections is silently ignored until the phase that consumes them wires the bind. No value drift today — the defaults equal the documented defaults — but treat these as compile-time constants, not live knobs, at the current phase. (The `Universe.Bootstrap` binding gap is tracked separately under **D76** — finding 151.)

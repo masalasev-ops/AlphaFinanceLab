@@ -1,7 +1,7 @@
-# AlphaLab — Complete Design Package (v1.9.7)
+# AlphaLab — Complete Design Package (v1.9.12)
 
 This is the **full, self-contained** design package — everything needed to build AlphaLab from
-scratch. It supersedes the v1.9.6 upload: all v1.9.1 → v1.9.7 consistency fixes and the
+scratch. It supersedes the v1.9.6 upload: all v1.9.1 → v1.9.12 consistency fixes and the
 multi-arena capability (D71, now fully propagated through the build scaffolding as FR-37) are merged
 **in place**, so every file here is current. Nothing external is required.
 
@@ -12,6 +12,7 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 **Orientation**
 - `START_HERE.md` — the entry point.
 - `docs/README_v1.9.md` — file map, mockup guide, and the step-by-step build workflow.
+- `README.md` (repo root) — the GitHub landing page: pitch, status, architecture, clone/build/run.
 - `CLAUDE.md` (repo root) — hard rules, solution layout, commands (the constitution the build obeys).
 
 **The design**
@@ -53,7 +54,7 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `docs/lab_honesty_ux_mockups.html`
 
 **Revision history**
-- `docs/CHANGELOG_v1.9.md` — every consistency finding and decision, v1.9.1 through v1.9.9.
+- `docs/CHANGELOG_v1.9.md` — every consistency finding and decision, v1.9.1 through v1.9.12.
 
 ## Revision state
 - v1.9.1 errata (findings 59–75; D68–D69) — merged.
@@ -101,5 +102,24 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   provider rule, the aborted-run usage-flush-in-`finally`, and the EODHD per-endpoint call-cost table + the
   1,000-req/min limit (INTEGRATIONS §1 **VERIFIED 2026-07-15**, with an endpoint-weighting requirement raised
   for Phase 2). No architecture or schema change; the two open review proposals (C-6, C-1) stay undecided in PROGRESS.
+- v1.9.10 Phase-1 review remediation (findings 138–146) — merged. A second fresh-eyes review of the sealed
+  Phase-1 repo fixed fail-open code defects (dividend cash fails closed on a null `unadjustedValue`;
+  `api_usage_log` accumulates + headroom checks the day total; `GetSeries` date-range pushdown; raw payloads
+  archive under the observation day; the documented 30-day raw-cache retention implemented) plus a
+  `ConfigConsistencyTests` fourth-copy guard and a GitHub Actions CI mirror + report-only vuln audit — no
+  schema/migration/config-key change. Three schema-change proposals (extend D40 to `corporate_actions`; a
+  `data_quality_flags` table; a cross-sectional bar read path + `ix_bars_date`) parked for **D76**.
+- v1.9.11 Phase-1 review remediation, cont. (findings 147–152) — merged. A third pass corrected a live
+  REBUILD §5 arena-id error (shipped alone), added an `Arena:Id` cross-process guard, rejected `--universe
+  sp500` at parse, added a read-only `--preflight` live-source check, and registered/reconciled `REBUILD.md`
+  — no schema/migration/config-key change. The S&P 500 widening gap (finding 151) parked for **D76**.
+- v1.9.12 doc/config reconciliation (findings 153–159) — merged. Rolled the version narrative (this title +
+  Revision state, MASTER §version-note, START_HERE, README) and the CHANGELOG-coverage line to v1.9.12; added
+  the missing `REBUILD.md` + `DESIGN_IMPROVEMENTS_EXPLAINED.md` rows to `docs/README_v1.9.md` and the root
+  `README.md` to this file list; corrected two line-number-as-section refs in PROGRESS (§13.5, §15), the stale
+  root-README test count (200 → 223), and the resolved push-state note; documented the Backfill CLI's
+  `Eodhd`/`Backfill` config sections in `CONFIG_REFERENCE`. No schema or decision change; finding 151's
+  D70-widening `CONFIG_REFERENCE` claim stays parked for **D76**. (This roll supersedes finding 152's
+  deliberately-unrolled manifest title.)
 - The mockups are byte-identical to the original v1.9.1 upload (never needed changes). SCHEMA
   received its first post-v1.9.1 edit in v1.9.7 (the `config` composite PK + invariant notes).

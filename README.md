@@ -22,7 +22,7 @@ members, ~488k versioned bars over 20 years, plus the GSPC regime proxy. Still a
 the six-stage funnel, the ledger + cost model, the strategies, the honest-arena evaluation, and the
 daily pipeline hosted in `AlphaLab.Worker`. No forward pipeline run has been committed yet, so the
 strategy/evaluation screens still return empty, `no_run_yet`-stamped read-models. `tools/ci.ps1` is
-green: build + 200 tests + guard greps.
+green: build + 223 tests + guard greps.
 
 **What "working" will look like — set expectations now.** By construction, the lab's *fast* outputs
 are the honest-but-unglamorous ones: **anti-predictive kills** (a strategy the monitor can show is
