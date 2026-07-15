@@ -23,7 +23,7 @@ public class CorporateActionIngestionTests
     }
 
     private static IReadOnlyList<DividendEvent> RealDividends() =>
-        EodhdMarketDataProvider.ParseDividends(Fixtures.Eodhd("div_AAPL.json"));
+        EodhdMarketDataProvider.ParseDividends("AAPL", Fixtures.Eodhd("div_AAPL.json"));
 
     private static IReadOnlyList<SplitEvent> RealSplits() =>
         EodhdMarketDataProvider.ParseSplits(Fixtures.Eodhd("splits_AAPL.json"));
@@ -108,6 +108,27 @@ public class CorporateActionIngestionTests
             {
                 Assert.Equal(85, db.CorporateActions.Count()); // 80 dividends + 5 splits, no duplicates
             }
+        }
+        finally { TestDb.Delete(path); }
+    }
+
+    // Defensive secondary guard (P1R-1): the EODHD parse boundary already rejects a null
+    // unadjustedValue, so this covers a directly-constructed DividendEvent (a non-provider path) —
+    // ingestion refuses to write split-adjusted cash and names the security + ex-date.
+    [Fact]
+    public void FR3_IngestDividends_NullUnadjustedValue_FailsClosed_NamingSecurityAndExDate()
+    {
+        var path = SeededDb();
+        try
+        {
+            using var db = TestDb.Open(path);
+            var bad = new[] { new DividendEvent("2020-01-01", 0.25m, null) };
+
+            var ex = Assert.Throws<InvalidOperationException>(
+                () => new CorporateActionIngestion(db).IngestDividends(Sec, bad, "2026-07-13T00:00:00Z"));
+            Assert.Contains("security_id=1", ex.Message);
+            Assert.Contains("2020-01-01", ex.Message);
+            Assert.Empty(db.CorporateActions.ToList()); // nothing written
         }
         finally { TestDb.Delete(path); }
     }

@@ -150,7 +150,8 @@ src/AlphaLab.Api (ASP.NET Core minimal-API under /api/v1: read endpoints per scr
   contract conventions D60; enqueues Worker jobs for long-running commands — D57) ·
 src/AlphaLab.Web (standalone Blazor WebAssembly client of AlphaLab.Api; swappable for Angular/React/mobile) ·
 tests/ (mirrors src; fixtures under tests/Fixtures per TEST_PLAN_v1.9.md) ·
-docs/ (this documentation set) · tools/ (backfill CLI, backup, snapshot scripts)
+docs/ (this documentation set) · tools/ (backfill CLI, backup, snapshot scripts, ci.ps1,
+  audit-dividend-unadjusted.ps1)
 
 ## Commands (once Phase 0 lands)
 - `dotnet test` — full suite (CI runs this + the greps)

@@ -46,7 +46,7 @@ public sealed class EodhdMarketDataProvider(
         var url = $"{options.BaseUrl}/div/{Sym(symbol)}?api_token={options.ApiToken}&fmt=json&from={from}";
         var json = await http.GetStringAsync(url, Source, ct).ConfigureAwait(false);
         _rawCache.Save(Source, from, $"{symbol}.div.json", json);
-        return ParseDividends(json);
+        return ParseDividends(symbol, json);
     }
 
     public async Task<IReadOnlyList<SplitEvent>> GetSplitsAsync(string symbol, string from, CancellationToken ct = default)
@@ -73,14 +73,25 @@ public sealed class EodhdMarketDataProvider(
         return bars;
     }
 
-    /// <summary>Parse the /div array: ex-date = date; value (adjusted) + unadjustedValue.</summary>
-    public static IReadOnlyList<DividendEvent> ParseDividends(string json)
+    /// <summary>Parse the /div array: ex-date = date; value (adjusted) + unadjustedValue. A row whose
+    /// <c>unadjustedValue</c> is null fails CLOSED (rule 10): the unadjusted amount is the actual cash a
+    /// holder received (D69), and there is no safe substitute — falling back to the split-adjusted
+    /// <c>value</c> would be wrong by the cumulative split factor (112× on the oldest AAPL fixture row).
+    /// Mirrors <see cref="ParseSplitRatio"/>'s fail-loudly-on-drift precedent; <paramref name="symbol"/>
+    /// is threaded in from the caller so the throw names the affected security + ex-date.</summary>
+    public static IReadOnlyList<DividendEvent> ParseDividends(string symbol, string json)
     {
         var dtos = JsonSerializer.Deserialize<List<DivDto>>(json) ?? [];
         var events = new List<DividendEvent>(dtos.Count);
         foreach (var d in dtos)
         {
             if (string.IsNullOrWhiteSpace(d.Date)) continue;
+            if (d.UnadjustedValue is null)
+            {
+                throw new FormatException(
+                    $"Dividend for {symbol} ex-date {d.Date}: unadjustedValue is null (the actual cash " +
+                    "a holder received is unknown) - refusing to fall back to the split-adjusted value.");
+            }
             events.Add(new DividendEvent(d.Date, d.Value, d.UnadjustedValue));
         }
         return events;

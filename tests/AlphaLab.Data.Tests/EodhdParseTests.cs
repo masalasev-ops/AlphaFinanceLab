@@ -98,7 +98,7 @@ public class EodhdParseTests
     [Fact]
     public void ParseDividends_RealAapl_ExDateIsDate_WithAdjustedAndUnadjustedValues()
     {
-        var divs = EodhdMarketDataProvider.ParseDividends(Fixtures.Eodhd("div_AAPL.json"));
+        var divs = EodhdMarketDataProvider.ParseDividends("AAPL", Fixtures.Eodhd("div_AAPL.json"));
 
         Assert.Equal(80, divs.Count);
 
@@ -111,5 +111,17 @@ public class EodhdParseTests
         var old = Assert.Single(divs, d => d.Date == "1990-02-16");
         Assert.Equal(0.00098m, old.Value);
         Assert.Equal(0.10976m, old.UnadjustedValue);
+    }
+
+    // A dividend row with no unadjustedValue must fail CLOSED (rule 10, P1R-1) rather than fall back to
+    // the split-adjusted value — and the throw must name the symbol + ex-date so the operator can act.
+    [Fact]
+    public void ParseDividends_NullUnadjustedValue_FailsClosed_NamingSymbolAndExDate()
+    {
+        const string json = """[{"date":"2020-01-01","value":0.25}]"""; // unadjustedValue absent -> null
+
+        var ex = Assert.Throws<FormatException>(() => EodhdMarketDataProvider.ParseDividends("AAPL", json));
+        Assert.Contains("AAPL", ex.Message);
+        Assert.Contains("2020-01-01", ex.Message);
     }
 }

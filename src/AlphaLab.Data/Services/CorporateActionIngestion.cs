@@ -39,7 +39,12 @@ public sealed class CorporateActionIngestion(AlphaLabDbContext db) : ICorporateA
                 Type = "dividend",
                 ExDate = d.Date,          // ex-date = event date (INTEGRATIONS §1)
                 EffectiveDate = d.Date,
-                CashPerShare = d.UnadjustedValue ?? d.Value, // actual cash per share (D69 decimal→TEXT)
+                // Actual cash per share (D69 decimal→TEXT). Fail CLOSED (rule 10) on a null unadjusted
+                // amount rather than writing the split-adjusted value: the EODHD parse boundary already
+                // rejects this, so this defends the non-provider path (a directly-constructed event).
+                CashPerShare = d.UnadjustedValue ?? throw new InvalidOperationException(
+                    $"Dividend security_id={securityId} ex-date {d.Date}: UnadjustedValue is null - " +
+                    "refusing to write split-adjusted cash in its place (fail closed)."),
                 ObservedAt = observedAt,
                 Source = source,
                 ProcessedOn = null        // applied by the ledger in Phase 2
