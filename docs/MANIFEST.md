@@ -92,7 +92,7 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   files (P0-5); and a missing `Arenas` registry now raises a visible config-error banner instead of a
   silent self-call (P0-6, fail-closed rule 10). No architecture, schema, or decision change; two
   decision proposals (FR-23 hypotheses action; the Phase-4 detection-power sweep) logged in PROGRESS.
-- v1.9.9 Phase-1 completion doc-reconciliation (findings 128–136; decisions **D74–D75**) — merged. Phase 1
+- v1.9.9 Phase-1 completion doc-reconciliation (findings 128–137; decisions **D74–D75**) — merged. Phase 1
   shipped (checkpoints 1.0–1.10); its two decided-but-unnumbered decisions are recorded —
   index-membership drop ≠ delisting (**D74**) and the canonical EODHD dash-form ticker identity via
   `SymbolNormalizer` (**D75**) — with the first live backfill's findings: the Wikipedia descriptive-`User-Agent`

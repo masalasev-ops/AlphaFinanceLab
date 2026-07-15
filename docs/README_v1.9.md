@@ -22,8 +22,8 @@
 | Doc | Role |
 |---|---|
 | `SETUP_v1.9.md` | **Read first, before any code.** Prerequisites, accounts, secrets, day-zero verification checklist |
-| `CLAUDE.md` | **→ copy to repo root.** The standing rules every Claude Code session loads automatically |
-| `PROGRESS.md` | **→ copy to repo root.** Session log + phase-gate checklists |
+| `CLAUDE.md` | **(repo root)** — the standing rules every Claude Code session loads automatically |
+| `PROGRESS.md` | **(repo root)** — session log + phase-gate checklists |
 | `SCHEMA_v1.9.md` | Full SQLite DDL — the single source of truth for every table |
 | `CONFIG_REFERENCE_v1.9.md` | Every config key, default, unit, and owning decision |
 | `INTEGRATIONS_v1.9.md` | Exact external endpoints (EODHD, IVV CSV, Ken French, FRED, Anthropic, Alpaca) with ⚠VERIFY flags |
@@ -42,7 +42,7 @@ These are **static visual references, not code to run or deploy**. Open any of t
 ## 3. How to drive Claude Code with this package (step by step)
 
 1. **Read `SETUP_v1.9.md` and complete it** (accounts, secrets, day-zero endpoint checks). ~1 hour, free tier.
-2. **Create a private GitHub repo.** Copy `CLAUDE.md` and `PROGRESS.md` to the repo **root**; copy everything else in this package (all `.md` + all `.html`) into `docs/`. Commit: "docs v1.9, pre-code baseline".
+2. **Get the repo.** This repository is the pre-code baseline — clone it (or copy its contents into a fresh private repo). The layout is already in place, **nothing to copy or rearrange**: `CLAUDE.md` + `PROGRESS.md` at the **root**, the design set (all `.md`) and the four mockups (`.html`) under `docs/`, no code yet. (Starting a fresh repo? commit the baseline: "docs v1.9, pre-code baseline".)
 3. **Open Claude Code in the repo, turn Plan Mode on**, and paste the **Phase 0 prompt** from `BUILD_AND_PROMPTS_v1.9.md` §4, verbatim. Review the plan it proposes, approve, let it execute.
 4. **One phase per work stream, in order (0 → 1 → 2 → 3 → 3.5 → 4 → 5 → 6 → 7 → 8).** No phase starts while the previous phase's Definition of Done is red. Each phase's prompt cites the FRs and the exact doc sections to read.
 5. **Per-phase doc diet** — tell Claude Code to read only these (keeps context lean):
