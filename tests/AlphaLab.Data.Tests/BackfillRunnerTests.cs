@@ -208,6 +208,58 @@ public class BackfillRunnerTests
         finally { TestDb.Delete(path); }
     }
 
+    // P1R-2: the ≥50% headroom check reads the ACCUMULATED EODHD-family day total (from the DB), not a
+    // single run's spend — so two same-day runs each individually under the limit still breach once their
+    // sum crosses it. Fails on the pre-P1R-2 code, which checked run-local spend and overwrote the row.
+    [Fact]
+    public async Task FlushApiUsage_HeadroomChecksAccumulatedDayTotal_AcrossRuns()
+    {
+        var path = TestDb.CreateMigrated();
+        try
+        {
+            using var db = TestDb.Open(path);
+            var http = FullClient();
+            var id = new SecurityMaster(db).Register("AAPL", "US", "2000-01-01");
+            var o = new BackfillOptions { AsOf = AsOf, ApiPlanLimit = 8 };
+
+            // Run 1: 3 eodhd calls; day total 3 <= 50% of 8 -> no breach.
+            var runner1 = Runner(db, http);
+            await runner1.BackfillSecurityStep(id, "AAPL", o);
+            Assert.DoesNotContain("eodhd", runner1.FlushApiUsage(o));
+
+            // Run 2 (fresh runner, same DB + as_of): another 3 -> day total 6 > 50% of 8 -> breach.
+            var runner2 = Runner(db, http);
+            await runner2.BackfillSecurityStep(id, "AAPL", o);
+            Assert.Contains("eodhd", runner2.FlushApiUsage(o));
+
+            Assert.Equal(6, db.ApiUsageLog.Find(AsOf, "eodhd")!.Calls); // accumulated, not clobbered
+        }
+        finally { TestDb.Delete(path); }
+    }
+
+    // P1R-2 drain: FlushApiUsage empties the runner's counters after persisting, so calling it twice
+    // records the spend once — the runner's finally-flush plus any explicit flush cannot double-count.
+    [Fact]
+    public async Task FlushApiUsage_CalledTwice_RecordsSpendOnce()
+    {
+        var path = TestDb.CreateMigrated();
+        try
+        {
+            using var db = TestDb.Open(path);
+            var http = FullClient();
+            var id = new SecurityMaster(db).Register("AAPL", "US", "2000-01-01");
+            var o = new BackfillOptions { AsOf = AsOf, ApiPlanLimit = 100000 };
+            var runner = Runner(db, http);
+
+            await runner.BackfillSecurityStep(id, "AAPL", o); // 3 eodhd
+            runner.FlushApiUsage(o);
+            runner.FlushApiUsage(o); // counters drained -> second flush adds zero
+
+            Assert.Equal(3, db.ApiUsageLog.Find(AsOf, "eodhd")!.Calls);
+        }
+        finally { TestDb.Delete(path); }
+    }
+
     // A cross-check fetch failure (the Stage-1 Wikipedia 403) aborts RunAsync — but usage accounting must
     // survive: FlushApiUsage runs in a finally and calls are counted at success, so the proxy (eodhd_gspc)
     // AND primary (oef_csv) calls already spent are recorded, while the cross that threw before its count

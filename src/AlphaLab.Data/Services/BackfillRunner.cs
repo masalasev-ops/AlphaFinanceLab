@@ -222,28 +222,40 @@ public sealed class BackfillRunner(
         Log($"[security] {symbol} (id={securityId}): {barsWritten} bars, {divWritten} dividends, {splitWritten} splits.");
     }
 
-    /// <summary>Record per-source API call counts to <c>api_usage_log</c>, then check the ≥50% headroom rule
-    /// (INTEGRATIONS §1) against the AGGREGATE EODHD-family usage — <c>eodhd</c> and <c>eodhd_gspc</c> share
-    /// ONE EODHD plan/account, so checking each independently against the full limit would miss a combined
-    /// breach. Free sources (BlackRock/Wikipedia) carry no limit. Returns the breached plan buckets.</summary>
+    /// <summary>Record per-source API call counts to <c>api_usage_log</c> (accumulating), then check the
+    /// ≥50% headroom rule (INTEGRATIONS §1) against the AGGREGATE EODHD-family usage — <c>eodhd</c> and
+    /// <c>eodhd_gspc</c> share ONE EODHD plan/account, so checking each independently against the full
+    /// limit would miss a combined breach. Free sources (BlackRock/Wikipedia) carry no limit. The headroom
+    /// check reads the accumulated <b>day total</b> from the DB (not this run's spend), so a breach that
+    /// only materializes across multiple same-day runs is still caught (P1R-2). After persisting, the
+    /// in-memory counters are drained so a second flush adds zero (exactly-once). Returns the breached
+    /// plan buckets.</summary>
     public IReadOnlyList<string> FlushApiUsage(BackfillOptions o)
     {
         var writer = new ApiUsageLogWriter(db);
         foreach (var (source, calls) in _apiCalls)
         {
             var planLimit = IsEodhd(source) ? o.ApiPlanLimit : null;
-            writer.Record(o.AsOf, source, calls, planLimit); // each source recorded separately
+            writer.Record(o.AsOf, source, calls, planLimit); // each source accumulated separately
         }
+        db.SaveChanges();
+        _apiCalls.Clear(); // drain: a second FlushApiUsage on this runner adds zero (idempotent)
 
+        // Headroom against the ACCUMULATED EODHD-family day total (from the DB), not this run's spend —
+        // so two runs of 2 against a limit of 4 breach on the second, not silently pass (the row was
+        // truthful but nothing read it before P1R-2). Arithmetic + family grouping (IsEodhd) unchanged.
         var breached = new List<string>();
-        var eodhdTotal = _apiCalls.Where(kv => IsEodhd(kv.Key)).Sum(kv => kv.Value);
+        var eodhdTotal = db.ApiUsageLog
+            .Where(r => r.AsOf == o.AsOf)
+            .AsEnumerable()
+            .Where(r => IsEodhd(r.Source))
+            .Sum(r => r.Calls);
         if (o.ApiPlanLimit is { } limit && eodhdTotal > 0 && !ApiUsageHeadroom.HasHeadroom(eodhdTotal, limit))
         {
             breached.Add("eodhd");
-            Log($"[api] HEADROOM BREACH: EODHD used {eodhdTotal}/{limit} calls (<50% headroom).");
+            Log($"[api] HEADROOM BREACH: EODHD used {eodhdTotal}/{limit} calls day-to-date (<50% headroom).");
         }
 
-        db.SaveChanges();
         return breached;
     }
 

@@ -131,8 +131,11 @@ public class PlumbingTests
         Assert.Equal(expected, ApiUsageHeadroom.HasHeadroom(calls, planLimit));
     }
 
+    // P1R-2: the usage counter ACCUMULATES across separate transactions (= two runs on one as_of), so
+    // the day's spend is a running total and the ≥50% headroom check can see the whole day. It stays one
+    // row per (as_of, source) — accumulate, never a second row, never a clobber.
     [Fact]
-    public void ApiUsageLogWriter_UpsertsSingleRowPerAsOfSource()
+    public void ApiUsageLogWriter_AccumulatesAcrossCalls_SingleRowPerAsOfSource()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), "alphalab-usage-" + Guid.NewGuid().ToString("N") + ".db");
         try
@@ -148,13 +151,13 @@ public class PlumbingTests
             using (var db = NewCtx(dbPath))
             {
                 var writer = new ApiUsageLogWriter(db);
-                writer.Record("2026-07-13", "eodhd", 260, 100000); // same key ⇒ update, not a 2nd row
+                writer.Record("2026-07-13", "eodhd", 260, 100000); // same key ⇒ accumulate onto 120
                 db.SaveChanges();
             }
             using (var db = NewCtx(dbPath))
             {
                 var row = Assert.Single(db.ApiUsageLog.ToList());
-                Assert.Equal(260, row.Calls);
+                Assert.Equal(380, row.Calls); // 120 + 260, not 260 — the day's running total
                 Assert.Equal(100000, row.PlanLimit);
             }
         }

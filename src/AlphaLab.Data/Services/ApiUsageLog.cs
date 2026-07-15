@@ -23,12 +23,15 @@ public static class ApiUsageHeadroom
 /// <summary>Records per-day, per-source API call counts to api_usage_log (PK (as_of, source)).</summary>
 public interface IApiUsageLog
 {
-    /// <summary>Upsert the call count for (asOf, source). Does NOT SaveChanges — the caller owns the
-    /// transaction (so a backfill can fold this into its write). Returns the tracked row.</summary>
+    /// <summary>ACCUMULATE the call count for (asOf, source) — the day's spend is a running total, so a
+    /// second run on the same as_of adds to the first rather than overwriting it (P1R-1/finding 139's
+    /// sibling — the ≥50% headroom check must see the whole day). Does NOT SaveChanges — the caller
+    /// owns the transaction (so a backfill can fold this into its write). Returns the tracked row.</summary>
     ApiUsageLogRow Record(string asOf, string source, int calls, int? planLimit);
 }
 
-/// <summary>EF-backed <see cref="IApiUsageLog"/>. Upsert (not append-only — this is a counter, not a bar).</summary>
+/// <summary>EF-backed <see cref="IApiUsageLog"/>. Accumulating counter (not append-only — this is a
+/// running per-(as_of,source) total, not a bar): a re-run on the same day adds, never clobbers.</summary>
 public sealed class ApiUsageLogWriter(AlphaLabDbContext db) : IApiUsageLog
 {
     public ApiUsageLogRow Record(string asOf, string source, int calls, int? planLimit)
@@ -44,7 +47,7 @@ public sealed class ApiUsageLogWriter(AlphaLabDbContext db) : IApiUsageLog
         }
         else
         {
-            row.Calls = calls;
+            row.Calls += calls; // accumulate: two runs on one as_of sum, never overwrite (P1R-2)
             row.PlanLimit = planLimit ?? row.PlanLimit;
         }
         return row;
