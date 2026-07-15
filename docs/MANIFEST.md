@@ -16,7 +16,7 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `docs/AlphaLab_Explained_Plain_Language.pdf` — a plain-language explainer for a non-specialist.
 
 **The design**
-- `docs/MASTER_DESIGN_v1.9.md` (+ `.pdf`) — the comprehensive document: decisions D1–D73,
+- `docs/MASTER_DESIGN_v1.9.md` (+ `.pdf`) — the comprehensive document: decisions D1–D75,
   architecture, golden rules, math appendix, UI boundary. *(The two PDFs are reading-convenience
   snapshots; the `.md` files are authoritative and carry the v1.9.4 fixes.)*
 - `docs/ARENA_ARCHITECTURE_v1.9.3.md` — how AlphaLab supports multiple isolated universes
@@ -52,7 +52,7 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `docs/lab_honesty_ux_mockups.html`
 
 **Revision history**
-- `docs/CHANGELOG_v1.9.md` — every consistency finding and decision, v1.9.1 through v1.9.8.
+- `docs/CHANGELOG_v1.9.md` — every consistency finding and decision, v1.9.1 through v1.9.9.
 
 ## Revision state
 - v1.9.1 errata (findings 59–75; D68–D69) — merged.
@@ -84,7 +84,7 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   turnover-match verification; the allocator floor gets its feasibility rule; and every Phase-0 fix
   is back-ported into the BUILD Phase-0 prompt so a from-scratch rebuild is correct first-pass.
 - v1.9.8 Phase-0 skeleton review errata (findings 122–127 = P0-1…P0-6) — merged. A second review, of
-  the shipped skeleton at commit `462b8fd` (rationale in `docs/CHANGELOG_v1.9.md`; review prose not
+  the shipped Phase-0 skeleton (rationale in `docs/CHANGELOG_v1.9.md`; review prose not
   retained): the Blazor client now renders all 13 non-parameterized §21 screens, not 8 (P0-1, the one
   unmet DoD claim); the design-time factory comment matches the `E:`-literal three-spots reality
   (P0-2); `ci.ps1` enforces the **full** reference graph at the `<ProjectReference>` level and its git
@@ -93,5 +93,12 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   files (P0-5); and a missing `Arenas` registry now raises a visible config-error banner instead of a
   silent self-call (P0-6, fail-closed rule 10). No architecture, schema, or decision change; two
   decision proposals (FR-23 hypotheses action; the Phase-4 detection-power sweep) logged in PROGRESS.
+- v1.9.9 Phase-1 completion doc-reconciliation (findings 128–133; decisions **D74–D75**) — merged. Phase 1
+  shipped (checkpoints 1.0–1.10); its two decided-but-unnumbered decisions are recorded —
+  index-membership drop ≠ delisting (**D74**) and the canonical EODHD dash-form ticker identity via
+  `SymbolNormalizer` (**D75**) — with the first live backfill's findings: the Wikipedia descriptive-`User-Agent`
+  provider rule, the aborted-run usage-flush-in-`finally`, and the EODHD per-endpoint call-cost table + the
+  1,000-req/min limit (INTEGRATIONS §1 **VERIFIED 2026-07-15**, with an endpoint-weighting requirement raised
+  for Phase 2). No architecture or schema change; the two open review proposals (C-6, C-1) stay undecided in PROGRESS.
 - The mockups are byte-identical to the original v1.9.1 upload (never needed changes). SCHEMA
   received its first post-v1.9.1 edit in v1.9.7 (the `config` composite PK + invariant notes).
