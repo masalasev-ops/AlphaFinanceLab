@@ -170,10 +170,15 @@ the Wikipedia S&P 100 cross-check. The flag selects only the *band*. So `--unive
 `count sanity breach: primary=101, crosscheck=101, band=[495,510]` — which reads like broken data and
 is actually unwired code. An `ISharesHoldingsOptions.Ivv()` preset exists and is unused.
 
-**The default arena is named for a universe it doesn't hold.** `tools/Backfill/appsettings.json` sets
-`Arena.Id = "sp500"` / `DisplayName = "S&P 500"`, so a default clone lands S&P **100** data in a
-folder called `sp500`, rendered "S&P 500" in the UI. Set your own `Arena.Id` before the first run —
-the DB path, snapshots, and backups all namespace under it (D71).
+**The arena id is the lab's name, and `sp500` is correct — leave it.** `tools/Backfill/appsettings.json`
+sets `Arena.Id = "sp500"` / `DisplayName = "S&P 500"`, and that is *right*: per D70 this arena **is** the
+S&P 500 lab. It currently holds the 100-name launch slice and **widens in place** to the full 500 after
+Phase-4 sign-off — the folder does not get renamed then, so renaming it to `sp100` now would strand the
+store and have to be undone later. `Arena.Id` is not a per-clone knob; change it **only** to stand up a
+*separate* arena alongside this one (D71 — its own DB file, Worker+Api pair, snapshot/backup dirs). If you
+do, set the **same** new id in all three backend appsettings (Worker, Api, Backfill) — a half-applied edit
+splits the store across two folders with no error. The DB path, snapshots, and backups all namespace under
+`Arena.Id`; `DB_RELOCATION.md` owns the connection-string mechanics.
 
 **The trading calendar's one-off closures are frozen.** `NyseCalendar.SpecialClosures` is a
 hard-coded set ending at `2025-01-09` (Carter). It is *generated*, not fetched, so a clone taken
