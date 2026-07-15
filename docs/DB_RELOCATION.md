@@ -46,7 +46,7 @@ databases.
 
 ## 2. What to change
 
-The connection string is conceptually **one value**, but it is physically written in three C# spots
+The connection string is conceptually **one value**, but it is physically written in four C# spots
 that a test forces to stay identical, plus the docs. The snapshot/backup tooling is **not** an edit
 site any more — it reads the value out of the Worker's `appsettings.json`.
 
@@ -55,19 +55,22 @@ site any more — it reads the value out of the Worker's `appsettings.json`.
 | 1 | `src/AlphaLab.Data/DbPathResolver.cs` → `DefaultConnectionString` const | the default used by bare `dotnet ef` / the design-time factory | ✅ |
 | 2 | `src/AlphaLab.Worker/appsettings.json` → `ConnectionStrings:AlphaLab` | what the **Worker** (sole writer) actually opens | ✅ |
 | 3 | `src/AlphaLab.Api/appsettings.json` → `ConnectionStrings:AlphaLab` | what the **Api** actually opens | ✅ |
+| 4 | `tools/Backfill/appsettings.json` → `ConnectionStrings:AlphaLab` | what the **Backfill CLI** (Phase-1 bootstrap writer) opens — added in checkpoint 1.10, guarded from v1.9.10 | ✅ |
 | — | `tools/snapshot-db.ps1` | reads #2 and resolves the tokens itself | n/a — **auto-follows**, no edit |
-| 4 | `docs/CONFIG_REFERENCE_v1.9.md` (the `ConnectionStrings` note) + a `PROGRESS.md` session-log line | keep docs in step with code (rule 14) | — |
+| 5 | `docs/CONFIG_REFERENCE_v1.9.md` (the `ConnectionStrings` note) + a `PROGRESS.md` session-log line | keep docs in step with code (rule 14) | — |
 
-Set #1–#3 to the **same** new value, keeping `{Arena.Id}` in place. Change only the base directory.
+Set #1–#4 to the **same** new value, keeping `{Arena.Id}` in place. Change only the base directory.
+Miss #4 and the CLI writes to the *old* path while the Worker/Api read the new one — a full database
+the rest of the lab never sees, with no error (the trap v1.9.10 closed).
 
 ---
 
 ## 3. The safety net
 
-`tests/AlphaLab.Data.Tests/ConfigConsistencyTests.cs` asserts that the Worker's and the Api's
-`ConnectionStrings:AlphaLab` both equal `DbPathResolver.DefaultConnectionString`. So if you edit two
-of the three spots and forget the third, `dotnet test` goes **red and names the offending project**.
-You cannot half-relocate by accident.
+`tests/AlphaLab.Data.Tests/ConfigConsistencyTests.cs` asserts that the Worker's, the Api's, and the
+Backfill CLI's `ConnectionStrings:AlphaLab` all equal `DbPathResolver.DefaultConnectionString`. So if
+you edit three of the four spots and forget the fourth, `dotnet test` goes **red and names the
+offending project**. You cannot half-relocate by accident.
 
 `snapshot-db.ps1` is not test-covered, but it can no longer drift either — it derives the path from
 the Worker's `appsettings.json` (spot #2) rather than holding its own copy.
@@ -96,14 +99,14 @@ Take a `tools/snapshot-db.ps1` copy first if the DB matters (it is your rollback
 
 1. **Snapshot** the current DB: `tools/snapshot-db.ps1` (writes under the *old* base — keep it as a
    rollback).
-2. **Edit #1–#3** to the new base (same value in all three; keep `{Arena.Id}`).
-3. **`dotnet test`** → green confirms the three spots agree (§3). A red `ConfigConsistencyTests`
+2. **Edit #1–#4** to the new base (same value in all four; keep `{Arena.Id}`).
+3. **`dotnet test`** → green confirms the four spots agree (§3). A red `ConfigConsistencyTests`
    means you missed one.
 4. **Move the file(s)** per §4 (`alphalab.db` + any `-wal`/`-shm`, per arena).
 5. **`dotnet run --project src/AlphaLab.Worker`** → it opens the new path and exits 0 (no
    re-migration; it is the same file).
 6. **`tools/snapshot-db.ps1`** → it now writes under the **new** base (proves the tooling followed).
-7. **Update docs** (#4): the `CONFIG_REFERENCE` connection-string note and a `PROGRESS.md`
+7. **Update docs** (#5): the `CONFIG_REFERENCE` connection-string note and a `PROGRESS.md`
    session-log entry. Commit.
 
 ---

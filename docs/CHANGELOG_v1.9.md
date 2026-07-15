@@ -354,3 +354,13 @@ PK, snapshot-gated). File names retain the v1.9 label.*
 | 137 | **The repo's landing README advertised a stale phase.** Root `README.md`'s Status said "Phase 0 complete — the skeleton … 39 tests," but Phase 1 (the data foundation) is code-complete and the live S&P 100 backfill has run (200 tests green) — the first thing a visitor reads was a phase out of date | Status rewritten to "Phase 1 complete — the data foundation" (the market-data layer + the live backfill), the Phases 2–8 remainder, and the 200-test count; the `no_run_yet` note narrowed to the strategy/evaluation screens (no forward pipeline run exists yet) | root `README.md` §Status |
 
 *Verified-and-skipped: the retired D74 proposal asked to correct a BUILD "ticker dropping out ⇒ delist" line — a grep of every committed doc found **no such line** (each `delist` mention is the legitimate true-delisting corporate-action type, or MASTER §266's "a wish-list drop is never an implicit sell"), so no BUILD edit was made.*
+
+---
+
+## Revision v1.9.10 — Phase-1 review remediation (2026-07-15)
+
+*A second fresh-eyes review of the sealed Phase-1 repo, one pass after v1.9.9. Where v1.9.9 reconciled the docs, this pass fixes **fail-open code defects** the review surfaced (rule-10 violations in a fail-closed codebase) plus audit-trail, scalability, config-consistency, and CI-hygiene gaps — all with **no schema/migration/config-key change** (rule 14 + snapshot-first). Findings **138+**. Three schema-change decision proposals are parked in PROGRESS awaiting **D76** — not numbered here, because they need the schema changes this pass forbids. Checkpoint labels P1R-1…P1R-8 map to the deliverable; findings are numbered in commit order.*
+
+| # | Finding | Resolution | Where |
+|---|---------|-----------|-------|
+| 138 | **A fourth, unguarded copy of the DB connection string could silently split-brain the lab (P1R-8).** `ConfigConsistencyTests` forced only the Worker + Api `appsettings.json` to equal `DbPathResolver.DefaultConnectionString` ("three edit spots"), but `tools/Backfill/appsettings.json` — added in checkpoint 1.10, after the guard — holds a fourth copy it never checked. A fresh clone following README §2 repoints the three guarded spots to `{LocalAppData}` and leaves the CLI on `E:\`: the backfill writes a full DB the Worker/Api never see, with no error anywhere | `ConfigConsistencyTests` now guards all three appsettings copies (Api + Worker + **Backfill CLI**, whose path is under `tools/` not `src/`) against the resolver const — the fourth spot. "three → four" corrected in the test doc-comment, `DbPathResolver`, README §2, and DB_RELOCATION §2/§3/§5. No schema change | `ConfigConsistencyTests.cs`; `DbPathResolver.cs`; `README.md` §2; `DB_RELOCATION.md` §2/§3/§5 |

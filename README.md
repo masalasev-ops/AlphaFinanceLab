@@ -72,10 +72,10 @@ Blazor WebAssembly · xUnit. Package versions are pinned centrally in `Directory
    know on a fresh clone:
    - **Where it lives.** The committed connection string points at `E:\AlphaLabDatabase\{Arena.Id}\alphalab.db`
      (this deployment). On a machine without an `E:` drive, repoint it to the portable form — the
-     **same value in all three spots** (they must be byte-identical or `ConfigConsistencyTests` fails):
-     `ConnectionStrings:AlphaLab` in both `src/AlphaLab.Worker/appsettings.json` and
-     `src/AlphaLab.Api/appsettings.json`, and `DefaultConnectionString` in
-     `src/AlphaLab.Data/DbPathResolver.cs` — each set to:
+     **same value in all four spots** (they must be byte-identical or `ConfigConsistencyTests` fails):
+     `ConnectionStrings:AlphaLab` in `src/AlphaLab.Worker/appsettings.json`,
+     `src/AlphaLab.Api/appsettings.json`, and `tools/Backfill/appsettings.json`, and
+     `DefaultConnectionString` in `src/AlphaLab.Data/DbPathResolver.cs` — each set to:
      ```
      Data Source={LocalAppData}\AlphaLab\{Arena.Id}\alphalab.db
      ```

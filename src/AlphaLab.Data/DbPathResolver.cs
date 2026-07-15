@@ -24,8 +24,8 @@ public static class DbPathResolver
 
     /// <summary>
     /// The compiled connection string, used by the EF design-time factory (bare `dotnet ef`). This is
-    /// the third of the "three edit spots" that must stay identical to the Worker and Api
-    /// appsettings.json ConnectionStrings:AlphaLab, so all three processes open the SAME file
+    /// one of the "four edit spots" that must stay identical to the Worker, Api, and Backfill-CLI
+    /// appsettings.json ConnectionStrings:AlphaLab, so every process opens the SAME file
     /// (DB_RELOCATION.md; guarded by ConfigConsistencyTests). This deployment uses the E: literal;
     /// the {LocalAppData} token form is the portable alternative. tools/migrate.ps1 still passes an
     /// explicit --connection resolved from the Worker appsettings (finding 119), so real migrations

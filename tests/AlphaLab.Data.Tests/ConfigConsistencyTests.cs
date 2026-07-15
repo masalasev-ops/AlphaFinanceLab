@@ -4,20 +4,24 @@ using AlphaLab.Data;
 namespace AlphaLab.Data.Tests;
 
 /// <summary>
-/// Guards the "all three processes open the SAME file" invariant (DB_RELOCATION.md): the Api and
-/// Worker appsettings.json <c>ConnectionStrings:AlphaLab</c> must equal
-/// <see cref="DbPathResolver.DefaultConnectionString"/> (which the EF design-time factory uses). These
-/// are the three edit spots that must move together when the DB is relocated.
+/// Guards the "every process opens the SAME file" invariant (DB_RELOCATION.md): the Api, Worker,
+/// AND Backfill-CLI appsettings.json <c>ConnectionStrings:AlphaLab</c> must each equal
+/// <see cref="DbPathResolver.DefaultConnectionString"/> (which the EF design-time factory uses).
+/// Together with that const these are the FOUR edit spots that must move together when the DB is
+/// relocated. The CLI copy lives under <c>tools/</c> (not <c>src/</c>) and was added in checkpoint
+/// 1.10 after this guard was first written — leaving it unchecked let a relocation half-apply and the
+/// backfill silently write to the old path (finding 138, v1.9.10).
 /// </summary>
 public sealed class ConfigConsistencyTests
 {
     [Theory]
-    [InlineData("AlphaLab.Api")]
-    [InlineData("AlphaLab.Worker")]
-    public void Config_ConnectionString_EqualsResolverDefault(string project)
+    [InlineData("src", "AlphaLab.Api")]
+    [InlineData("src", "AlphaLab.Worker")]
+    [InlineData("tools", "Backfill")]
+    public void Config_ConnectionString_EqualsResolverDefault(string subdir, string project)
     {
         var repoRoot = FindRepoRoot();
-        var appsettings = Path.Combine(repoRoot, "src", project, "appsettings.json");
+        var appsettings = Path.Combine(repoRoot, subdir, project, "appsettings.json");
         Assert.True(File.Exists(appsettings), $"missing {appsettings}");
 
         using var doc = JsonDocument.Parse(File.ReadAllText(appsettings));
