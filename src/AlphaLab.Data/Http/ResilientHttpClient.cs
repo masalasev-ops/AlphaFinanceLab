@@ -11,6 +11,12 @@ public sealed class ResilientHttpOptions
     public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(30);
     /// <summary>Consecutive fully-failed fetches that trip the breaker. INTEGRATIONS §9 = 5.</summary>
     public int CircuitBreakThreshold { get; init; } = 5;
+    /// <summary>Descriptive User-Agent sent on every request. Wikimedia returns <b>403 Forbidden</b> to
+    /// header-less requests (observed 2026-07-14 at first backfill; .NET's HttpClient sends no default
+    /// User-Agent), which blocked the Wikipedia membership cross-check. A descriptive product token clears
+    /// it (EODHD/BlackRock do not require one but receive it too). INTEGRATIONS §7/§9. Overridable, e.g.
+    /// to add a contact per the Wikimedia UA policy.</summary>
+    public string UserAgent { get; init; } = "AlphaLab/1.9 (paper-trading research lab)";
 }
 
 /// <summary>Thrown when the breaker is open (≥ threshold consecutive failures) — the daily run then
@@ -64,6 +70,12 @@ public sealed class ResilientHttpClient : IResilientHttpClient
         _http = http;
         _opts = options ?? new ResilientHttpOptions();
         _http.Timeout = _opts.Timeout;
+        // A descriptive User-Agent is required by Wikimedia (header-less ⇒ 403; observed 2026-07-14). Set it
+        // once here so every provider inherits it; respect a UA the caller already configured on the client.
+        if (_opts.UserAgent is { Length: > 0 } && _http.DefaultRequestHeaders.UserAgent.Count == 0)
+        {
+            _http.DefaultRequestHeaders.UserAgent.ParseAdd(_opts.UserAgent);
+        }
         _delay = delay ?? ((d, ct) => Task.Delay(d, ct));
         _jitter = jitter ?? Random.Shared.NextDouble;
     }

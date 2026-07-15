@@ -3,9 +3,9 @@
 *Repo root. Updated every working session — what shipped, what's red, what was deliberately deferred, and any decision proposals. This file is the month-one discipline instrument (MASTER §17.1): if it stops being truthful, the phase gates stop working.*
 
 ## Current state
-- **Phase:** 1 — checkpoints **1.0–1.10 all shipped** (code-complete); remaining before the phase gate closes: the operator's live `--universe sp100` backfill run (decision #1) and the INTEGRATIONS ⚠VERIFY doc box.
+- **Phase:** 1 — **all gate boxes green (phase-complete)**. The live `--universe sp100 --years 20` backfill ran clean on 2026-07-15 (304 EODHD calls / 99.7% headroom; 101 members, 488,217 bars, GSPC proxy 5,029 bars over 20y) and the INTEGRATIONS §1 call-limits ⚠VERIFY is confirmed. **Next:** Phase 2 (funnel + ledger + costs + the D53 staged pipeline in AlphaLab.Worker).
 - **Blocking:** none.
-- **Last session:** 2026-07-14 — Checkpoint 1.10 (bootstrap backfill CLI, `tools/Backfill`); Data tests **175**, `tools/ci.ps1` green (**197** total). See the session-log entry.
+- **Last session:** 2026-07-15 — live sp100 backfill (decision #1) + Stage-3 doc closure (INTEGRATIONS §1 VERIFIED); the UA-403 fix + usage-flush-in-`finally` folded in. Data tests **178**, `tools/ci.ps1` green (**200** total). See the session-log entry.
 
 ## Phase gates (a phase is DONE only when every box is checked and committed)
 
@@ -35,7 +35,7 @@
 - [x] D70 S&P 100 slice sourced (OEF CSV + Wikipedia S&P 100 cross-check, count sanity 99–103); fja05680 community CSV ingested into historical membership; FX-AsOfMembership green (checkpoint 1.5 — OEF slice + historical ingestion + a data-layer as-of read tested; the replay-engine FX-AsOfMembership validation is Phase 4 per D70)
 - [x] Sector ingestion + change log; quality gate + FX-QualityGate green (checkpoint 1.6 sector half + FX-SectorReclass; checkpoint 1.7 data-quality gate + FX-QualityGate)
 - [x] Trading calendar seeded + ICalendarService (FR-30); FX-HolidayOutage, FX-HalfDay green (checkpoint 1.8; live ±30y seed run via the CLI, 1.10)
-- [ ] INTEGRATIONS_v1.9 ⚠VERIFY items confirmed and file updated
+- [x] INTEGRATIONS_v1.9 ⚠VERIFY items confirmed and file updated — Phase-1 items done: EODHD/BlackRock/French/fja05680/GSPC shapes VERIFIED 2026-07-13; **call limits VERIFIED 2026-07-15** at the first live backfill (100k/day, observed 304-call spend, per-endpoint cost table, 1,000/min `X-RateLimit` limit — §1/§9.5). The §5 Anthropic batch-headers (Phase 5) and the §1 fundamentals as-reported/restated (Phase 8) ⚠VERIFY items stay flagged **by design — not Phase-1**.
 - [x] Regime proxy feed (FR-38/D73, v1.9.7): `GSPC.INDX` proxy machinery + SPY.US returns cross-check; `Regime.ProxySecurityId` resolved from `Regime.ProxySource` (versioned config row); `FX-RegimeProxyBackfill` green (readiness fails closed pre-warm-up) — checkpoint 1.9; the live ≥3.8y backfill run is via the CLI (1.10)
 
 ### Phase 2 — Funnel, ledger, costs, catch-up
@@ -103,6 +103,33 @@
 - [ ] If pass: D49 logged; Value/Quality + quarterly population + leakage extensions green
 
 ## Session log (newest first)
+
+### 2026-07-15 (Phase 1) — Live sp100 backfill (decision #1) + Stage-3 doc closure; UA-403 fix + usage-flush hardening
+
+**Ran the live backfill in two operator-gated stages.** Stage 1 smoke test (`--universe sp100 --years 1`) surfaced a real fetch-layer blocker: the **Wikipedia S&P 100 cross-check returned HTTP 403** because .NET's `HttpClient` sends no `User-Agent` and Wikimedia rejects header-less requests (reproduced deterministically: no-UA → 403 / descriptive-UA → 200). EODHD (GSPC proxy, 251 bars) and BlackRock OEF both succeeded; the run **fail-closed at membership**. Stopped and reported per the surprise-is-a-finding rule — did not silently fix.
+
+**Fixed before Stage 2.**
+- `ResilientHttpClient` now sets a descriptive **`User-Agent`** on every request (`ResilientHttpOptions.UserAgent`, default `AlphaLab/1.9 (paper-trading research lab)`; overridable to add a contact, respects a caller-set UA). Documented in INTEGRATIONS **§7** + **§9.1** (Wikimedia 403, observed 2026-07-14). Pinned by two `PlumbingTests` (default UA sent; custom UA honored).
+- `BackfillRunner.RunAsync` flushes `api_usage_log` in a **`finally`**, and counts each call **at success** (not batched after) — so an aborted run records the calls it actually spent (Stage 1 proved the gap: 2 calls made, 0 logged). Pinned by a new `BackfillRunnerTests` case that aborts on a simulated Wikipedia 403 and asserts `eodhd_gspc`+`oef_csv` logged while the cross-check that threw is not.
+- `tools/Backfill` wired its own **gitignored `appsettings.Secrets.json`** (+ a `Condition="Exists"` csproj copy) — the plain console SDK doesn't auto-glob `appsettings.*.json` like the Worker SDK, so the CLI couldn't see the EODHD token. Secret gitignored, absent from the committable set, no token-shaped strings committed (ci.ps1 secret grep green).
+
+**Stage 2 — full `--universe sp100 --years 20` (2026-07-15, ~5m51s, exit 0).**
+- **API:** **304 EODHD calls** (101×3 [`/eod`+`/div`+`/splits`] + 1 GSPC proxy) / 100,000-per-day cap ⇒ **99.7% headroom**; `oef_csv` + `wikipedia_sp100` 1 each (free). Confirms call count is **universe-driven, not year-driven** (a 1-year run costs the same 304).
+- **Data landed:** securities **102** (101 members + GSPC proxy); bars **488,217** (2006-07-17 .. 2026-07-14); GSPC proxy **5,029** bars (clears the D73 ~3.8y warm-up + the ≥15y replay floor); index_membership **101** open; corporate_actions **6,273** (dividend 6,204, split 69); calendar 15,332 (1996..2056).
+- **Guards — zero fired:** count-sanity passed (101 ∈ [99,103]); **OEF and Wikipedia agreed** (both 101) → applied, not held; zero no-bar flags; no headroom breach. Append-only idempotency held on the re-run over Stage 1's partial state (GSPC 5,029 fetched / 4,778 written — the 251 Stage-1 bars recognized identical and **not** re-versioned).
+
+**Stage 3 — INTEGRATIONS §1 VERIFIED 2026-07-15.** Replaced the "call limits" ⚠VERIFY with the measured reality: 100k/day cap (`Backfill:ApiPlanLimit=100000` correct — matches EODHD's published paid-plan default, no `/user` query needed for the limit), the observed **304-call spend + 99.7% headroom**, a **per-endpoint cost table** (`/eod`·`/div`·`/splits`=1, **`/news`=5**, **`/eod-bulk-last-day`=100**), the second **1,000 requests/minute** limit (`X-RateLimit-Limit`/`X-RateLimit-Remaining` headers), and the **GMT-midnight reset quirk** (counter shows the prior day until the first post-midnight request). §9 provider rule 5 records the dual limits. **§5 Anthropic batch-headers (Phase 5) stays flagged; the §1 fundamentals row (Phase 8) stays flagged** — both non-Phase-1.
+
+**Findings on record (not defects).**
+- **Live OEF drift 102 → 101:** the byte-real fixture (captured 2026-07-13) has 102 members; live OEF holdings now return 101. In-band [99,103], OEF↔Wikipedia agree. The fixture is stale by one name — recorded so a future fixture refresh is on the books.
+- **AsOf 2026-07-15 vs newest bar 2026-07-14:** the run crossed UTC midnight at start; normal EOD lag, tolerated by the point-in-time reads.
+
+**Phase-2 items raised.**
+- **`api_usage_log` must weight calls by endpoint cost** before `/eod-bulk-last-day` (100/req) and `/news` (5/req) come online — a flat count would under-report against the 100k cap and could pass a headroom check that should fail (INTEGRATIONS §1).
+- **Honor the 1,000 req/min `X-RateLimit-*` header** for wider (S&P 500) universes — not yet enforced (§9.5); the single-threaded 304-call run was far below it.
+- **Quality-gate wiring:** the bootstrap backfill lands raw-but-stamped, versioned, append-only bars and **does not** invoke the FR-6 `DataQualityGate` (built/tested/registered but unwired). Bars carry **no "already-gated" flag**, so the Phase-2 D53 daily pipeline **must invoke the gate itself over the backfilled history** — it cannot assume ingestion vetted it (INTEGRATIONS §9.3).
+
+**Phase 1 status.** All gate boxes green — **phase-complete** (sealed by this commit; under review). Data tests **178**, `tools/ci.ps1` green (**200** total). **Next:** Phase 2 — the six-stage funnel + ledger + costs + the D53 staged pipeline hosted in AlphaLab.Worker (D59), reusing the 1.1–1.10 services.
 
 ### 2026-07-14 (Phase 1) — Checkpoint 1.10: bootstrap backfill CLI (tools/Backfill)
 **Shipped.** The Phase-1 bootstrap-writer CLI that ties the 1.1–1.9 providers + ingestion services into one run (decision #1; D59 note — the CLI is the Phase-1 bootstrap writer, the Worker is the Phase-2 operational writer). `BackfillRunner` lives in **AlphaLab.Data** (so the Phase-2 Worker reuses it) with `BackfillOptions` (derived `From`/`ObservedAt`/`CalendarYears`/`PlanSummary`) + `BackfillArgs.Parse` (`--universe`/`--as-of`/`--years`/`--dry-run`; unknown/incomplete flags **fail closed**). Steps: **SeedCalendar** (CalendarSeeder ±30y), **BackfillRegimeProxy** (resolve `Regime.ProxySecurityId` + fetch GSPC.INDX + ingest), **RefreshMembership** (OEF primary + Wikipedia S&P 100 cross-check → reconcile at [99,103]; on apply, apply the OEF GICS sectors), **SeedHistoricalMembership** (fja05680 parse → intervals), **BackfillSecurity** (EOD + dividends + splits → versioned bars + typed corporate actions), **FlushApiUsage** (per-source call counts → `api_usage_log` with the ≥50% headroom check, INTEGRATIONS §1). `RunAsync` sequences them; **`--dry-run`** previews the plan with **no network and no writes**. New console project **`tools/Backfill`** (Program.cs: D67 config = appsettings + appsettings.Secrets only, no env vars; migrate; wire the concrete providers with a `FileRawCache`; EODHD token required from Secrets for a live run) added to `AlphaLab.slnx` (a new `/tools/` folder — under tools/, so outside the src reference-graph guard). Raw payloads are archived by the providers' own `IRawCache`.

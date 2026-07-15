@@ -18,7 +18,23 @@
 | News | `GET /news?s={SYMBOL}.US&from=&to=&limit=` | Input to the D46 budget pipeline only. VERIFIED 2026-07-13 (`AAPL.US`, `limit=3`, 200): `array` of `{date, title, content, link, symbols, tags, sentiment}` — `sentiment` is returned **inline** per article (no separate call). |
 | Fundamentals (Phase 8 candidate) | `GET /fundamentals/{SYMBOL}.US` | **DORMANT per D49 (Fundamentals OFF — not reachable on the current key).** Quarterly `Financials::*`; run the §7.0 PIT protocol against `filing_date`/report-date fields before ANY strategy use. ⚠VERIFY as-reported vs restated behavior on a Phase-8 fundamentals upgrade — this is the gate. |
 
-**Plan & limits:** All-World tier — **Fundamentals OFF** (D49 budget config; the `/fundamentals/*` rows above are dormant). ⚠VERIFY current call limits at first backfill (the daily job must fit the plan's per-day limit with ≥50% headroom, logged to `api_usage_log` — SCHEMA_v1.9). Rate-limit posture: providers implement retry-with-backoff (3 attempts, jitter).
+**Plan & limits:** All-World tier — **Fundamentals OFF** (D49 budget config; the `/fundamentals/*` rows above are dormant).
+
+**Call limits — VERIFIED 2026-07-15** at the first live sp100 backfill (`--universe sp100 --years 20`):
+- **Daily cap: 100,000 requests/day** (paid-plan default; `Backfill:ApiPlanLimit=100000` is correct — no change). The ≥50%-headroom rule (`api_usage_log`, SCHEMA_v1.9) means the daily job must stay ≤ 50,000.
+- **Observed spend:** the full 20-year backfill cost **304 EODHD calls** (101 members × 3 [`/eod`+`/div`+`/splits`] + 1 `GSPC.INDX` proxy) ⇒ **0.30% of the cap, 99.7% headroom**. Call count is **universe-driven, not year-driven** (a 1-year run costs the same 304); a daily incremental job over the same universe sits at ~304/day.
+- **Call cost is PER-ENDPOINT, not flat** — `api_usage_log` must weight by endpoint or it silently undercounts:
+
+  | Endpoint | Cost / request |
+  |---|---|
+  | `/eod`, `/div`, `/splits` (single-symbol calls) | **1** |
+  | `/news` (D46 pipeline, Phase 5) | **5** |
+  | `/eod-bulk-last-day` (Bulk — the Phase-2 daily delta) | **100** |
+
+  The 304 count is accurate because the backfill uses only cost-1 endpoints. **⚠Phase-2 item:** when `/eod-bulk-last-day` (100/req) and `/news` (5/req) come online, `api_usage_log` recording MUST weight by endpoint cost — a flat per-call count would badly under-report consumption against the 100k cap and could pass a headroom check that should have failed.
+- **Second, independent limit: 1,000 requests/minute**, surfaced per-response via **`X-RateLimit-Limit` / `X-RateLimit-Remaining`** headers (distinct from the daily cap). The single-threaded 304-call backfill was nowhere near it, but a wider (S&P 500) universe or a burst could approach it — see §9 (honoring the header is a Phase-2 item; not yet enforced).
+- **GMT-midnight reset quirk:** the daily counter resets at 00:00 GMT but **still reads the prior day's value until the first post-midnight request is made** — don't misread a stale pre-first-call counter as the day's remaining headroom.
+- Rate-limit posture: the shared resilient client does retry-with-backoff (3 attempts, jitter) + circuit-break, and sets a descriptive User-Agent (§9).
 
 ## 2. iShares IVV holdings CSV (membership cross-check — D35)
 - `GET https://www.blackrock.com/varnish-api/blk-one01-product-data/product-data/api/v1/get-fund-document?appType=PRODUCT_PAGE&appSubType=ISHARES&targetSite=us-ishares&locale=en_US&portfolioId=239726&userType=individual&component=holdings`
@@ -60,6 +76,7 @@
 ## 7. Wikipedia (membership cross-check / fallback)
 - `https://en.wikipedia.org/wiki/List_of_S%26P_500_companies` — parse the constituents table. **D49 launch role: the daily cross-check against the IVV primary**; post-upgrade it demotes to fallback (activated only if both EODHD and IVV are unavailable; log the degraded-source flag on `index_membership_log`).
 - `https://en.wikipedia.org/wiki/S%26P_100` — parse the components table; the cross-check for the D70 S&P 100 slice (`Universe.Bootstrap.MembershipCrossCheck`).
+- **Requires a descriptive `User-Agent` (Wikimedia UA policy).** A header-less request returns **403 Forbidden** (a 126-byte error body, not the table) — observed 2026-07-14 at the first live sp100 backfill, where it blocked the cross-check and (fail-closed) the whole membership step. .NET's `HttpClient` sends **no** default UA, so the shared resilient client now sets one (see §9.1). EODHD and BlackRock do not enforce this.
 
 ## 8. fja05680/sp500 community CSV (historical membership at launch — D49/D70)
 - `GET https://raw.githubusercontent.com/fja05680/sp500/master/S%26P%20500%20Historical%20Components%20%26%20Changes%20(Updated).csv`
@@ -85,7 +102,8 @@ monitor trusts.
 - **Proxy stability across the S&P 100 → S&P 500 widen (D70):** regimes are market-level facts. Pin the **S&P 500 proxy** even during the S&P 100 forward slice — switching proxies at the Phase-4 widen would fabricate a label discontinuity. `Regime.ProxySecurityId` resolves from `Regime.ProxySource` at Phase 1 (CONFIG_REFERENCE).
 
 ## Provider implementation rules (all integrations)
-1. Every provider behind its interface; HTTP via a shared resilient client (timeout 30s, 3 retries with exponential backoff + jitter, circuit-break after 5 consecutive failures ⇒ the daily run fails cleanly and catch-up recovers tomorrow — never partial writes).
+1. Every provider behind its interface; HTTP via a shared resilient client (timeout 30s, 3 retries with exponential backoff + jitter, circuit-break after 5 consecutive failures ⇒ the daily run fails cleanly and catch-up recovers tomorrow — never partial writes). The client sets a **descriptive `User-Agent`** on every request (`ResilientHttpOptions.UserAgent`, default `AlphaLab/1.9 (paper-trading research lab)`): **Wikimedia returns 403 to header-less requests** and .NET's `HttpClient` sends no default UA (observed 2026-07-14, first backfill — §7). EODHD/BlackRock don't require it. Overridable to add a contact per the Wikimedia UA policy.
 2. Raw payloads for the day are archived to `tools/raw-cache/{source}/{date}/` (gitignored) for 30 days — every ingestion is re-auditable.
 3. All ingestion writes stamp `source` and `observed_at`; nothing external is trusted without the FR-6 quality gate.
 4. ⚠VERIFY items are a Phase-1/5 checklist: confirm, correct this file, commit — before building on them.
+5. **EODHD has two independent rate limits (§1, VERIFIED 2026-07-15):** 100,000 requests/**day** and 1,000 requests/**minute** (the latter surfaced per-response via `X-RateLimit-Limit`/`X-RateLimit-Remaining` headers). The daily budget is tracked in `api_usage_log` (≥50% headroom, **weighted by per-endpoint cost** — §1: `/eod`·`/div`·`/splits`=1, `/news`=5, `/eod-bulk-last-day`=100). The **minute** limit is **not yet enforced** (the shared client does not read `X-RateLimit-*`); the single-threaded sp100 backfill (304 calls) stays far below it, but a wider universe should honor the header — a Phase-2 item.

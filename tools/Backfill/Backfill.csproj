@@ -24,6 +24,11 @@
     <None Update="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- D67: the gitignored secrets file (EODHD token) for a LIVE run. Condition="Exists" so CI without
+         the file still builds; the plain console SDK does not auto-glob appsettings.*.json like the Worker. -->
+    <None Include="appsettings.Secrets.json" Condition="Exists('appsettings.Secrets.json')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

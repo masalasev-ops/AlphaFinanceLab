@@ -61,6 +61,13 @@ public class BackfillRunnerTests
         IIndexMembershipProvider? primary = null, IIndexMembershipProvider? cross = null) =>
         new(db, primary ?? Oef(http), cross ?? WikiSp100(http), Gspc(http), Market(http));
 
+    // Simulates the Stage-1 Wikipedia 403: a cross-check fetch that fails after retries.
+    private sealed class ThrowingMembershipProvider(string source) : IIndexMembershipProvider
+    {
+        public Task<MembershipSnapshot> GetMembersAsync(CancellationToken ct = default) =>
+            throw new HttpFetchException($"https://en.wikipedia.org/wiki/{source}", new Exception("simulated 403"));
+    }
+
     [Fact]
     public void SeedCalendarStep_SeedsTheWindow()
     {
@@ -197,6 +204,31 @@ public class BackfillRunnerTests
             Assert.DoesNotContain("eodhd_gspc", breached);          // 1 <= 50% of 4
             Assert.Equal(3, db.ApiUsageLog.Find(AsOf, "eodhd")!.Calls);
             Assert.Equal(1, db.ApiUsageLog.Find(AsOf, "eodhd_gspc")!.Calls);
+        }
+        finally { TestDb.Delete(path); }
+    }
+
+    // A cross-check fetch failure (the Stage-1 Wikipedia 403) aborts RunAsync — but usage accounting must
+    // survive: FlushApiUsage runs in a finally and calls are counted at success, so the proxy (eodhd_gspc)
+    // AND primary (oef_csv) calls already spent are recorded, while the cross that threw before its count
+    // is not. Pins both the finally-flush and the count-at-success placement.
+    [Fact]
+    public async Task RunAsync_AbortedByCrossCheckFailure_StillFlushesUsageForCallsSpent()
+    {
+        var path = TestDb.CreateMigrated();
+        try
+        {
+            using var db = TestDb.Open(path);
+            var http = FullClient();
+            var runner = new BackfillRunner(db, Oef(http),
+                new ThrowingMembershipProvider("wikipedia_sp100"), Gspc(http), Market(http));
+            var o = new BackfillOptions { AsOf = AsOf, ApiPlanLimit = 100000 };
+
+            await Assert.ThrowsAsync<HttpFetchException>(() => runner.RunAsync(o));
+
+            Assert.Equal(1, db.ApiUsageLog.Find(AsOf, "eodhd_gspc")!.Calls); // proxy fetched before the abort
+            Assert.Equal(1, db.ApiUsageLog.Find(AsOf, "oef_csv")!.Calls);    // primary fetched before the abort
+            Assert.Null(db.ApiUsageLog.Find(AsOf, "wikipedia_sp100"));       // cross threw before its count
         }
         finally { TestDb.Delete(path); }
     }

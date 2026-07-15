@@ -166,9 +166,11 @@ public sealed class BackfillRunner(
 
     public async Task<MembershipReconcileResult> RefreshMembershipStep(BackfillOptions o, CancellationToken ct = default)
     {
+        // Count each fetch the moment it succeeds — not after both — so a cross-check failure still records
+        // the primary's spent call (Stage-1 finding: usage accounting must reflect calls actually made).
         var primary = await membershipPrimary.GetMembersAsync(ct).ConfigureAwait(false);
-        var cross = await membershipCrossCheck.GetMembersAsync(ct).ConfigureAwait(false);
         Count(primary.Source);
+        var cross = await membershipCrossCheck.GetMembersAsync(ct).ConfigureAwait(false);
         Count(cross.Source);
 
         var result = new MembershipReconciler(db, new SecurityMaster(db)).Reconcile(primary, cross, o.AsOf, o.CountBand);
@@ -197,10 +199,13 @@ public sealed class BackfillRunner(
 
     public async Task BackfillSecurityStep(long securityId, string symbol, BackfillOptions o, CancellationToken ct = default)
     {
+        // Count each call as it returns (not 3-at-once) so a partial security still logs its spent calls.
         var bars = await marketData.GetEodAsync(symbol, o.From, o.AsOf, ct).ConfigureAwait(false);
+        Count("eodhd");
         var dividends = await marketData.GetDividendsAsync(symbol, o.From, ct).ConfigureAwait(false);
+        Count("eodhd");
         var splits = await marketData.GetSplitsAsync(symbol, o.From, ct).ConfigureAwait(false);
-        Count("eodhd", 3);
+        Count("eodhd");
 
         var barsWritten = new BarIngestionService(db).IngestEod(securityId, bars, o.ObservedAt);
         var ca = new CorporateActionIngestion(db);
@@ -261,21 +266,31 @@ public sealed class BackfillRunner(
             return;
         }
 
-        SeedCalendarStep(o);
-        await BackfillRegimeProxyStep(o, ct).ConfigureAwait(false);
-        await RefreshMembershipStep(o, ct).ConfigureAwait(false);
-
-        var members = new IndexMembershipReadService(db).MembersAsOf(o.AsOf);
-        Log($"[members] backfilling {members.Count} current members.");
-        foreach (var id in members)
+        try
         {
-            var symbol = db.Securities.Find(id)?.CurrentSymbol;
-            if (symbol is null) continue;
-            await BackfillSecurityStep(id, symbol, o, ct).ConfigureAwait(false);
-        }
+            SeedCalendarStep(o);
+            await BackfillRegimeProxyStep(o, ct).ConfigureAwait(false);
+            await RefreshMembershipStep(o, ct).ConfigureAwait(false);
 
-        FlushApiUsage(o);
-        Log("[done] backfill complete.");
+            var members = new IndexMembershipReadService(db).MembersAsOf(o.AsOf);
+            Log($"[members] backfilling {members.Count} current members.");
+            foreach (var id in members)
+            {
+                var symbol = db.Securities.Find(id)?.CurrentSymbol;
+                if (symbol is null) continue;
+                await BackfillSecurityStep(id, symbol, o, ct).ConfigureAwait(false);
+            }
+
+            Log("[done] backfill complete.");
+        }
+        finally
+        {
+            // Flush usage even on an aborted run (Stage-1 finding): a mid-run fetch failure still spent
+            // calls, and the ≥50% headroom check + daily budget must see them. Guarded so a flush failure
+            // never masks the original exception that aborted the run.
+            try { FlushApiUsage(o); }
+            catch (Exception flushEx) { Log($"[api] usage flush failed (original error preserved): {flushEx.Message}"); }
+        }
     }
 
     // Apply the primary snapshot's GICS sectors to the (now-registered) members.

@@ -18,8 +18,10 @@ public class PlumbingTests
     private sealed class StubHandler(Func<int, HttpResponseMessage> behavior) : HttpMessageHandler
     {
         public int Calls { get; private set; }
+        public string? LastUserAgent { get; private set; }
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
+            LastUserAgent = request.Headers.UserAgent.ToString(); // "" if none — proves the client set one
             var i = Calls++;
             return Task.FromResult(behavior(i)); // behavior may throw to simulate a transport failure
         }
@@ -80,6 +82,27 @@ public class PlumbingTests
 
         await Assert.ThrowsAsync<HttpFetchException>(() => client.GetStringAsync("https://x/y", "eodhd"));
         Assert.Equal(4, handler.Calls);
+    }
+
+    // Every outgoing request must carry a descriptive User-Agent — Wikimedia 403s header-less requests
+    // (observed 2026-07-14 at first backfill; INTEGRATIONS §7/§9). Regression guard for that blocker.
+    [Fact]
+    public async Task ResilientHttpClient_SendsDescriptiveUserAgent_ByDefault()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("ok") });
+        await NewClient(handler).GetStringAsync("https://x/y", "wikipedia_sp100");
+
+        Assert.Equal("AlphaLab/1.9 (paper-trading research lab)", handler.LastUserAgent);
+    }
+
+    [Fact]
+    public async Task ResilientHttpClient_HonorsCustomUserAgentOption()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("ok") });
+        var opts = new ResilientHttpOptions { UserAgent = "AlphaLab/2.0 (contact@example.test)" };
+        await NewClient(handler, opts).GetStringAsync("https://x/y", "wikipedia_sp100");
+
+        Assert.Equal("AlphaLab/2.0 (contact@example.test)", handler.LastUserAgent);
     }
 
     [Fact]
