@@ -5,7 +5,7 @@
 ## Current state
 - **Phase:** 1 — **all gate boxes green (phase-complete)**. The live `--universe sp100 --years 20` backfill ran clean on 2026-07-15 (304 EODHD calls / 99.7% headroom; 101 members, 488,217 bars, GSPC proxy 5,029 bars over 20y) and the INTEGRATIONS §1 call-limits ⚠VERIFY is confirmed. **Next:** Phase 2 (funnel + ledger + costs + the D53 staged pipeline in AlphaLab.Worker).
 - **Blocking:** none.
-- **Last session:** 2026-07-15 — **v1.9.9 Phase-1 doc-reconciliation** (docs only): decisions **D74** (index-drop ≠ delisting) + **D75** (canonical EODHD dash-form ticker identity) assigned; CHANGELOG findings 128–133; version rolled to v1.9.9. Prior same-day session: live sp100 backfill (decision #1) + Stage-3 INTEGRATIONS §1 VERIFIED (Data tests 178, ci.ps1 green / 200 total). See the session-log entries.
+- **Last session:** 2026-07-15 — **v1.9.9 doc self-containment pass** (docs only, no version bump): deleted the three stale reading-PDF snapshots + removed their refs; rolled the remaining stale D1–D73 ranges (CLAUDE.md map, root `README.md`) to D1–D75; completed the CLAUDE.md doc map; synced the drifted root `START_HERE.md` to the `docs/` copy; CHANGELOG finding **134**. Earlier same-day: the v1.9.9 Phase-1 reconciliation (D74/D75; findings 128–133) and the live sp100 backfill + Stage-3 INTEGRATIONS §1 VERIFIED (Data tests 178, ci.ps1 green / 200 total). See the session-log entries.
 
 ## Phase gates (a phase is DONE only when every box is checked and committed)
 
@@ -103,6 +103,10 @@
 - [ ] If pass: D49 logged; Value/Quality + quarterly population + leakage extensions green
 
 ## Session log (newest first)
+
+### 2026-07-15 (docs) — v1.9.9 doc self-containment pass (no version bump)
+
+**Docs only, no code, no version bump.** Made the design set reconstruct the project without the repo. **Deleted the three reading-convenience PDFs** (`MASTER_DESIGN_v1.9.pdf`, `AlphaLab_Explained_Plain_Language.pdf`, `AlphaLab_Master_Design_Section_by_Section.pdf`) — 2026-07-13 snapshots that drifted from MASTER (now v1.9.9), the finding-99 drift class recurring — and removed their MANIFEST/START_HERE references (the plain-language row repoints to the live `DESIGN_IMPROVEMENTS_EXPLAINED.md`). **Rolled the remaining stale D1–D73 → D1–D75** in CLAUDE.md's doc map and the root `README.md` file table (finding-95's stale-range class); a whole-set sweep found no other stale D/FR/UX range (FR-1…38, UX-1…13 already current; the "D1–D71/D73 unchanged" notes in BUILD:20, PROGRESS:230, and the CHANGELOG v1.9.8 section left as correct-in-context history). **Completed the CLAUDE.md doc map** — added the previously-orphan `DESIGN_IMPROVEMENTS_EXPLAINED.md` (also given a MANIFEST home), `CHANGELOG_v1.9.md`, and the navigation docs. **Synced the drifted root `START_HERE.md`** to the `docs/` copy: it had diverged since **v1.9.6** (missing the v1.9.6 + v1.9.9 errata notes and still carrying the dead PDF ref); the two are now byte-identical. Recorded as CHANGELOG finding **134** under v1.9.9. **Verified clean:** zero commit-ids, zero repo/username self-refs (the only `github.com` refs are the external fja05680 data source), zero live dangling file refs, no stale ranges. **Flagged for a decision (not changed):** the repo carries duplicate entry docs (root `START_HERE.md` ↔ `docs/START_HERE.md`; root `README.md` ↔ `docs/README_v1.9.md`) — a recurring drift source worth deduplicating — and MANIFEST/START_HERE describe `docs/CLAUDE.md` + `docs/PROGRESS.md` per the "copy into the repo root" package convention while this repo keeps them at root.
 
 ### 2026-07-15 (Phase 1 → docs) — v1.9.9 Phase-1 completion doc-reconciliation
 

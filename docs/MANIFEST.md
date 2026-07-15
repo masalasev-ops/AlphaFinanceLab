@@ -13,12 +13,10 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `START_HERE.md` — the entry point.
 - `docs/README_v1.9.md` — file map, mockup guide, and the step-by-step build workflow.
 - `docs/CLAUDE.md` — hard rules, solution layout, commands (the constitution the build obeys).
-- `docs/AlphaLab_Explained_Plain_Language.pdf` — a plain-language explainer for a non-specialist.
 
 **The design**
-- `docs/MASTER_DESIGN_v1.9.md` (+ `.pdf`) — the comprehensive document: decisions D1–D75,
-  architecture, golden rules, math appendix, UI boundary. *(The two PDFs are reading-convenience
-  snapshots; the `.md` files are authoritative and carry the v1.9.4 fixes.)*
+- `docs/MASTER_DESIGN_v1.9.md` — the comprehensive document: decisions D1–D75,
+  architecture, golden rules, math appendix, UI boundary.
 - `docs/ARENA_ARCHITECTURE_v1.9.3.md` — how AlphaLab supports multiple isolated universes
   ("arenas"); decision D71. Additive, no schema change; the S&P 500 build is unaffected.
 - `docs/SCHEMA_v1.9.md` — the exact database schema (the rule-14 source of truth).
@@ -43,6 +41,7 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `docs/STRATEGY_CATALOG_v1.9.md` — the strategy families and the equal-weight benchmark.
 - `docs/OVERFITTING_MONITOR_v1.9.md` — the eight-signal overfitting monitor.
 - `docs/DESIGN_IMPROVEMENTS_v1.9.md` — the honest-metrics rationale and power tables.
+- `docs/DESIGN_IMPROVEMENTS_EXPLAINED.md` — the plain-language "why" companion to the above (onboarding; section numbers match the spec).
 - `docs/UX_GUIDELINES_v1.9.md` — the UX honesty rules (UX-1…UX-13, incl. the arena no-merge rule).
 
 **UI mockups (reference for the Phase 3 screens)**
@@ -93,7 +92,7 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   files (P0-5); and a missing `Arenas` registry now raises a visible config-error banner instead of a
   silent self-call (P0-6, fail-closed rule 10). No architecture, schema, or decision change; two
   decision proposals (FR-23 hypotheses action; the Phase-4 detection-power sweep) logged in PROGRESS.
-- v1.9.9 Phase-1 completion doc-reconciliation (findings 128–133; decisions **D74–D75**) — merged. Phase 1
+- v1.9.9 Phase-1 completion doc-reconciliation (findings 128–134; decisions **D74–D75**) — merged. Phase 1
   shipped (checkpoints 1.0–1.10); its two decided-but-unnumbered decisions are recorded —
   index-membership drop ≠ delisting (**D74**) and the canonical EODHD dash-form ticker identity via
   `SymbolNormalizer` (**D75**) — with the first live backfill's findings: the Wikipedia descriptive-`User-Agent`
