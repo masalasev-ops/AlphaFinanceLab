@@ -1,5 +1,6 @@
 using AlphaLab.Data.Providers;
 using AlphaLab.Data.Services;
+using Microsoft.EntityFrameworkCore;
 
 namespace AlphaLab.Data.Tests;
 
@@ -133,6 +134,100 @@ public class BarVersioningTests
             Assert.Null(v1.AdjOpen);
             Assert.Null(v1.AdjHigh);
             Assert.Null(v1.AdjLow);
+        }
+        finally { TestDb.Delete(path); }
+    }
+
+    // A multi-date series around the FX-BarCorrection date, for the P1R-3 GetSeries range push-down:
+    // a bar before [from,to], the corrected date (v1 then v2), a bar at the inclusive `to` edge, and one
+    // beyond `to`. Off-correction dates carry v1's values (only the date differs) — the test only asserts
+    // the correction date's version/close specifically, plus overall equality with the reference path.
+    private static string SeriesDb()
+    {
+        var path = TestDb.CreateMigrated();
+        using var db = TestDb.Open(path);
+        new SecurityMaster(db).Register("AAPL", "US", "2020-01-01"); // security_id = 1
+        var ingest = new BarIngestionService(db);
+        ingest.IngestEod(Sec, [V1 with { Date = "2026-07-10" }], ObservedV1);
+        ingest.IngestEod(Sec, [V1], ObservedV1);                          // 2026-07-13 v1
+        ingest.IngestEod(Sec, [V2], ObservedV2);                          // 2026-07-13 v2 (correction)
+        ingest.IngestEod(Sec, [V1 with { Date = "2026-07-16" }], ObservedV1); // inclusive `to` edge
+        ingest.IngestEod(Sec, [V1 with { Date = "2026-07-20" }], ObservedV1); // beyond `to`
+        return path;
+    }
+
+    // P1R-3: prove the [from,to] range is TRANSLATED to SQL (server-side), not client-evaluated — the
+    // whole point of the change (else GetSeries still materializes the security's full history). If EF
+    // cannot translate string.Compare, ToQueryString throws / omits the predicate -> STOP and report.
+    [Fact]
+    public void FR2_GetSeries_PushesDateRangeIntoSql_NoClientEval()
+    {
+        var path = SeriesDb();
+        try
+        {
+            using var db = TestDb.Open(path);
+            const string from = "2026-07-10", to = "2026-07-16";
+
+            var sql = db.Bars
+                .Where(x => x.SecurityId == Sec
+                            && string.Compare(x.Date, from) >= 0
+                            && string.Compare(x.Date, to) <= 0)
+                .ToQueryString();
+
+            // The range must live in the SQL WHERE clause (server-side): if it were client-evaluated, the
+            // WHERE would filter on security_id only and never mention `date`. Robust to whether EF emits
+            // `date >= @p` or a CASE form — either way `date` appears in the WHERE.
+            var whereIdx = sql.IndexOf("WHERE", StringComparison.OrdinalIgnoreCase);
+            Assert.True(whereIdx >= 0, $"expected a WHERE clause in:\n{sql}");
+            var whereClause = sql[whereIdx..];
+            Assert.Contains("date", whereClause, StringComparison.OrdinalIgnoreCase);
+        }
+        finally { TestDb.Delete(path); }
+    }
+
+    // P1R-3: the new SQL-side range path returns results BYTE-IDENTICAL to the prior in-memory filter,
+    // across the FX-BarCorrection fixture and both watermark boundaries (mid sees v1, late sees v2),
+    // including the inclusive range edges and exclusion of the out-of-range date.
+    [Theory]
+    [InlineData("2026-07-15T23:59:59Z", 1, 317.31)] // mid watermark -> v1 at the correction date
+    [InlineData("2026-07-19T23:59:59Z", 2, 317.55)] // late watermark -> v2
+    public void FR2_GetSeries_MatchesInMemoryPath_ByteIdentical(
+        string watermark, int expectedVersionAtCorrection, double expectedCloseAtCorrection)
+    {
+        var path = SeriesDb();
+        try
+        {
+            using var db = TestDb.Open(path);
+            var read = new BarReadService(db);
+            const string from = "2026-07-10", to = "2026-07-16";
+
+            var actual = read.GetSeries(Sec, from, to, watermark);
+
+            // Reference = the OLD algorithm: pull the whole security in memory, then range + watermark.
+            var expected = db.Bars
+                .Where(x => x.SecurityId == Sec)
+                .AsEnumerable()
+                .Where(x => string.CompareOrdinal(x.Date, from) >= 0
+                            && string.CompareOrdinal(x.Date, to) <= 0
+                            && string.CompareOrdinal(x.ObservedAt, watermark) <= 0)
+                .GroupBy(x => x.Date)
+                .Select(g => g.OrderByDescending(x => x.Version).First())
+                .OrderBy(x => x.Date)
+                .ToList();
+
+            Assert.Equal(
+                expected.Select(b => (b.Date, b.Version, b.Close, b.ObservedAt)),
+                actual.Select(b => (b.Date, b.Version, b.Close, b.ObservedAt)));
+
+            // The load-bearing boundary: the correction date resolves to the expected version + close.
+            var atCorrection = Assert.Single(actual, b => b.Date == BarDate);
+            Assert.Equal(expectedVersionAtCorrection, atCorrection.Version);
+            Assert.Equal(expectedCloseAtCorrection, atCorrection.Close);
+
+            // Inclusive edges present; the out-of-range date is excluded.
+            Assert.Contains(actual, b => b.Date == from);
+            Assert.Contains(actual, b => b.Date == to);
+            Assert.DoesNotContain(actual, b => b.Date == "2026-07-20");
         }
         finally { TestDb.Delete(path); }
     }

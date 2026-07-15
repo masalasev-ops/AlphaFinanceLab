@@ -104,12 +104,17 @@ public sealed class BarReadService(AlphaLabDbContext db) : IBarReadService
     public IReadOnlyList<BarRow> GetSeries(long securityId, string from, string to, string watermark)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(watermark);
+        // Push the [from, to] range into SQL so PK (security_id, date, version) serves it, instead of
+        // materializing the security's whole 20-year history to return a window. string.Compare(..) >= 0
+        // / <= 0 is EF's translatable form (SecurityMaster.ResolveAsOf warns CompareOrdinal may not
+        // translate); SQLite's default BINARY collation is ordinal, so on ISO-8601 dates lexical order ==
+        // chronological. The watermark compare stays in memory (GetBar precedent) once the range narrows.
         return db.Bars
-            .Where(x => x.SecurityId == securityId)
+            .Where(x => x.SecurityId == securityId
+                        && string.Compare(x.Date, from) >= 0
+                        && string.Compare(x.Date, to) <= 0)
             .AsEnumerable()
-            .Where(x => string.CompareOrdinal(x.Date, from) >= 0
-                        && string.CompareOrdinal(x.Date, to) <= 0
-                        && string.CompareOrdinal(x.ObservedAt, watermark) <= 0)
+            .Where(x => string.CompareOrdinal(x.ObservedAt, watermark) <= 0)
             .GroupBy(x => x.Date)
             .Select(g => g.OrderByDescending(x => x.Version).First())
             .OrderBy(x => x.Date)
