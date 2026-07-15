@@ -43,10 +43,20 @@ public static class NyseCalendar
     /// the following Friday July 5 (exchange_calendars).</summary>
     private const int Jul3WednesdayRuleFirstYear = 2013;
 
+    /// <summary>The last calendar year through which <see cref="SpecialClosures"/> has been reviewed against
+    /// exchange notices (its newest entry is 2025-01-09, the Carter national day of mourning). A documentary
+    /// constant, NOT a config key — the closure list is code, not config, so a config key would violate rule
+    /// 14 (mirrors <see cref="Http.FileRawCache.RetentionDays"/>). <c>--preflight</c> warns when a run's
+    /// as-of year exceeds this, because the generated calendar would confidently assert trading days for any
+    /// closure since — a stale-list gap the quality gate would misreport as a provider gap. Bump this (and
+    /// add the closures) when the list is next reviewed forward.</summary>
+    public const int SpecialClosuresReviewedThroughYear = 2025;
+
     /// <summary>
     /// One-off full closures that no holiday rule produces (national days of mourning, disasters, the
     /// Sept-11 shutdown). Cited so the list is auditable; completeness is a known limitation (stop-and-
     /// report seam) — a missing historical closure surfaces as a replay trading a day the market was shut.
+    /// Reviewed through <see cref="SpecialClosuresReviewedThroughYear"/>.
     /// </summary>
     private static readonly HashSet<string> SpecialClosures = new(StringComparer.Ordinal)
     {

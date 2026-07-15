@@ -35,6 +35,11 @@ public sealed record BackfillOptions
     /// <summary>Resolve config + walk the plan but make NO network calls and NO writes (decision #1).</summary>
     public bool DryRun { get; init; }
 
+    /// <summary>P1R-11: hit every live source once (read-only), report pass/fail per source, and exit — NO
+    /// DB creation, no arena-store writes. The inverse of <see cref="DryRun"/>: dry-run proves config parses;
+    /// preflight proves the live sources still look right (which green fixture-backed CI cannot).</summary>
+    public bool Preflight { get; init; }
+
     /// <summary>The bar/proxy backfill lower bound = AsOf − BackfillYears.</summary>
     public string From => DateOnly.ParseExact(AsOf, "yyyy-MM-dd", CultureInfo.InvariantCulture)
         .AddYears(-BackfillYears).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
@@ -78,6 +83,7 @@ public static class BackfillArgs
         var asOf = todayIso;
         var years = defaultYears;
         var dryRun = false;
+        var preflight = false;
 
         for (var i = 0; i < args.Count; i++)
         {
@@ -93,6 +99,7 @@ public static class BackfillArgs
                     }
                     break;
                 case "--dry-run": dryRun = true; break;
+                case "--preflight": preflight = true; break;
                 default: throw new ArgumentException($"Unknown argument '{args[i]}'.");
             }
         }
@@ -110,7 +117,7 @@ public static class BackfillArgs
                 "The S&P 500 widening is a recorded proposal (D76) - see PROGRESS. Use 'sp100'."),
             _ => throw new ArgumentException($"Unknown universe '{universe}'. Use 'sp100'.")
         };
-        return new BackfillOptions { Universe = universe, AsOf = asOf, BackfillYears = years, DryRun = dryRun, CountBand = countBand };
+        return new BackfillOptions { Universe = universe, AsOf = asOf, BackfillYears = years, DryRun = dryRun, Preflight = preflight, CountBand = countBand };
     }
 
     // Reject a missing value OR a value that is itself a flag (e.g. `--as-of --dry-run`) — else a requested

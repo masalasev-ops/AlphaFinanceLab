@@ -61,6 +61,14 @@ public class BackfillArgsTests
     [Fact]
     public void Parse_UnknownUniverse_FailsClosed() => Assert.Throws<ArgumentException>(() => BackfillArgs.Parse(["--universe", "sp42"], Today));
 
+    // P1R-11: --preflight is parsed like --dry-run (a flag, no value).
+    [Fact]
+    public void Parse_Preflight()
+    {
+        Assert.True(BackfillArgs.Parse(["--preflight"], Today).Preflight);
+        Assert.False(BackfillArgs.Parse([], Today).Preflight); // default off
+    }
+
     // Config supplies the default years; an explicit --years overrides it (CLI > config).
     [Fact]
     public void Parse_YearsPrecedence()
