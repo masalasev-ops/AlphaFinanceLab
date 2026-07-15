@@ -32,6 +32,12 @@ Two tokens are resolved at runtime by the shared C# `DbPathResolver` (and, for t
 - **`{Arena.Id}`** → the arena slug (`sp500`, and any future arena). **Keep this token.** It is what
   gives every arena its own physically-isolated file so two arenas can never collide (D71). When you
   relocate, change only the **base** — the part *before* `{Arena.Id}` — never the token itself.
+  The value that *fills* this token is each process's `Arena:Id` config key: the four spots in §2 are the
+  path **template**; `Arena:Id` is the value that **resolves** it. Relocation never touches `Arena:Id`.
+  But because Worker, Api, and Backfill each supply their own, a *second* arena (D71) must set the same
+  new `Arena:Id` in **all three** backend appsettings — a half-applied edit gives them identical
+  connection strings that still open different databases. `ConfigConsistencyTests` now guards that the
+  three `Arena:Id` agree (finding 148), just as it guards the four template copies.
 - **`{LocalAppData}`** *(optional)* → expanded to your Windows *Local AppData* folder via the
   known-folders API, **never** an environment variable (D67 bans env-var reads). Use this token
   instead of a hard drive letter if you want the DB to follow your user profile (portable across
