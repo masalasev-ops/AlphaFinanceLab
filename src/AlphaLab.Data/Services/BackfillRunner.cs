@@ -100,8 +100,15 @@ public static class BackfillArgs
         var countBand = universe switch
         {
             "sp100" => new[] { 99, 103 },
-            "sp500" => new[] { 495, 510 },
-            _ => throw new ArgumentException($"Unknown universe '{universe}'. Use 'sp100' or 'sp500'.")
+            // P1R-10 (finding 149): reject sp500 at PARSE, not ~300 API calls later. The CLI's membership
+            // providers are hardcoded to OEF + Wikipedia S&P 100 (Program.cs), so an sp500 run fetches ~101
+            // names and fail-closes at the [495,510] count-sanity gate — a data-shaped error for an
+            // unwired-code cause. Give the real reason up front. The widening is a recorded proposal (D76).
+            "sp500" => throw new ArgumentException(
+                "--universe sp500 is not wired: the CLI's membership providers are OEF + Wikipedia S&P 100 " +
+                "(Program.cs), so an sp500 run would fail the [495,510] count-sanity gate ~300 API calls in. " +
+                "The S&P 500 widening is a recorded proposal (D76) - see PROGRESS. Use 'sp100'."),
+            _ => throw new ArgumentException($"Unknown universe '{universe}'. Use 'sp100'.")
         };
         return new BackfillOptions { Universe = universe, AsOf = asOf, BackfillYears = years, DryRun = dryRun, CountBand = countBand };
     }

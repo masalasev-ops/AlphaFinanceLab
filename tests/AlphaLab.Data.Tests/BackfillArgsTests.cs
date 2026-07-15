@@ -28,10 +28,14 @@ public class BackfillArgsTests
         Assert.False(o.DryRun);
     }
 
+    // P1R-10 (finding 149): sp500 is rejected at parse with the real reason (unwired providers), NOT
+    // accepted-then-failed at the count-sanity gate ~300 API calls in. Fails on the pre-fix code, which
+    // returned band [495,510].
     [Fact]
-    public void Parse_Sp500_WidensCountBand()
+    public void Parse_Sp500_Rejected()
     {
-        Assert.Equal([495, 510], BackfillArgs.Parse(["--universe", "sp500"], Today).CountBand);
+        var ex = Assert.Throws<ArgumentException>(() => BackfillArgs.Parse(["--universe", "sp500"], Today));
+        Assert.Contains("not wired", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
