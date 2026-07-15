@@ -21,9 +21,17 @@ public sealed class CircuitOpenException(string source, int consecutiveFailures)
     public int ConsecutiveFailures { get; } = consecutiveFailures;
 }
 
-/// <summary>Thrown when a fetch exhausts its retries.</summary>
+/// <summary>Thrown when a fetch exhausts its retries. The URL's query string is stripped from the message
+/// so a secret carried there (e.g. EODHD <c>?api_token=…</c>) never leaks to logs/stderr (D67, hard rule 11).</summary>
 public sealed class HttpFetchException(string url, Exception inner)
-    : Exception($"Fetch failed after retries: {url}", inner);
+    : Exception($"Fetch failed after retries: {RedactQuery(url)}", inner)
+{
+    private static string RedactQuery(string url)
+    {
+        var q = url.IndexOf('?', StringComparison.Ordinal);
+        return q < 0 ? url : string.Concat(url.AsSpan(0, q), "?<redacted>");
+    }
+}
 
 /// <summary>Text-fetch contract every EODHD/BlackRock/Wikipedia provider goes through.</summary>
 public interface IResilientHttpClient

@@ -18,4 +18,7 @@
     <Project Path="tests/AlphaLab.Strategies.Tests/AlphaLab.Strategies.Tests.csproj" />
     <Project Path="tests/AlphaLab.Worker.Tests/AlphaLab.Worker.Tests.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Backfill/Backfill.csproj" />
+  </Folder>
 </Solution>
