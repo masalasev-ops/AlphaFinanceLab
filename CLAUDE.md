@@ -25,8 +25,9 @@ money as strings/minor-units (never floats).
 - docs/INTEGRATIONS_v1.9.md — the ONLY source of truth for external endpoints
 - docs/TEST_PLAN_v1.9.md — fixture library + FR-mapped test inventory
 - docs/RUNBOOK_v1.9.md — operations, backup/restore drill
-- docs/DB_RELOCATION.md — ops runbook: relocating the SQLite file(s) to another directory/drive (config edit + file move; ConfigConsistencyTests guards the three edit spots)
+- docs/DB_RELOCATION.md — ops runbook: relocating the SQLite file(s) to another directory/drive (config edit + file move; ConfigConsistencyTests guards the four connection-string edit spots + Arena:Id agreement)
 - docs/FUTURE_DB_MIGRATION.md — contingency: leaving SQLite for a server RDBMS (a different job from relocation; closed until needed)
+- docs/REBUILD.md — ops runbook: from a fresh clone to a working arena (the data bootstrap, sibling to DB_RELOCATION/FUTURE_DB_MIGRATION; --preflight live-source check, sp500-widening caveat)
 - docs/UX_GUIDELINES_v1.9.md — interface rules UX-1..UX-13 as build specs
 - docs/SETUP_v1.9.md — prerequisites, D49 launch tier, secrets, day-zero checklist
 - docs/DESIGN_IMPROVEMENTS_EXPLAINED.md — plain-language "why" companion to DESIGN_IMPROVEMENTS (section numbers match the spec)

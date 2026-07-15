@@ -95,16 +95,21 @@ this procedure in full.
 
 ## 2. Procedure
 
-Verify the toolchain before spending anything:
+Verify the toolchain, then the live sources, before spending anything:
 
 ```
-tools/ci.ps1                                  # build + tests + guards must be green
+tools/ci.ps1                                                  # build + tests + guards must be green
+dotnet run --project tools/Backfill -- --preflight            # do the live sources still look right?
 dotnet run --project tools/Backfill -- --universe sp100 --dry-run
 ```
 
-`--dry-run` resolves config and prints the plan with **zero** network calls and **zero** writes. It
-does not create the database. It does **not** check that the live sources still look as expected —
-see §5.
+`--preflight` hits each live source once (~4 EODHD calls) and reports pass/fail per source with a named
+reason — **no writes, no database**. It is the check `ci.ps1` cannot be: every provider test is
+fixture-backed, so green CI proves the fixtures parse, not that OEF's URL, Wikipedia's markup, or an EODHD
+endpoint still match. A drifted source fails here in seconds instead of ~300 API calls into a backfill (§5).
+
+`--dry-run` resolves config and prints the plan with **zero** network calls and **zero** writes. It does
+not create the database. It checks the *config*, not the live sources — that is `--preflight`'s job.
 
 **Smoke, then full.** A one-year run costs the *same* ~304 calls (spend is universe-driven, not
 year-driven: 3 per member + 1 proxy), so it is a free rehearsal of every failure mode:
@@ -163,12 +168,13 @@ their replay intervals (the reconciler is universe-blind). Do not "helpfully" ad
 The machinery is date-agnostic. Its **contact surface with the outside world** is not, and these are
 what bite a clone taken long after the repo was last touched.
 
-**`sp100` is the only wired universe.** `BackfillArgs.Parse` accepts `sp500` and sets its count band
-`[495, 510]`, but `tools/Backfill/Program.cs:71,75` hardcode the OEF (S&P **100**) holdings feed and
-the Wikipedia S&P 100 cross-check. The flag selects only the *band*. So `--universe sp500` fetches
-~101 names, reconciles them against `[495,510]`, and fail-closes with
-`count sanity breach: primary=101, crosscheck=101, band=[495,510]` — which reads like broken data and
-is actually unwired code. An `ISharesHoldingsOptions.Ivv()` preset exists and is unused.
+**`sp100` is the only wired universe — `sp500` is rejected at parse.** `tools/Backfill/Program.cs`
+hardcodes the OEF (S&P **100**) holdings feed and the Wikipedia S&P 100 cross-check, so only `sp100` is
+actually wired. `--universe sp500` used to be *accepted* (it set the count band `[495,510]`) and then
+fail-close ~300 API calls later with `count sanity breach: primary=101, crosscheck=101, band=[495,510]` —
+a data-shaped error for an unwired-code cause. As of v1.9.11 it is **rejected at parse** with the real
+reason and exits before spending anything (P1R-10). An `ISharesHoldingsOptions.Ivv()` preset exists but is
+unused: wiring it is the S&P 500 widening — a recorded proposal (D76 in PROGRESS), not a flag you flip today.
 
 **The arena id is the lab's name, and `sp500` is correct — leave it.** `tools/Backfill/appsettings.json`
 sets `Arena.Id = "sp500"` / `DisplayName = "S&P 500"`, and that is *right*: per D70 this arena **is** the
@@ -184,8 +190,10 @@ splits the store across two folders with no error. The DB path, snapshots, and b
 hard-coded set ending at `2025-01-09` (Carter). It is *generated*, not fetched, so a clone taken
 years later will confidently assert trading days for every market closure since. Nothing errors: the
 calendar claims a session, no bar arrives, and the quality gate raises a `MissingBar` warning per
-affected security — misreporting a stale closure list as a provider gap. Check the list against
-exchange notices before trusting a calendar far from the repo's last update.
+affected security — misreporting a stale closure list as a provider gap. `--preflight` now **warns** when
+the run's as-of year exceeds the list's reviewed-through year (`NyseCalendar.SpecialClosuresReviewedThroughYear`,
+currently 2025), so the staleness surfaces before a run rather than as a phantom `MissingBar`. Check the
+list against exchange notices before trusting a calendar far from the repo's last update.
 
 **Green CI does not mean the repo still clones.** Every provider test is fixture-backed —
 `grep -rl "new HttpClient()" tests/` is empty. `tools/ci.ps1` reports all-green while the OEF CSV URL
@@ -193,7 +201,8 @@ has moved, Wikipedia's table markup has changed, or an EODHD endpoint has been r
 *the fixtures still parse*, which is a different claim. This has already happened once: the first
 live backfill hit a Wikimedia **403** because .NET sends no default `User-Agent` — caught only by
 running against the real thing (finding 130). `SETUP_v1.9` §7 is the manual checklist for exactly
-this; no command performs it.
+this; `--preflight` now automates it — one read-only pass over every live source, named pass/fail (§2).
+Run it before you spend.
 
 All three live sources fail **closed**, which is right — a drifted provider halts the run rather than
 writing bad data. The cost is that a stale clone stops with a data-shaped error whose real cause is

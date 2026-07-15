@@ -36,6 +36,8 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   (a config edit + file move; the deployed base is `E:\AlphaLabDatabase`).
 - `docs/FUTURE_DB_MIGRATION.md` — contingency plan for ever leaving SQLite for a server RDBMS
   (a different job from relocation; closed until needed).
+- `docs/REBUILD.md` — ops runbook: from a fresh clone to a working arena (the *data* bootstrap;
+  sibling to DB_RELOCATION / FUTURE_DB_MIGRATION; includes the `--preflight` live-source check).
 
 **Strategy & evaluation detail**
 - `docs/STRATEGY_CATALOG_v1.9.md` — the strategy families and the equal-weight benchmark.
