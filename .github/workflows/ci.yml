@@ -1,0 +1,20 @@
+name: CI
+
+# Mirror the local gate (tools/ci.ps1) on every push and PR — build + tests + guard greps +
+# the report-only vulnerability audit. It does not reimplement CI; it runs the same script an
+# operator runs locally, on windows-latest (the repo is Windows-first: .slnx + PowerShell).
+on:
+  push:
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: tools/ci.ps1 (build + tests + guards)
+        shell: pwsh
+        run: ./tools/ci.ps1

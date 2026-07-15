@@ -102,6 +102,17 @@ try {
     Write-Host '== build ==' -ForegroundColor Cyan
     Invoke-Native -What 'dotnet build' -Command { dotnet build 'AlphaLab.slnx' -c Debug --nologo }
 
+    # Report-only vulnerability audit (after build so restore assets exist; runs under -SkipTests too).
+    # NOT a gate yet: two transitive NU1903 advisories (SQLitePCLRaw.lib.e_sqlite3 2.1.11 via EF Core;
+    # Microsoft.OpenApi 2.0.0 via AspNetCore.OpenApi) are non-blocking today and clear on Microsoft's next
+    # 10.0.x servicing bump. Make this a HARD gate (throw on any advisory) once they clear. EAP is relaxed
+    # so a native stderr line / non-zero exit here never fails CI (report only).
+    Write-Host '== vuln audit (report-only) ==' -ForegroundColor Cyan
+    $vulnEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    dotnet list 'AlphaLab.slnx' package --vulnerable --include-transitive
+    $ErrorActionPreference = $vulnEap
+
     if (-not $SkipTests) {
         Write-Host '== test ==' -ForegroundColor Cyan
         Invoke-Native -What 'dotnet test' -Command { dotnet test 'AlphaLab.slnx' -c Debug --nologo --no-build }
