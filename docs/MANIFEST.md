@@ -1,7 +1,7 @@
-# AlphaLab — Complete Design Package (v1.9.12)
+# AlphaLab — Complete Design Package (v1.9.14)
 
 This is the **full, self-contained** design package — everything needed to build AlphaLab from
-scratch. It supersedes the v1.9.6 upload: all v1.9.1 → v1.9.12 consistency fixes and the
+scratch. It supersedes the v1.9.6 upload: all v1.9.1 → v1.9.14 consistency fixes and the
 multi-arena capability (D71, now fully propagated through the build scaffolding as FR-37) are merged
 **in place**, so every file here is current. Nothing external is required.
 
@@ -54,7 +54,7 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `docs/lab_honesty_ux_mockups.html`
 
 **Revision history**
-- `docs/CHANGELOG_v1.9.md` — every consistency finding and decision, v1.9.1 through v1.9.12.
+- `docs/CHANGELOG_v1.9.md` — every consistency finding and decision, v1.9.1 through v1.9.14.
 
 ## Revision state
 - v1.9.1 errata (findings 59–75; D68–D69) — merged.
@@ -128,5 +128,13 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   store seam so the FR-6 gate's findings persist and reach §15's Data-health screen; **D78** — a cross-sectional
   (date-major) bar read + `ix_bars_date`. Decided range now **D1–D78**; the S&P 500 widening and membership
   provenance stay open (un-numbered; "D76 territory" retired now the cluster is split). Test count 223 → 236.
+- v1.9.14 membership provenance (finding 163) — merged. **Contract-only, no schema, no D-number.** The two
+  membership rosters (iShares OEF/IVV holdings, Wikipedia cross-check) archived their raw payloads under a
+  literal `"latest"` that overwrote every run, so "what did the index report on date X" was unanswerable.
+  Threaded an observation-date `asOf` into `IIndexMembershipProvider.GetMembersAsync` and archive under it
+  (dated partitions) — mirroring the P1R-4 equity/proxy fix. Resolves one of the two remaining open proposals
+  (only the S&P 500 widening stays open). Test count 236 → 237. (This pass also caught two v1.9.13 narrative
+  stragglers: this title/body + the CHANGELOG-coverage line were still at v1.9.12, and the root `README.md`
+  test count still read 223.)
 - The mockups are byte-identical to the original v1.9.1 upload (never needed changes). SCHEMA
   received its first post-v1.9.1 edit in v1.9.7 (the `config` composite PK + invariant notes).

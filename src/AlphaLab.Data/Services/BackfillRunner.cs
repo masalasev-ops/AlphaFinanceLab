@@ -182,9 +182,9 @@ public sealed class BackfillRunner(
     {
         // Count each fetch the moment it succeeds — not after both — so a cross-check failure still records
         // the primary's spent call (Stage-1 finding: usage accounting must reflect calls actually made).
-        var primary = await membershipPrimary.GetMembersAsync(ct).ConfigureAwait(false);
+        var primary = await membershipPrimary.GetMembersAsync(o.AsOf, ct).ConfigureAwait(false);
         Count(primary.Source);
-        var cross = await membershipCrossCheck.GetMembersAsync(ct).ConfigureAwait(false);
+        var cross = await membershipCrossCheck.GetMembersAsync(o.AsOf, ct).ConfigureAwait(false);
         Count(cross.Source);
 
         var result = new MembershipReconciler(db, new SecurityMaster(db)).Reconcile(primary, cross, o.AsOf, o.CountBand);

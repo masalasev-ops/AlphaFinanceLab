@@ -14,6 +14,6 @@ public sealed class EodhdIndexMembershipProvider : IIndexMembershipProvider
         "EodhdIndexMembershipProvider is dormant (D49): the EODHD constituents endpoint is off the " +
         "launch tier. Activate via Universe.MembershipPrimary='eodhd' on the post-upgrade tier.";
 
-    public Task<MembershipSnapshot> GetMembersAsync(CancellationToken ct = default) =>
+    public Task<MembershipSnapshot> GetMembersAsync(string asOf, CancellationToken ct = default) =>
         throw new NotSupportedException(DormantReason);
 }

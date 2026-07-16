@@ -41,13 +41,13 @@ public sealed class ISharesHoldingsMembershipProvider(
 {
     private readonly IRawCache _rawCache = rawCache ?? NullRawCache.Instance;
 
-    public async Task<MembershipSnapshot> GetMembersAsync(CancellationToken ct = default)
+    public async Task<MembershipSnapshot> GetMembersAsync(string asOf, CancellationToken ct = default)
     {
         var url =
             $"{options.BaseUrl}?appType=PRODUCT_PAGE&appSubType=ISHARES&targetSite=us-ishares" +
             $"&locale=en_US&portfolioId={options.PortfolioId}&userType=individual&component=holdings";
         var csv = await http.GetStringAsync(url, options.Source, ct).ConfigureAwait(false);
-        _rawCache.Save(options.Source, "latest", $"{options.PortfolioId}.holdings.csv", csv);
+        _rawCache.Save(options.Source, asOf, $"{options.PortfolioId}.holdings.csv", csv); // observation day, not "latest" (dated roster provenance)
         return ToSnapshot(options.Source, csv);
     }
 

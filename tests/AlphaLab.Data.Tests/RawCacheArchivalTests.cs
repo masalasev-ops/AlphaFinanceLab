@@ -61,4 +61,35 @@ public class RawCacheArchivalTests
         }
         finally { try { Directory.Delete(root, recursive: true); } catch { /* best effort */ } }
     }
+
+    /// <summary>
+    /// C7 (membership provenance): the two membership rosters archive under the observation day (asOf),
+    /// not the literal "latest" that overwrote every run — so "what did OEF / Wikipedia report on date X"
+    /// is answerable, mirroring the P1R-4 equity/proxy fix. Contract-only (no schema).
+    /// </summary>
+    [Fact]
+    public async Task RawCache_MembershipRostersArchiveUnderObservationDate_NotLatest()
+    {
+        const string asOf = "2026-07-15";
+        var root = Path.Combine(Path.GetTempPath(), "alphalab-rawcache-mem-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var cache = new FileRawCache(root);
+            var http = new StubHttp()
+                .Route("portfolioId=239723", () => Fixtures.Holdings("OEF_holdings.csv"))  // OEF (S&P 100 slice)
+                .Route("wikipedia", () => Fixtures.Wikipedia("sp500_constituents.html"));
+
+            await new ISharesHoldingsMembershipProvider(http, ISharesHoldingsOptions.Oef(), cache).GetMembersAsync(asOf);
+            await new WikipediaMembershipCrossCheck(http, new WikipediaMembershipOptions(), cache).GetMembersAsync(asOf);
+
+            // Both rosters land under {source}/{asOf}/ ...
+            Assert.True(File.Exists(Path.Combine(root, "oef_csv", asOf, "239723.holdings.csv")));
+            Assert.True(File.Exists(Path.Combine(root, "wikipedia", asOf, "constituents.html")));
+
+            // ... and NOTHING under the old overwrite-each-run "latest" partition.
+            Assert.False(Directory.Exists(Path.Combine(root, "oef_csv", "latest")));
+            Assert.False(Directory.Exists(Path.Combine(root, "wikipedia", "latest")));
+        }
+        finally { try { Directory.Delete(root, recursive: true); } catch { /* best effort */ } }
+    }
 }

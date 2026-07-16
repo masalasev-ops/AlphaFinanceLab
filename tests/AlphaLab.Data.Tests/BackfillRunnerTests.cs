@@ -64,7 +64,7 @@ public class BackfillRunnerTests
     // Simulates the Stage-1 Wikipedia 403: a cross-check fetch that fails after retries.
     private sealed class ThrowingMembershipProvider(string source) : IIndexMembershipProvider
     {
-        public Task<MembershipSnapshot> GetMembersAsync(CancellationToken ct = default) =>
+        public Task<MembershipSnapshot> GetMembersAsync(string asOf, CancellationToken ct = default) =>
             throw new HttpFetchException($"https://en.wikipedia.org/wiki/{source}", new Exception("simulated 403"));
     }
 

@@ -19,5 +19,9 @@ public sealed record MembershipSnapshot(string Source, IReadOnlyList<MemberRow> 
 /// </summary>
 public interface IIndexMembershipProvider
 {
-    Task<MembershipSnapshot> GetMembersAsync(CancellationToken ct = default);
+    /// <summary>Fetch the current roster. <paramref name="asOf"/> is the observation day (yyyy-MM-dd) the
+    /// raw payload is archived under — dated partitions, so "what did OEF / Wikipedia report on date X" is
+    /// answerable, mirroring the P1R-4 equity/proxy archival. (No <c>index_membership</c> schema column —
+    /// this is the raw-archive provenance, contract-only.)</summary>
+    Task<MembershipSnapshot> GetMembersAsync(string asOf, CancellationToken ct = default);
 }

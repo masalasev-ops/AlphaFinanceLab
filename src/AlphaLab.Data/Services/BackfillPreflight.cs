@@ -51,8 +51,8 @@ public static class BackfillPreflight
         return new List<PreflightResult>
         {
             await RunCheck("db-path", _ => Task.FromResult(CheckDbPath(inputs.ConnectionString, inputs.ArenaId)), ct).ConfigureAwait(false),
-            await RunCheck("oef-csv (S&P 100 primary)", c => CheckMembership(inputs.MembershipPrimary, band, c), ct).ConfigureAwait(false),
-            await RunCheck("wikipedia (S&P 100 cross-check)", c => CheckMembership(inputs.MembershipCrossCheck, band, c), ct).ConfigureAwait(false),
+            await RunCheck("oef-csv (S&P 100 primary)", c => CheckMembership(inputs.MembershipPrimary, band, inputs.AsOf, c), ct).ConfigureAwait(false),
+            await RunCheck("wikipedia (S&P 100 cross-check)", c => CheckMembership(inputs.MembershipCrossCheck, band, inputs.AsOf, c), ct).ConfigureAwait(false),
             await RunCheck("eod AAPL.US (adjusted_close)", c => CheckEod(inputs.MarketData, inputs.ProbeSymbol, inputs.EodProbeFrom, inputs.AsOf, c), ct).ConfigureAwait(false),
             await RunCheck("div AAPL.US (unadjustedValue)", c => CheckDiv(inputs.MarketData, inputs.ProbeSymbol, inputs.DivProbeFrom, inputs.AsOf, c), ct).ConfigureAwait(false),
             await RunCheck("eod GSPC.INDX (index shape)", c => CheckGspc(inputs.RegimeProxy, inputs.EodProbeFrom, inputs.AsOf, c), ct).ConfigureAwait(false),
@@ -128,9 +128,9 @@ public static class BackfillPreflight
         return (PreflightStatus.Pass, $"store dir '{targetDir}' is creatable/writable (probed at '{existing}').");
     }
 
-    private static async Task<(PreflightStatus, string)> CheckMembership(IIndexMembershipProvider provider, int[] band, CancellationToken ct)
+    private static async Task<(PreflightStatus, string)> CheckMembership(IIndexMembershipProvider provider, int[] band, string asOf, CancellationToken ct)
     {
-        var snapshot = await provider.GetMembersAsync(ct).ConfigureAwait(false);
+        var snapshot = await provider.GetMembersAsync(asOf, ct).ConfigureAwait(false);
         var n = snapshot.Members.Count;
         return n >= band[0] && n <= band[1]
             ? (PreflightStatus.Pass, $"{n} members, within [{band[0]},{band[1]}].")

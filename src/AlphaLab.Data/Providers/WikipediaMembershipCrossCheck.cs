@@ -24,10 +24,10 @@ public sealed class WikipediaMembershipCrossCheck(
 {
     private readonly IRawCache _rawCache = rawCache ?? NullRawCache.Instance;
 
-    public async Task<MembershipSnapshot> GetMembersAsync(CancellationToken ct = default)
+    public async Task<MembershipSnapshot> GetMembersAsync(string asOf, CancellationToken ct = default)
     {
         var html = await http.GetStringAsync(options.Url, options.Source, ct).ConfigureAwait(false);
-        _rawCache.Save(options.Source, "latest", "constituents.html", html);
+        _rawCache.Save(options.Source, asOf, "constituents.html", html); // observation day, not "latest" (dated roster provenance)
         return ToSnapshot(options.Source, html);
     }
 
