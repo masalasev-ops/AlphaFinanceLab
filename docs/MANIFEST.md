@@ -1,7 +1,7 @@
-# AlphaLab — Complete Design Package (v1.9.15)
+# AlphaLab — Complete Design Package (v1.9.16)
 
 This is the **full, self-contained** design package — everything needed to build AlphaLab from
-scratch. It supersedes the v1.9.6 upload: all v1.9.1 → v1.9.15 consistency fixes and the
+scratch. It supersedes the v1.9.6 upload: all v1.9.1 → v1.9.16 consistency fixes and the
 multi-arena capability (D71, now fully propagated through the build scaffolding as FR-37) are merged
 **in place**, so every file here is current. Nothing external is required.
 
@@ -54,7 +54,7 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `docs/lab_honesty_ux_mockups.html`
 
 **Revision history**
-- `docs/CHANGELOG_v1.9.md` — every consistency finding and decision, v1.9.1 through v1.9.15.
+- `docs/CHANGELOG_v1.9.md` — every consistency finding and decision, v1.9.1 through v1.9.16.
 
 ## Revision state
 - v1.9.1 errata (findings 59–75; D68–D69) — merged.
@@ -144,5 +144,11 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   straggler, fixed phase-aware (three at Phase 0, four from the Phase-1 Backfill CLI) (166); and the cost model
   misdated to Phase 1 instead of Phase 2 (167). A fifth item — D42 Ledoit–Wolf covariance claimed by both
   Phase 2 (FR-11) and Phase 6 — is **reported, not fixed** (168), needing a BUILD phasing decision.
+- v1.9.16 FR-11 sizing phasing (finding 169) — merged. **Docs only, no schema/migration/config-key/test
+  change; count stays 237.** Resolves the finding-168 report: FR-11 (inverse-vol sizing using Ledoit–Wolf
+  covariance, D42) was claimed by both Phase 2 and Phase 6. Split partial→full per the FR-13/FR-18 convention
+  (grounded in the `Sizing.Mode` enum — `inverse_vol` / `equal(dummies)` / `kelly(P6+)` — and DESIGN_IMPROVEMENTS
+  §3.1): Phase 2 gets FR-11 "(partial)" (the dummies' simple/equal sizing), Phase 6 gets FR-11 "full" (inverse-vol
+  + LW covariance). A BUILD-phasing edit, not a new decision; D42 unchanged.
 - The mockups are byte-identical to the original v1.9.1 upload (never needed changes). SCHEMA
   received its first post-v1.9.1 edit in v1.9.7 (the `config` composite PK + invariant notes).
