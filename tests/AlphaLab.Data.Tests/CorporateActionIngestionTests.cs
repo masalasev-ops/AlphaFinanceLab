@@ -86,6 +86,10 @@ public class CorporateActionIngestionTests
         finally { TestDb.Delete(path); }
     }
 
+    // D76: ingestion is now VALUE-DIFF append-only (a changed value for the same (security, type,
+    // effective_date) would append a new version — see CorporateActionVersioningTests). An IDENTICAL
+    // re-fetch, even at a later observed time, stays a no-op — so this idempotency assertion holds
+    // unchanged (0 new on re-run, total 85).
     [Fact]
     public void FR3_Ingestion_IsIdempotent_OnSecurityTypeEffectiveDate()
     {

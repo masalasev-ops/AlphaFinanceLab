@@ -52,6 +52,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISectorIngestion, SectorIngestion>();
         services.TryAddSingleton(new DataQualityOptions());
         services.AddScoped<IDataQualityGate, DataQualityGate>();
+        services.AddScoped<IDataQualityFlagStore, DataQualityFlagStore>();  // D77 — the persistence sink for gate flags
         services.TryAddSingleton(new CalendarOptions());
         services.AddScoped<ICalendarService, CalendarService>();
         services.AddScoped<ICalendarSeeder, CalendarSeeder>();

@@ -2,6 +2,7 @@
 using AlphaLab.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -9,9 +10,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace AlphaLab.Data.Migrations
 {
     [DbContext(typeof(AlphaLabDbContext))]
-    partial class AlphaLabDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260716010216_CorporateActionVersioning")]
+    partial class CorporateActionVersioning
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.9");
@@ -104,9 +107,6 @@ namespace AlphaLab.Data.Migrations
                         .HasColumnName("volume");
 
                     b.HasKey("SecurityId", "Date", "Version");
-
-                    b.HasIndex("Date")
-                        .HasDatabaseName("ix_bars_date");
 
                     b.HasIndex("ObservedAt")
                         .HasDatabaseName("ix_bars_observed");
@@ -238,63 +238,6 @@ namespace AlphaLab.Data.Migrations
                     b.ToTable("corporate_actions", null, t =>
                         {
                             t.HasCheckConstraint("ck_corporate_actions_type", "type IN ('dividend','split','ticker_change','merger_cash','merger_stock','merger_mixed','spinoff','delist')");
-                        });
-                });
-
-            modelBuilder.Entity("AlphaLab.Data.Entities.DataQualityFlagRow", b =>
-                {
-                    b.Property<long>("FlagId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER")
-                        .HasColumnName("flag_id");
-
-                    b.Property<string>("Date")
-                        .HasColumnType("TEXT")
-                        .HasColumnName("date");
-
-                    b.Property<string>("Detail")
-                        .IsRequired()
-                        .HasColumnType("TEXT")
-                        .HasColumnName("detail");
-
-                    b.Property<string>("Issue")
-                        .IsRequired()
-                        .HasColumnType("TEXT")
-                        .HasColumnName("issue");
-
-                    b.Property<string>("ObservedAt")
-                        .IsRequired()
-                        .HasColumnType("TEXT")
-                        .HasColumnName("observed_at");
-
-                    b.Property<long>("RunId")
-                        .HasColumnType("INTEGER")
-                        .HasColumnName("run_id");
-
-                    b.Property<long?>("SecurityId")
-                        .HasColumnType("INTEGER")
-                        .HasColumnName("security_id");
-
-                    b.Property<string>("Severity")
-                        .IsRequired()
-                        .HasColumnType("TEXT")
-                        .HasColumnName("severity");
-
-                    b.Property<string>("Symbol")
-                        .IsRequired()
-                        .HasColumnType("TEXT")
-                        .HasColumnName("symbol");
-
-                    b.HasKey("FlagId");
-
-                    b.HasIndex("RunId")
-                        .HasDatabaseName("ix_data_quality_flags_run");
-
-                    b.ToTable("data_quality_flags", null, t =>
-                        {
-                            t.HasCheckConstraint("ck_data_quality_flags_issue", "issue IN ('missing_bar','nan_field','non_positive_price','outlier_return','unexplained_adjustment','cross_check_mismatch')");
-
-                            t.HasCheckConstraint("ck_data_quality_flags_severity", "severity IN ('warn','reject')");
                         });
                 });
 

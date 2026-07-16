@@ -1,8 +1,9 @@
 namespace AlphaLab.Data.Entities;
 
-// Phase 1 data-domain tables (SCHEMA_v1.9 §"Identity & Market Data" + §"v1.8 additions"). Nine
-// tables land here; regime_labels/regime_episodes/features/factor_* and the ux_runs_ok_forward
-// index are deferred to Phase 2. Timestamps + dates are TEXT (UTC ISO-8601 / trading date) per
+// Phase 1 data-domain tables (SCHEMA_v1.9 §"Identity & Market Data" + §"v1.8 additions"). Nine tables
+// landed in Phase 1; data_quality_flags (D77) is a tenth, pre-Phase-2 addition. regime_labels/
+// regime_episodes/features/factor_* and the ux_runs_ok_forward index are deferred to Phase 2.
+// Timestamps + dates are TEXT (UTC ISO-8601 / trading date) per
 // SCHEMA. Market-data prices/derived stats are REAL (double); ledger money is decimal→TEXT (D69).
 // Column/table names are mapped snake_case in AlphaLabDbContext.OnModelCreating. Following the
 // Phase-0 precedent (catchup_log.run_id, worker_state.current_run_id), the SCHEMA `REFERENCES`
@@ -75,6 +76,10 @@ public sealed class BarRow
 /// corporate_actions — §13.6 semantics. action_id is a bare INTEGER PRIMARY KEY (NO AUTOINCREMENT,
 /// rule 14 hand-edit). type is CHECK-constrained (8 values). cash_per_share is decimal→TEXT (D69);
 /// ratio is REAL. processed_on stays NULL until the ledger applies it (Phase 2).
+/// VERSIONED like bars (D76): a value-diff correction of the SAME (security_id, type, effective_date)
+/// appends a NEW row with version = MAX(version)+1 — never an UPDATE/DELETE. observed_at is the
+/// point-in-time key. READ RULE: latest version WHERE observed_at &lt;= run.watermark (so a replay pinned
+/// to an old watermark never prices an action observed later — the NFR1 property D40 buys for bars).
 /// </summary>
 public sealed class CorporateActionRow
 {
@@ -85,6 +90,8 @@ public sealed class CorporateActionRow
     /// <summary>Ex-date (dividends).</summary>
     public string? ExDate { get; set; }
     public string EffectiveDate { get; set; } = default!;
+    /// <summary>NOT NULL DEFAULT 1 (D76); a value-diff correction inserts version = MAX(version)+1.</summary>
+    public int Version { get; set; }
     /// <summary>Dividend / merger cash leg — C# decimal persisted as TEXT (D69).</summary>
     public decimal? CashPerShare { get; set; }
     /// <summary>Split / exchange / spinoff ratio (REAL).</summary>
@@ -143,4 +150,29 @@ public sealed class ApiUsageLogRow
     public string Source { get; set; } = default!;
     public int Calls { get; set; }
     public int? PlanLimit { get; set; }
+}
+
+/// <summary>
+/// data_quality_flags — persisted FR-6 gate findings (D77). flag_id is a bare INTEGER PRIMARY KEY
+/// (NO AUTOINCREMENT, rule 14 hand-edit). issue + severity are CHECK-constrained (the QualityIssue /
+/// QualitySeverity enums, lowercased). The gate is symbol-keyed, so symbol is the natural key;
+/// security_id is nullable (documentary — populated only when a caller has resolved an id). date is
+/// nullable (a series/gap flag has no single date). Persists BOTH warn and reject flags (the honest
+/// data-quality audit trail). Rows are appended by whoever runs the gate (Phase 2); the Data-health
+/// read-model reads them (Phase 7). This table lands the store so there is something to persist into.
+/// </summary>
+public sealed class DataQualityFlagRow
+{
+    public long FlagId { get; set; }
+    public long RunId { get; set; }
+    public long? SecurityId { get; set; }
+    public string Symbol { get; set; } = default!;
+    /// <summary>NULL for a series-level flag (e.g. a gap with no single session).</summary>
+    public string? Date { get; set; }
+    /// <summary>CHECK IN ('missing_bar','nan_field','non_positive_price','outlier_return','unexplained_adjustment','cross_check_mismatch').</summary>
+    public string Issue { get; set; } = default!;
+    /// <summary>CHECK IN ('warn','reject').</summary>
+    public string Severity { get; set; } = default!;
+    public string Detail { get; set; } = default!;
+    public string ObservedAt { get; set; } = default!;
 }

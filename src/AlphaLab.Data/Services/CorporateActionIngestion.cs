@@ -7,19 +7,33 @@ namespace AlphaLab.Data.Services;
 /// Ingests and TYPES the corporate-action feed (FR-3): EODHD dividends and splits become
 /// <c>corporate_actions</c> rows keyed by <c>type</c>. Phase 1 is ingest+type only — <c>processed_on</c>
 /// stays NULL until the ledger applies the action in Phase 2 ("Corporate-action semantics complete").
-/// Ingestion is idempotent on (security_id, type, effective_date), so a re-run of a backfill never
-/// duplicates an event. Dividend cash is the UNADJUSTED per-share amount (the actual cash a holder
-/// received) stored as decimal→TEXT (D69); split ratio is REAL.
+/// VERSIONED like bars (D76): the same <c>(security_id, type, effective_date)</c> re-fetched with a
+/// changed value (a restatement) appends a NEW version — never an UPDATE/DELETE — so a correction is
+/// preserved and a replay pinned to an old watermark never sees it. An unchanged re-fetch is a no-op
+/// (idempotent), so re-running a backfill never spawns phantom versions. Dividend cash is the UNADJUSTED
+/// per-share amount stored as decimal→TEXT (D69); split ratio is REAL.
 /// </summary>
 public interface ICorporateActionIngestion
 {
     /// <summary>Write dividend actions (type='dividend', ex_date = effective_date = event date).
-    /// Returns the number of new rows.</summary>
+    /// Returns the number of new version rows written.</summary>
     int IngestDividends(long securityId, IReadOnlyList<DividendEvent> dividends, string observedAt, string source = "eodhd");
 
     /// <summary>Write split actions (type='split', effective_date = event date, ratio = new/old).
-    /// Returns the number of new rows.</summary>
+    /// Returns the number of new version rows written.</summary>
     int IngestSplits(long securityId, IReadOnlyList<SplitEvent> splits, string observedAt, string source = "eodhd");
+}
+
+/// <summary>Reads corporate actions at a point in time (D76 read rule): for each
+/// <c>(type, effective_date)</c>, the latest version whose <c>observed_at ≤ watermark</c>. A run (or
+/// replay) pinned to an old watermark reproduces byte-identically because later-observed actions and
+/// correction versions are invisible to it — the NFR1 determinism property D40 buys for bars, now for
+/// the feed the ledger prices on.</summary>
+public interface ICorporateActionReadService
+{
+    /// <summary>The as-of corporate actions for a security at <paramref name="watermark"/>, one row per
+    /// (type, effective_date) — its latest visible version — ordered by effective_date then type.</summary>
+    IReadOnlyList<CorporateActionRow> GetActionsAsOf(long securityId, string watermark);
 }
 
 public sealed class CorporateActionIngestion(AlphaLabDbContext db) : ICorporateActionIngestion
@@ -31,9 +45,8 @@ public sealed class CorporateActionIngestion(AlphaLabDbContext db) : ICorporateA
         foreach (var d in dividends)
         {
             if (string.IsNullOrWhiteSpace(d.Date)) continue;
-            if (Exists(securityId, "dividend", d.Date)) continue;
 
-            db.CorporateActions.Add(new CorporateActionRow
+            inserted += AppendIfNew(new CorporateActionRow
             {
                 SecurityId = securityId,
                 Type = "dividend",
@@ -49,7 +62,6 @@ public sealed class CorporateActionIngestion(AlphaLabDbContext db) : ICorporateA
                 Source = source,
                 ProcessedOn = null        // applied by the ledger in Phase 2
             });
-            inserted++;
         }
         db.SaveChanges();
         return inserted;
@@ -62,9 +74,8 @@ public sealed class CorporateActionIngestion(AlphaLabDbContext db) : ICorporateA
         foreach (var s in splits)
         {
             if (string.IsNullOrWhiteSpace(s.Date)) continue;
-            if (Exists(securityId, "split", s.Date)) continue;
 
-            db.CorporateActions.Add(new CorporateActionRow
+            inserted += AppendIfNew(new CorporateActionRow
             {
                 SecurityId = securityId,
                 Type = "split",
@@ -75,12 +86,68 @@ public sealed class CorporateActionIngestion(AlphaLabDbContext db) : ICorporateA
                 Source = source,
                 ProcessedOn = null
             });
-            inserted++;
         }
         db.SaveChanges();
         return inserted;
     }
 
-    private bool Exists(long securityId, string type, string effectiveDate) =>
-        db.CorporateActions.Any(c => c.SecurityId == securityId && c.Type == type && c.EffectiveDate == effectiveDate);
+    /// <summary>
+    /// Versioned append mirroring <see cref="BarIngestionService.IngestEod"/>: read the latest version
+    /// for the candidate's <c>(security_id, type, effective_date)</c> identity; if none, insert version 1;
+    /// if the value differs (a restatement), append version+1; if identical, no-op (idempotent). The
+    /// caller sets every field except <c>Version</c>. Returns 1 if a row was written, else 0.
+    /// </summary>
+    private int AppendIfNew(CorporateActionRow candidate)
+    {
+        var latest = db.CorporateActions
+            .Where(c => c.SecurityId == candidate.SecurityId
+                        && c.Type == candidate.Type
+                        && c.EffectiveDate == candidate.EffectiveDate)
+            .OrderByDescending(c => c.Version)
+            .FirstOrDefault();
+
+        if (latest is null)
+        {
+            candidate.Version = 1;
+            db.CorporateActions.Add(candidate);
+            return 1;
+        }
+        if (Differs(latest, candidate))
+        {
+            // A restatement — append the next version. Never mutate the prior one.
+            candidate.Version = latest.Version + 1;
+            db.CorporateActions.Add(candidate);
+            return 1;
+        }
+        return 0; // identical re-fetch ⇒ idempotent no-op.
+    }
+
+    // The value fields that make an action a DIFFERENT observation of the same identity. observed_at /
+    // source / processed_on are provenance, not value, so they never trigger a version.
+    private static bool Differs(CorporateActionRow existing, CorporateActionRow incoming) =>
+        existing.ExDate != incoming.ExDate
+        || existing.CashPerShare != incoming.CashPerShare
+        || existing.Ratio != incoming.Ratio
+        || existing.NewSymbol != incoming.NewSymbol
+        || existing.CounterpartySecurityId != incoming.CounterpartySecurityId;
+}
+
+public sealed class CorporateActionReadService(AlphaLabDbContext db) : ICorporateActionReadService
+{
+    public IReadOnlyList<CorporateActionRow> GetActionsAsOf(long securityId, string watermark)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(watermark);
+        // Filter the security in SQL (its action count is tiny — ~85 for AAPL — so no date-range
+        // pushdown is needed); resolve the visible version in memory, so the watermark comparison is a
+        // plain ordinal string compare (ISO-8601 sorts chronologically), mirroring BarReadService.
+        return db.CorporateActions
+            .Where(c => c.SecurityId == securityId)
+            .AsEnumerable()
+            .Where(c => string.CompareOrdinal(c.ObservedAt, watermark) <= 0)
+            .GroupBy(c => new { c.Type, c.EffectiveDate })
+            .Select(g => g.OrderByDescending(c => c.Version).First())
+            .OrderBy(c => c.EffectiveDate)
+            .ThenBy(c => c.Type)
+            .ToList();
+    }
 }

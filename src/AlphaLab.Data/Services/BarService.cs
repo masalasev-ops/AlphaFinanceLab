@@ -27,6 +27,12 @@ public interface IBarReadService
     /// <summary>The as-of series over [from, to] (inclusive) at <paramref name="watermark"/>,
     /// ordered by date — one row per date (its latest visible version).</summary>
     IReadOnlyList<BarRow> GetSeries(long securityId, string from, string to, string watermark);
+
+    /// <summary>The as-of CROSS-SECTION for a single <paramref name="date"/> at
+    /// <paramref name="watermark"/> — every security's latest visible version on that date, ordered by
+    /// security_id (D78). Date-major, served by <c>ix_bars_date</c>; the Phase-2 funnel / Phase-4 replay
+    /// read shape ("every name at date D at watermark W"). One row per security.</summary>
+    IReadOnlyList<BarRow> GetCrossSection(string date, string watermark);
 }
 
 public sealed class BarIngestionService(AlphaLabDbContext db) : IBarIngestionService
@@ -118,6 +124,23 @@ public sealed class BarReadService(AlphaLabDbContext db) : IBarReadService
             .GroupBy(x => x.Date)
             .Select(g => g.OrderByDescending(x => x.Version).First())
             .OrderBy(x => x.Date)
+            .ToList();
+    }
+
+    public IReadOnlyList<BarRow> GetCrossSection(string date, string watermark)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(date);
+        ArgumentException.ThrowIfNullOrWhiteSpace(watermark);
+        // Push the single-date equality into SQL so ix_bars_date serves it (instead of scanning bars for
+        // a date that isn't the PK's leading column); resolve the visible version per security in memory,
+        // mirroring GetSeries — one row per security, its latest version whose observed_at ≤ watermark.
+        return db.Bars
+            .Where(x => x.Date == date)
+            .AsEnumerable()
+            .Where(x => string.CompareOrdinal(x.ObservedAt, watermark) <= 0)
+            .GroupBy(x => x.SecurityId)
+            .Select(g => g.OrderByDescending(x => x.Version).First())
+            .OrderBy(x => x.SecurityId)
             .ToList();
     }
 }

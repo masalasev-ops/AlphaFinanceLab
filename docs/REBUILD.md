@@ -174,7 +174,7 @@ actually wired. `--universe sp500` used to be *accepted* (it set the count band 
 fail-close ~300 API calls later with `count sanity breach: primary=101, crosscheck=101, band=[495,510]` —
 a data-shaped error for an unwired-code cause. As of v1.9.11 it is **rejected at parse** with the real
 reason and exits before spending anything (P1R-10). An `ISharesHoldingsOptions.Ivv()` preset exists but is
-unused: wiring it is the S&P 500 widening — a recorded proposal (D76 in PROGRESS), not a flag you flip today.
+unused: wiring it is the S&P 500 widening — a recorded proposal (an open proposal in PROGRESS), not a flag you flip today.
 
 **The arena id is the lab's name, and `sp500` is correct — leave it.** `tools/Backfill/appsettings.json`
 sets `Arena.Id = "sp500"` / `DisplayName = "S&P 500"`, and that is *right*: per D70 this arena **is** the

@@ -31,7 +31,7 @@ public class SchemaStartupTests
     }
 
     [Fact]
-    public async Task StartAsync_AppliesMigrations_CreatesAllFourteenTables()
+    public async Task StartAsync_AppliesMigrations_CreatesAllFifteenTables()
     {
         var dbPath = TempDb();
         try
@@ -50,13 +50,14 @@ public class SchemaStartupTests
                 while (await reader.ReadAsync()) tables.Add(reader.GetString(0));
             }
 
-            // SchemaStartup migrates to the latest schema: Phase 0 infra(5) + Phase 1 data(9).
+            // SchemaStartup migrates to the latest schema: Phase 0 infra(5) + Phase 1 data(9) + the D77
+            // pre-Phase-2 data_quality_flags(1) = 15.
             Assert.Equal(
                 new[]
                 {
                     "api_usage_log", "bars", "catchup_log", "config", "corporate_actions",
-                    "index_membership", "index_membership_log", "jobs", "runs", "sector_changes",
-                    "securities", "ticker_history", "trading_calendar", "worker_state"
+                    "data_quality_flags", "index_membership", "index_membership_log", "jobs", "runs",
+                    "sector_changes", "securities", "ticker_history", "trading_calendar", "worker_state"
                 },
                 tables);
         }

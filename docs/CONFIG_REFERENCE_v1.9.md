@@ -216,7 +216,7 @@ The backfill CLI is a **separate runnable** with its own `appsettings.json`; it 
 }
 ```
 
-The slice is selected by the CLI's **`--universe`** argument (default `sp100`), not by a config key; `--universe sp500` is **rejected at parse** until the D70 widening is wired (findings 149/151, awaiting **D76**). `Eodhd:BaseUrl` is also stated in INTEGRATIONS §1.
+The slice is selected by the CLI's **`--universe`** argument (default `sp100`), not by a config key; `--universe sp500` is **rejected at parse** until the D70 widening is wired (findings 149/151 — an open MASTER §2 / CONFIG proposal, see PROGRESS). `Eodhd:BaseUrl` is also stated in INTEGRATIONS §1.
 
 ## AlphaLab.Web `wwwroot/appsettings.json` (non-secret, browser-served — D71/FR-37)
 

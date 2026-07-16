@@ -28,6 +28,7 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
     public DbSet<IndexMembershipRow> IndexMembership => Set<IndexMembershipRow>();
     public DbSet<TradingCalendarRow> TradingCalendar => Set<TradingCalendarRow>();
     public DbSet<ApiUsageLogRow> ApiUsageLog => Set<ApiUsageLogRow>();
+    public DbSet<DataQualityFlagRow> DataQualityFlags => Set<DataQualityFlagRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -172,9 +173,16 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
             e.Property(x => x.AdjClose).HasColumnName("adj_close");
             e.Property(x => x.Source).HasColumnName("source").IsRequired().HasDefaultValue("eodhd");
             e.HasIndex(x => x.ObservedAt).HasDatabaseName("ix_bars_observed");
+            // Date-major (cross-sectional) reads — "every name at date D" (Phase-2 funnel / Phase-4
+            // replay). Without this a WHERE date = ? (no security_id) full-scans bars (D78).
+            e.HasIndex(x => x.Date).HasDatabaseName("ix_bars_date");
         });
 
         // ---- corporate_actions ---- action_id bare INTEGER PK (NO AUTOINCREMENT); 8-value type CHECK.
+        // Versioned append-only like bars (D76): observed_at is the point-in-time key; ux_..._identity
+        // enforces one row per (security_id, type, effective_date, version). ex_date is EXCLUDED from the
+        // identity index (splits carry NULL ex_date and SQLite treats NULLs as distinct, so it would not
+        // dedupe; effective_date is NOT NULL and, for dividends, equals ex_date).
         modelBuilder.Entity<CorporateActionRow>(e =>
         {
             e.ToTable("corporate_actions", t => t.HasCheckConstraint(
@@ -186,6 +194,7 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
             e.Property(x => x.Type).HasColumnName("type").IsRequired();
             e.Property(x => x.ExDate).HasColumnName("ex_date");
             e.Property(x => x.EffectiveDate).HasColumnName("effective_date").IsRequired();
+            e.Property(x => x.Version).HasColumnName("version").IsRequired().HasDefaultValue(1);
             // decimal → TEXT (D69). EF's default SQLite decimal mapping is TEXT; declared explicitly.
             e.Property(x => x.CashPerShare).HasColumnName("cash_per_share").HasColumnType("TEXT");
             e.Property(x => x.Ratio).HasColumnName("ratio");
@@ -194,6 +203,10 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
             e.Property(x => x.ObservedAt).HasColumnName("observed_at").IsRequired();
             e.Property(x => x.Source).HasColumnName("source").IsRequired().HasDefaultValue("eodhd");
             e.Property(x => x.ProcessedOn).HasColumnName("processed_on");
+            e.HasIndex(x => x.ObservedAt).HasDatabaseName("ix_corporate_actions_observed");
+            e.HasIndex(x => new { x.SecurityId, x.Type, x.EffectiveDate, x.Version })
+                .IsUnique()
+                .HasDatabaseName("ux_corporate_actions_identity");
         });
 
         // ---- index_membership_log ---- log_id bare INTEGER PK (NO AUTOINCREMENT).
@@ -241,6 +254,28 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
             e.Property(x => x.Source).HasColumnName("source");
             e.Property(x => x.Calls).HasColumnName("calls").IsRequired();
             e.Property(x => x.PlanLimit).HasColumnName("plan_limit");
+        });
+
+        // ---- data_quality_flags (D77) ---- flag_id bare INTEGER PK (NO AUTOINCREMENT); issue + severity CHECKs.
+        modelBuilder.Entity<DataQualityFlagRow>(e =>
+        {
+            e.ToTable("data_quality_flags", t =>
+            {
+                t.HasCheckConstraint("ck_data_quality_flags_issue",
+                    "issue IN ('missing_bar','nan_field','non_positive_price','outlier_return','unexplained_adjustment','cross_check_mismatch')");
+                t.HasCheckConstraint("ck_data_quality_flags_severity", "severity IN ('warn','reject')");
+            });
+            e.HasKey(x => x.FlagId);
+            e.Property(x => x.FlagId).HasColumnName("flag_id");
+            e.Property(x => x.RunId).HasColumnName("run_id").IsRequired();
+            e.Property(x => x.SecurityId).HasColumnName("security_id");
+            e.Property(x => x.Symbol).HasColumnName("symbol").IsRequired();
+            e.Property(x => x.Date).HasColumnName("date");
+            e.Property(x => x.Issue).HasColumnName("issue").IsRequired();
+            e.Property(x => x.Severity).HasColumnName("severity").IsRequired();
+            e.Property(x => x.Detail).HasColumnName("detail").IsRequired();
+            e.Property(x => x.ObservedAt).HasColumnName("observed_at").IsRequired();
+            e.HasIndex(x => x.RunId).HasDatabaseName("ix_data_quality_flags_run");
         });
     }
 }

@@ -2,6 +2,7 @@
 using AlphaLab.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -9,9 +10,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace AlphaLab.Data.Migrations
 {
     [DbContext(typeof(AlphaLabDbContext))]
-    partial class AlphaLabDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260716010710_DataQualityFlags")]
+    partial class DataQualityFlags
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.9");
@@ -104,9 +107,6 @@ namespace AlphaLab.Data.Migrations
                         .HasColumnName("volume");
 
                     b.HasKey("SecurityId", "Date", "Version");
-
-                    b.HasIndex("Date")
-                        .HasDatabaseName("ix_bars_date");
 
                     b.HasIndex("ObservedAt")
                         .HasDatabaseName("ix_bars_observed");

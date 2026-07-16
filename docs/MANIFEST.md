@@ -16,7 +16,7 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `CLAUDE.md` (repo root) — hard rules, solution layout, commands (the constitution the build obeys).
 
 **The design**
-- `docs/MASTER_DESIGN_v1.9.md` — the comprehensive document: decisions D1–D75,
+- `docs/MASTER_DESIGN_v1.9.md` — the comprehensive document: decisions D1–D78,
   architecture, golden rules, math appendix, UI boundary.
 - `docs/ARENA_ARCHITECTURE_v1.9.3.md` — how AlphaLab supports multiple isolated universes
   ("arenas"); decision D71. Additive, no schema change; the S&P 500 build is unaffected.
@@ -119,7 +119,14 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   `README.md` to this file list; corrected two line-number-as-section refs in PROGRESS (§13.5, §15), the stale
   root-README test count (200 → 223), and the resolved push-state note; documented the Backfill CLI's
   `Eodhd`/`Backfill` config sections in `CONFIG_REFERENCE`. No schema or decision change; finding 151's
-  D70-widening `CONFIG_REFERENCE` claim stays parked for **D76**. (This roll supersedes finding 152's
+  D70-widening `CONFIG_REFERENCE` claim stays parked as an open proposal. (This roll supersedes finding 152's
   deliberately-unrolled manifest title.)
+- v1.9.13 pre-Phase-2 schema decisions (findings 160–162; decisions **D76–D78**) — merged. Settles the three
+  parked proposals Phase 2 builds on, each a snapshot-first EF migration (rule 14) with SCHEMA updated in the
+  same pass: **D76** — `corporate_actions` versioned append-only + read-at-watermark (mirrors bars/D40; closes
+  the Phase-4 replay future-leak and preserves dividend restatements); **D77** — a `data_quality_flags` table +
+  store seam so the FR-6 gate's findings persist and reach §15's Data-health screen; **D78** — a cross-sectional
+  (date-major) bar read + `ix_bars_date`. Decided range now **D1–D78**; the S&P 500 widening and membership
+  provenance stay open (un-numbered; "D76 territory" retired now the cluster is split). Test count 223 → 236.
 - The mockups are byte-identical to the original v1.9.1 upload (never needed changes). SCHEMA
   received its first post-v1.9.1 edit in v1.9.7 (the `config` composite PK + invariant notes).

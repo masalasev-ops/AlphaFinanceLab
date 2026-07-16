@@ -96,7 +96,7 @@ public class SchemaFidelityTests
     }
 
     [Fact]
-    public void Schema_ExactlyTheFourteenTables_Exist()
+    public void Schema_ExactlyTheFifteenTables_Exist()
     {
         var dbPath = TempDb();
         try
@@ -113,13 +113,14 @@ public class SchemaFidelityTests
             using var reader = cmd.ExecuteReader();
             while (reader.Read()) tables.Add(reader.GetString(0));
 
-            // Phase 0 infra(5) + Phase 1 data(9). regime_labels/regime_episodes/features/factor_* and
-            // the ux_runs_ok_forward partial index are deliberately deferred to Phase 2.
+            // Phase 0 infra(5) + Phase 1 data(9) + the D77 pre-Phase-2 data_quality_flags(1) = 15.
+            // regime_labels/regime_episodes/features/factor_* and the ux_runs_ok_forward partial index
+            // are deliberately deferred to Phase 2.
             Assert.Equal(new[]
             {
                 "api_usage_log", "bars", "catchup_log", "config", "corporate_actions",
-                "index_membership", "index_membership_log", "jobs", "runs", "sector_changes",
-                "securities", "ticker_history", "trading_calendar", "worker_state"
+                "data_quality_flags", "index_membership", "index_membership_log", "jobs", "runs",
+                "sector_changes", "securities", "ticker_history", "trading_calendar", "worker_state"
             }, tables);
         }
         finally { TryDelete(dbPath); }
@@ -190,8 +191,8 @@ public class SchemaFidelityTests
             using (var db = NewContext(dbPath)) db.Database.Migrate();
 
             // Every bare INTEGER PRIMARY KEY per SCHEMA — the migration hand-edit removed AUTOINCREMENT.
-            // Phase 0: runs, jobs. Phase 1: securities, corporate_actions, index_membership_log.
-            foreach (var table in new[] { "runs", "jobs", "securities", "corporate_actions", "index_membership_log" })
+            // Phase 0: runs, jobs. Phase 1: securities, corporate_actions, index_membership_log. D77: data_quality_flags.
+            foreach (var table in new[] { "runs", "jobs", "securities", "corporate_actions", "index_membership_log", "data_quality_flags" })
             {
                 Assert.DoesNotContain("AUTOINCREMENT", TableDdl(dbPath, table), StringComparison.OrdinalIgnoreCase);
             }

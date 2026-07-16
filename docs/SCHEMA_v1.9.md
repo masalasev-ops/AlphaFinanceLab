@@ -51,9 +51,10 @@ CREATE TABLE bars (                                -- versioned append-only (D40
   PRIMARY KEY (security_id, date, version)
 );
 CREATE INDEX ix_bars_observed ON bars(observed_at);
+CREATE INDEX ix_bars_date ON bars(date);           -- D78: date-major (cross-sectional) reads — "every name at date D"
 -- READ RULE: latest version WHERE observed_at <= run.watermark. No UPDATE/DELETE ever.
 
-CREATE TABLE corporate_actions (                   -- §13.6 semantics
+CREATE TABLE corporate_actions (                   -- §13.6 semantics; versioned append-only (D76)
   action_id    INTEGER PRIMARY KEY,
   security_id  INTEGER NOT NULL REFERENCES securities(security_id),
   type         TEXT NOT NULL CHECK (type IN
@@ -61,14 +62,21 @@ CREATE TABLE corporate_actions (                   -- §13.6 semantics
      'merger_mixed','spinoff','delist')),
   ex_date      TEXT,                               -- dividends
   effective_date TEXT NOT NULL,
+  version      INTEGER NOT NULL DEFAULT 1,         -- D76: a value-diff correction inserts version = MAX(version)+1
   cash_per_share TEXT,                             -- dividend / merger cash leg (decimal TEXT, D69)
   ratio        REAL,                               -- split / exchange / spinoff ratio
   counterparty_security_id INTEGER REFERENCES securities(security_id), -- acquirer / spun-off
   new_symbol   TEXT,                               -- ticker_change
-  observed_at  TEXT NOT NULL,
+  observed_at  TEXT NOT NULL,                      -- when WE first saw this version (the point-in-time key)
   source       TEXT NOT NULL DEFAULT 'eodhd',
   processed_on TEXT                                -- NULL until ledger applied
 );
+CREATE INDEX ix_corporate_actions_observed ON corporate_actions(observed_at);
+-- Identity = (security_id, type, effective_date); ex_date is EXCLUDED (splits carry NULL ex_date, which
+-- SQLite treats as distinct in a UNIQUE index; effective_date is NOT NULL and, for dividends, == ex_date).
+CREATE UNIQUE INDEX ux_corporate_actions_identity ON corporate_actions(security_id, type, effective_date, version);
+-- READ RULE (D76): per (type, effective_date), latest version WHERE observed_at <= run.watermark. No UPDATE/DELETE.
+-- A replay pinned to an old watermark never prices an action observed later (NFR1, the property D40 buys for bars).
 
 CREATE TABLE index_membership_log (                -- D35 daily refresh audit
   log_id       INTEGER PRIMARY KEY,
@@ -392,6 +400,20 @@ CREATE TABLE api_usage_log (                       -- INTEGRATIONS headroom rule
   PRIMARY KEY (as_of, source)
 );
 
+CREATE TABLE data_quality_flags (                  -- D77: persisted FR-6 gate findings (surfaced on Data-health, §15)
+  flag_id      INTEGER PRIMARY KEY,                 -- bare rowid alias, NO AUTOINCREMENT (rule 14 hand-edit)
+  run_id       INTEGER NOT NULL REFERENCES runs(run_id),   -- the producing run (documentary)
+  security_id  INTEGER REFERENCES securities(security_id), -- NULL: series/gap flag or an unresolved symbol
+  symbol       TEXT NOT NULL,                       -- the gate is symbol-keyed; the natural key
+  date         TEXT,                                -- NULL for a series-level flag (e.g. a gap)
+  issue        TEXT NOT NULL CHECK (issue IN
+    ('missing_bar','nan_field','non_positive_price','outlier_return','unexplained_adjustment','cross_check_mismatch')),
+  severity     TEXT NOT NULL CHECK (severity IN ('warn','reject')),  -- BOTH persisted (the audit trail)
+  detail       TEXT NOT NULL,                       -- human-readable, e.g. 'robust z = 9.1'
+  observed_at  TEXT NOT NULL
+);
+CREATE INDEX ix_data_quality_flags_run ON data_quality_flags(run_id);
+
 ------------------------------------------------------------------
 -- WORKER / API INFRA (D59/D60) — created by Phase 0's InitialCreate
 ------------------------------------------------------------------
@@ -425,7 +447,7 @@ CREATE TABLE worker_state (                        -- single row, seeded by Phas
 - **CI greps:** `DELETE FROM bars`, `UPDATE bars` anywhere in `src/` fail the build.
 - **EF Core:** map these shapes 1:1; migrations are versioned; SCHEMA_v1.9.md updates ride the same PR as any migration.
 - **`REFERENCES` clauses are documentary — no FK constraints are enforced (v1.9.10):** the `REFERENCES` clauses in the DDL above (`bars`/`corporate_actions`/… → `securities`, and the rest) declare **intent**, not enforced constraints. The EF model (`DataEntities.cs`: "the SCHEMA `REFERENCES` links are documentation only") declares **no** foreign keys, creates **no** shadow indexes, and nothing sets `PRAGMA foreign_keys=ON` on any connection — SQLite leaves FK enforcement **off** by default — so the shipped database enforces none of them. The DDL stays a 1:1 description of the migration; referential integrity is upheld in code (the ingestion + reconciliation services keyed on `security_id`), not by the engine.
-- **Integer PKs are plain `INTEGER PRIMARY KEY` — NO `AUTOINCREMENT` (rule 14):** every `… INTEGER PRIMARY KEY` above (e.g. `runs.run_id`, `jobs.job_id`) is a plain rowid alias, exactly as written — never `AUTOINCREMENT`. EF Core 10's convention **adds** `AUTOINCREMENT` to value-generated integer keys, and its model snapshot cannot express "rowid without AUTOINCREMENT" (`SqliteValueGenerationStrategy.None` never round-trips → perpetual `PendingModelChangesWarning`). So after scaffolding `InitialCreate`, **hand-edit the generated `*_InitialCreate.cs` to delete the `.Annotation("Sqlite:Autoincrement", true)` lines** on those keys (leave the `.Designer.cs`/`ModelSnapshot.cs` untouched — the model keeps `ValueGeneratedOnAdd`, so model == snapshot and there is no pending-model warning; rowid still auto-assigns). Re-apply the edit if `InitialCreate` is ever regenerated. `config.version` and `worker_state.id` carry no autoincrement by construction (both `ValueGeneratedNever()`). Guarded by `SchemaFidelityTests.Schema_IntegerPrimaryKeys_HaveNoAutoincrement` (+ `Schema_IntegerPrimaryKey_StillAutoAssignsOnInsert`). The BUILD Phase-0 prompt (checkpoint 0.3) carries this as a build step.
+- **Integer PKs are plain `INTEGER PRIMARY KEY` — NO `AUTOINCREMENT` (rule 14):** every `… INTEGER PRIMARY KEY` above (e.g. `runs.run_id`, `jobs.job_id`, `corporate_actions.action_id`, `data_quality_flags.flag_id`) is a plain rowid alias, exactly as written — never `AUTOINCREMENT`. EF Core 10's convention **adds** `AUTOINCREMENT` to value-generated integer keys, and its model snapshot cannot express "rowid without AUTOINCREMENT" (`SqliteValueGenerationStrategy.None` never round-trips → perpetual `PendingModelChangesWarning`). So after scaffolding `InitialCreate`, **hand-edit the generated `*_InitialCreate.cs` to delete the `.Annotation("Sqlite:Autoincrement", true)` lines** on those keys (leave the `.Designer.cs`/`ModelSnapshot.cs` untouched — the model keeps `ValueGeneratedOnAdd`, so model == snapshot and there is no pending-model warning; rowid still auto-assigns). Re-apply the edit if `InitialCreate` is ever regenerated. `config.version` and `worker_state.id` carry no autoincrement by construction (both `ValueGeneratedNever()`). Guarded by `SchemaFidelityTests.Schema_IntegerPrimaryKeys_HaveNoAutoincrement` (+ `Schema_IntegerPrimaryKey_StillAutoAssignsOnInsert`). The BUILD Phase-0 prompt (checkpoint 0.3) carries this as a build step.
 - **D52:** UPDATEs to a `locked=1` hypothesis row outside the outcome-closure code path are a bug; add a trigger or repository guard + test.
 - **D55:** the only write path to `admin_actions` (and to `source='manual'` domain rows) is the typed-confirmation admin flow.
 - **D57/D58:** no schema change — read-models are computed projections over these tables, served by `AlphaLab.Api`; the UI never queries the DB directly.
@@ -433,4 +455,4 @@ CREATE TABLE worker_state (                        -- single row, seeded by Phas
 - **D69:** ledger money columns marked `decimal TEXT` above map to C# `decimal` (EF Core's default SQLite mapping stores exact decimal strings). Never map a money property to `double`/REAL; REAL is reserved for market-data prices and derived statistics.
 - **v1.9.7 finding 108 — `config` is append-only-versioned:** the PK is `(key, version)`; the current value is `MAX(version)` per key; a change INSERTs `version+1` and never UPDATEs or DELETEs an existing row. The Phase-4 calibration curves (D56/D63) rely on this to keep their version history. **Migration-path note (v1.9.8, A.3-1):** for a **from-scratch build** the composite PK ships **inside `InitialCreate`** (there is no prior `config` table to migrate) — this is what BUILD checkpoint 0.3 does and what `SchemaFidelityTests` asserts on-disk. The "snapshot-gated `ConfigVersionedRows` migration" language elsewhere describes the *other* context: retrofitting an **already-deployed** single-column `config` store. Both are correct in their setting; a from-scratch rebuild will not find (and should not hunt for) a separate `ConfigVersionedRows` migration.
 - **v1.9.7 finding 109 — forward-run uniqueness:** enforced by the partial index `ux_runs_ok_forward` (created in Phase 2) — at most one `status='ok'` row per `as_of` for `run_kind IN ('live','catchup')`; replay runs and failed retries are deliberately exempt.
-- **v1.9.7 finding 121 — enum CHECK columns extend only via migration:** `jobs.kind`, `jobs.status`, `runs.run_kind`, `corporate_actions.type`, `overfitting_status.status`, `journal_entries.kind`/`outcome`, `admin_actions.kind`, `trading_calendar.session`, and `regime_labels.trend`/`vol` carry CHECK-IN constraints; adding an allowed value (e.g. a future `jobs.kind`) is a versioned migration + a SCHEMA edit in the same PR — never an unlisted write.
+- **v1.9.7 finding 121 — enum CHECK columns extend only via migration:** `jobs.kind`, `jobs.status`, `runs.run_kind`, `corporate_actions.type`, `data_quality_flags.issue`/`severity` (D77), `overfitting_status.status`, `journal_entries.kind`/`outcome`, `admin_actions.kind`, `trading_calendar.session`, and `regime_labels.trend`/`vol` carry CHECK-IN constraints; adding an allowed value (e.g. a future `jobs.kind`) is a versioned migration + a SCHEMA edit in the same PR — never an unlisted write.
