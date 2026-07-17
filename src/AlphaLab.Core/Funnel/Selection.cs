@@ -8,7 +8,7 @@ namespace AlphaLab.Core.Funnel;
 /// not a list of orders, and falling off it is never itself a sell (§6 / rule 7).</summary>
 public sealed record SelectionResult(
     IReadOnlyList<SecurityId> WishList,
-    IReadOnlyList<Exclusion> Excluded);
+    IReadOnlyList<FunnelNote> Excluded);
 
 /// <summary>
 /// Stage 3 of the daily funnel (MASTER §6, catalog §3) — SHARED code for every strategy. Turns
@@ -51,7 +51,7 @@ public static class Selection
         ArgumentNullException.ThrowIfNull(rule);
         ArgumentNullException.ThrowIfNull(guardrails);
 
-        var excluded = new List<Exclusion>();
+        var excluded = new List<FunnelNote>();
         var passing = new List<(SecurityId Id, double Score)>();
 
         // Deterministic iteration (F-DET): a dictionary has no guaranteed order, so order by id first.
@@ -60,17 +60,17 @@ public static class Selection
             // The zero-score invariant. NaN lands here by construction — `NaN > 0` is false.
             if (!(score > 0.0))
             {
-                excluded.Add(new Exclusion(id, $"score {Fmt(score)} is not > 0 — never selectable (rule 7)."));
+                excluded.Add(new FunnelNote(id, $"score {Fmt(score)} is not > 0 — never selectable (rule 7)."));
                 continue;
             }
             if (score < rule.MinScore)
             {
-                excluded.Add(new Exclusion(id, $"score {Fmt(score)} is below the strategy floor {Fmt(rule.MinScore)}."));
+                excluded.Add(new FunnelNote(id, $"score {Fmt(score)} is below the strategy floor {Fmt(rule.MinScore)}."));
                 continue;
             }
             if (score < guardrails.MinScore)
             {
-                excluded.Add(new Exclusion(id, $"score {Fmt(score)} is below the system floor Guardrails.MinScore {Fmt(guardrails.MinScore)}."));
+                excluded.Add(new FunnelNote(id, $"score {Fmt(score)} is below the system floor Guardrails.MinScore {Fmt(guardrails.MinScore)}."));
                 continue;
             }
             passing.Add((id, score));
@@ -96,7 +96,7 @@ public static class Selection
         // names pass and the cap is 40, the wish list is two names long and the rest is cash.
         foreach (var (id, score) in ranked.Skip(Math.Max(cap, 0)))
         {
-            excluded.Add(new Exclusion(id, $"score {Fmt(score)} passed the floors but fell outside the breadth cap of {cap}."));
+            excluded.Add(new FunnelNote(id, $"score {Fmt(score)} passed the floors but fell outside the breadth cap of {cap}."));
         }
 
         var wishList = ranked.Take(Math.Max(cap, 0)).Select(x => x.Id).ToList();

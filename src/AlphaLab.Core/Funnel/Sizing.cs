@@ -15,7 +15,7 @@ public sealed record TargetPosition(SecurityId Id, decimal TargetNotional);
 public sealed record SizingResult(
     decimal Equity,
     IReadOnlyList<TargetPosition> Targets,
-    IReadOnlyList<Exclusion> Excluded)
+    IReadOnlyList<FunnelNote> Excluded)
 {
     /// <summary>Equity not allocated to any target — cash. A legitimate position, not a shortfall.</summary>
     public decimal UninvestedCash => Equity - Targets.Sum(t => t.TargetNotional);
@@ -79,7 +79,7 @@ public static class Sizing
         }
 
         var distinct = targets.Distinct().OrderBy(x => x.Value).ToList(); // F-DET: stable order
-        var excluded = new List<Exclusion>();
+        var excluded = new List<FunnelNote>();
 
         if (equity <= 0m)
         {
@@ -87,7 +87,7 @@ public static class Sizing
             // a bare empty list that reads like "the strategy wanted nothing today".
             foreach (var id in distinct)
             {
-                excluded.Add(new Exclusion(id, $"account equity is {equity} — not positive, so nothing can be sized."));
+                excluded.Add(new FunnelNote(id, $"account equity is {equity} — not positive, so nothing can be sized."));
             }
             return new SizingResult(equity, [], excluded);
         }

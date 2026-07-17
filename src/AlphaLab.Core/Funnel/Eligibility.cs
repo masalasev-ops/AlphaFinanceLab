@@ -2,15 +2,22 @@ using AlphaLab.Core.Domain;
 
 namespace AlphaLab.Core.Funnel;
 
-/// <summary>One name that did NOT reach the eligible pool, with the reason it was dropped. Every
-/// exclusion carries a reason so <c>decisions.stage_json</c> can answer "why wasn't X considered?"
-/// a year later — a silent drop is indistinguishable from a bug.</summary>
-public sealed record Exclusion(SecurityId Id, string Reason);
+/// <summary>
+/// One (security, reason) note from any funnel stage — a name dropped, held, closed, or skipped,
+/// always with the reason. Every stage emits these and they all land in
+/// <c>decisions.stage_json</c>, so it can answer "why wasn't X considered?" — or "why is X still
+/// held?" — a year later. A silent drop is indistinguishable from a bug.
+///
+/// Deliberately NOT named `Exclusion`: Stage 4 uses it to record HOLDS as well as closes, and a
+/// type called Exclusion carrying "held: rank 5 is still within the buffer" would be lying. The
+/// exclusion semantics live in the property names (`Excluded`), not in the type.
+/// </summary>
+public sealed record FunnelNote(SecurityId Id, string Reason);
 
 /// <summary>The Stage-1 outcome: the shared pool, plus every name that fell out and why.</summary>
 public sealed record EligibilityResult(
     IReadOnlyList<SecurityId> Eligible,
-    IReadOnlyList<Exclusion> Excluded);
+    IReadOnlyList<FunnelNote> Excluded);
 
 /// <summary>
 /// Stage 1 of the daily funnel (MASTER §6) — the SHARED eligible pool. Shared is the point: every
@@ -79,14 +86,14 @@ public static class Eligibility
         var priced = features.PricedOn(asOf).ToHashSet();
 
         var eligible = new List<SecurityId>();
-        var excluded = new List<Exclusion>();
+        var excluded = new List<FunnelNote>();
 
         // Deterministic order (F-DET): the pool is ordered by security_id regardless of the order the
         // roster arrived in, so two runs of the same day produce byte-identical stage_json.
         foreach (var id in indexMembers.Distinct().OrderBy(x => x.Value))
         {
             if (priced.Contains(id)) eligible.Add(id);
-            else excluded.Add(new Exclusion(id, "not priced: no bar at asOf visible at the run's watermark."));
+            else excluded.Add(new FunnelNote(id, "not priced: no bar at asOf visible at the run's watermark."));
         }
 
         return new EligibilityResult(eligible, excluded);
