@@ -3,8 +3,8 @@
 *Repo root. Updated every working session — what shipped, what's red, what was deliberately deferred, and any decision proposals. This file is the month-one discipline instrument (MASTER §17.1): if it stops being truthful, the phase gates stop working.*
 
 ## Current state
-- **Phase:** 1 — **all gate boxes green (phase-complete)**. The live `--universe sp100 --years 20` backfill ran clean on 2026-07-15 (304 EODHD calls / 99.7% headroom; 101 members, 488,217 bars, GSPC proxy 5,029 bars over 20y) and the INTEGRATIONS §1 call-limits ⚠VERIFY is confirmed. **Next:** Phase 2 (funnel + ledger + costs + the D53 staged pipeline in AlphaLab.Worker).
-- **Blocking:** none.
+- **Phase:** 2 — **in progress** (checkpoint 2.1 of 2.1–2.12 done). Phase 1 remains phase-complete: the live `--universe sp100 --years 20` backfill ran clean on 2026-07-15 (304 EODHD calls / 99.7% headroom; 101 members, 488,217 bars, GSPC proxy 5,029 bars over 20y) and the INTEGRATIONS §1 call-limits ⚠VERIFY is confirmed. **Next:** checkpoint 2.2 — the M1 ledger migration + `SchemaStartup` fail-fast (finding A).
+- **Blocking:** none. **Standing operator item — comes due at the first Phase-2 write (checkpoint 2.10, the first committed run):** the Ops-log entry of 2026-07-15 records that no off-machine backup exists *because the store is currently re-fetchable*. That reasoning **expires** the moment the lab writes `trades`/`decisions`/`equity_curve` — its own output, which no provider returns. Off-machine backup becomes mandatory then.
 - **Last session:** 2026-07-16 — **v1.9.16 FR-11 sizing phasing** (finding **169**; docs only — no schema, no migration, no config-key, no test change; count stays **237**): resolves the finding-168 report from v1.9.15. FR-11 (inverse-vol sizing using Ledoit–Wolf covariance, D42) was claimed by both Phase 2 (its Key-FR set) and Phase 6 (BUILD §0 + the Phase-6 prompt); split partial→full per the FR-13/FR-18 convention — Phase 2 carries FR-11 (partial) (the dummies' simple/equal sizing), Phase 6 carries FR-11 full (inverse-vol + LW covariance) — grounded in the `Sizing.Mode` enum and DESIGN_IMPROVEMENTS §3.1. A BUILD-phasing edit, not a new D-number. `ci.ps1` green. Open proposals now: the S&P 500 widening, FR-23 hypotheses, and the Phase-4 detection-power sweep. Preceded by v1.9.15 (findings 164–167) and v1.9.14 (finding 163).
 
 ## Phase gates (a phase is DONE only when every box is checked and committed)
@@ -39,6 +39,7 @@
 - [x] Regime proxy feed (FR-38/D73, v1.9.7): `GSPC.INDX` proxy machinery + SPY.US returns cross-check; `Regime.ProxySecurityId` resolved from `Regime.ProxySource` (versioned config row); `FX-RegimeProxyBackfill` green (readiness fails closed pre-warm-up) — checkpoint 1.9; the live ≥3.8y backfill run is via the CLI (1.10)
 
 ### Phase 2 — Funnel, ledger, costs, catch-up
+*Executed as checkpoints 2.1–2.12 (the 0.1–0.6 / 1.0–1.10 pattern). Done: **2.1** (Core domain contracts — FR-8/FR-11-partial surface).*
 - [ ] Six-stage funnel + ExitPolicy executor; FX-ZeroScore, FX-ExitOnly green
 - [ ] D43 cost model; FX-CostModel green
 - [ ] Corporate-action semantics complete; FX-Dividend/Split/Merger*/Spinoff/Delist/Unmapped green
@@ -103,6 +104,35 @@
 - [ ] If pass: D49 logged; Value/Quality + quarterly population + leakage extensions green
 
 ## Session log (newest first)
+
+### 2026-07-16 — Phase 2 checkpoint 2.1: Core domain contracts (FR-8/FR-11 partial)
+
+**The first Phase-2 code. `AlphaLab.Core` gains the domain layer the whole phase builds on — pure, BCL-only, zero I/O. No schema, no migration, no config-key change. 237 → 258 tests; `ci.ps1` green.**
+
+**Why Core and not Evaluation.** CLAUDE.md's layout puts the funnel and ledger in Core, but the CI-enforced reference graph gives Core zero project references. That forces ports-and-adapters: Core declares the contracts and holds the pure math; Data supplies the adapters. Two payoffs, both structural rather than a matter of discipline — the §13.6 ledger (the phase's highest-risk logic, 10 fixtures pointed at it) becomes a pure function testable with **zero SQLite**, and D76 compliance is enforced *by construction* (Core has no DbContext, so raw `corporate_actions` access is impossible, not merely discouraged). Same trade `DataQualityGate` already made in Phase 1.
+
+**Shipped (`src/AlphaLab.Core/Domain/`, `src/AlphaLab.Core/Config/`).**
+- **`SecurityId`** — a `readonly record struct` wrapper, not a bare `long`. `account_id`, `run_id`, and a ticker-derived int are all longs too; wrapping makes catalog §2's "keys are security_ids, never raw tickers" (rule 2) a **compile-time** fact. Conversion is explicit so a raw long can never bind implicitly. Deliberately *not* the same trade as money — see below.
+- **`HoldingHorizon`** — `Days(n)` / `ToRankExit` / `ToNextRebalance`. `Days_` returns null for the latter two, which is why `strategies.holding_horizon_days` is nullable; coercing them to 0 would read as "hold zero days".
+- **`ExitPolicy`** — all five catalog §2 shapes, `[JsonPolymorphic]` with a `kind` discriminator (the `exit_policy_json` contract). **Declare 5, execute 3**: `Never`/`RankBuffer`/`ScheduledRebalance` are what Phase 2's dummies need; `TargetOrTimeStop` and `ChannelExit` are declared so a Phase-6 strategy row still round-trips, but the executor will refuse them. `TargetOrTimeStop.exitCondition` is **genuinely unspecified in the catalog** (§2 names the shape, never defines the reversion condition) — guessing would silently invent strategy behaviour, so refusing is the fail-closed answer (rule 10). An unknown `kind` throws rather than defaulting to `Never`, which would turn an unrecognized rule into a position that never exits.
+- **`SelectionRule` / `SelectionMode`** — catalog §3 params (TopN 40; Threshold minScore 0.60, maxConcurrent 60). The zero-score invariant is enforced in Stage 3, not here; this only carries parameters.
+- **`SizingMode`** — `Equal | InverseVol | Kelly`, mirroring the CONFIG surface. Only `Equal` will execute (FR-11 partial, finding 169).
+- **`StrategyConfig`** — immutable, `Seed` required (the F-DET determinism contract), `Params` a bag (CONFIG key rule 1: per-strategy params live in `config_json`, never appsettings), `Param()` **throws** on a miss (D17: frozen params mean a missing lookback is a config error, never a default). Carries D52's `Unregistered` flag from the start, defaulting false, so a candidate is only ever branded deliberately.
+- **`IFeatureView`** — the PIT port (rule 4). **Primitives only** (`SecurityId`/`DateOnly`/`double`), which is precisely what lets it sit beside `IModel` in Core; had it exposed `BarRow` it would have to move to Data, where `IModel` could not follow without breaking Strategies. Implementations resolve through the versioned bar reader, so the watermark rule has exactly one home and cannot drift. Splits raw/adjusted per D30 (signals on adjusted, ledger on raw) and ADV into **shares** (cap + the dimensionless √(Q/ADV)) vs **notional** (the spread bucket only) — the unit split D43 needs but never states.
+- **`IModel`** — catalog §2 verbatim.
+- **`CostsOptions` / `SizingOptions` / `GuardrailsOptions`** — defaults mirroring CONFIG_REFERENCE exactly, asserted by test. `CommissionPerTrade` is `decimal` (D69), asserted by reflection so a future edit to `double` reddens rather than silently reintroducing float error on the number the whole falsification rests on.
+
+**Money is plain `decimal`, no wrapper — the deliberate asymmetry with `SecurityId`.** D69 already gives exactness, so a `Money` struct would buy zero correctness while costing an EF value-conversion layer and a JSON converter. The `SecurityId` wrapper buys type-separation between three interchangeable longs; a money wrapper buys nothing decimal doesn't. "Determinism beats elegance; boring explicit code over cleverness" points one way here.
+
+**Verified.** `ci.ps1` green — build, vuln audit (the two known non-blocking NU1903s), tests, and all guards (bars greps, secrets scan, reference graph, Web-must-not-reference-Data). **258 tests** (+21: `ExitPolicyTests` 9, `DomainContractTests` 12). `AlphaLab.Core` still has zero package deps and zero project references. Notable test: `FR8_ExitPolicy_HierarchyIsClosed_SoStage4SwitchIsExhaustive` asserts by reflection that no `ExitPolicy` subtype exists outside the closed hierarchy — Stage 4's switch would otherwise silently fall through to "no exit" for a sixth shape.
+
+**Red / known-broken:** none.
+
+**Deferred (deliberately):** everything else in the phase — checkpoints 2.2–2.12 per the approved plan. `AlphaLab.Evaluation` stays empty (metrics/read-models are Phase 3); `ScreenReadModels.cs` untouched (row shapes are Phase 3's).
+
+**Decision proposals (need a D-number):** none new from 2.1. Three are queued for the phase and land with the checkpoints that surface them — P1 (Stage-1 `liquid` filters nothing), P2 (the D76 batch-duplicate guard belongs at ingestion), P3 (a Phase-6 feature cache needs `features` to gain a PIT column).
+
+**Next session starts with:** checkpoint 2.2 — the M1 ledger migration (8 tables) + `LedgerStore`/`LedgerMapping`, and the `SchemaStartup` pending-migration fail-fast (finding A — the live rule-14 hazard M1 creates).
 
 ### 2026-07-16 — v1.9.16 FR-11 sizing phasing (resolves finding 168, docs only)
 
