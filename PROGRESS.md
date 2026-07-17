@@ -3,7 +3,7 @@
 *Repo root. Updated every working session — what shipped, what's red, what was deliberately deferred, and any decision proposals. This file is the month-one discipline instrument (MASTER §17.1): if it stops being truthful, the phase gates stop working.*
 
 ## Current state
-- **Phase:** 2 — **in progress** (checkpoints 2.1–2.2 of 2.1–2.12 done; 271 tests). Phase 1 remains phase-complete: the live `--universe sp100 --years 20` backfill ran clean on 2026-07-15 (304 EODHD calls / 99.7% headroom; 101 members, 488,217 bars, GSPC proxy 5,029 bars over 20y) and the INTEGRATIONS §1 call-limits ⚠VERIFY is confirmed. **Next:** checkpoint 2.3 — the D43 cost model + VirtualBroker.
+- **Phase:** 2 — **in progress** (checkpoints 2.1–2.3 of 2.1–2.12 done; 297 tests). Phase 1 remains phase-complete: the live `--universe sp100 --years 20` backfill ran clean on 2026-07-15 (304 EODHD calls / 99.7% headroom; 101 members, 488,217 bars, GSPC proxy 5,029 bars over 20y) and the INTEGRATIONS §1 call-limits ⚠VERIFY is confirmed. **Next:** checkpoint 2.4 — BarFeatureView + funnel Stages 1/3/5.
 - **Operator action pending — the Worker will refuse to launch until it is done:** M1 (`Phase2Ledger`, 8 empty ledger tables) is committed but **not applied** to the live arena. Run `pwsh tools/migrate.ps1 -Arena sp500` (snapshots first). The refusal is the v1.9.17 finding-A fix working as designed — `SchemaStartup` now verifies the schema and never applies it (rule 14), so a pending migration stops the Worker instead of silently migrating your live store un-snapshotted.
 - **Blocking:** none. **Standing operator item — comes due at the first Phase-2 write (checkpoint 2.10, the first committed run):** the Ops-log entry of 2026-07-15 records that no off-machine backup exists *because the store is currently re-fetchable*. That reasoning **expires** the moment the lab writes `trades`/`decisions`/`equity_curve` — its own output, which no provider returns. Off-machine backup becomes mandatory then.
 - **Last session:** 2026-07-16 — **v1.9.16 FR-11 sizing phasing** (finding **169**; docs only — no schema, no migration, no config-key, no test change; count stays **237**): resolves the finding-168 report from v1.9.15. FR-11 (inverse-vol sizing using Ledoit–Wolf covariance, D42) was claimed by both Phase 2 (its Key-FR set) and Phase 6 (BUILD §0 + the Phase-6 prompt); split partial→full per the FR-13/FR-18 convention — Phase 2 carries FR-11 (partial) (the dummies' simple/equal sizing), Phase 6 carries FR-11 full (inverse-vol + LW covariance) — grounded in the `Sizing.Mode` enum and DESIGN_IMPROVEMENTS §3.1. A BUILD-phasing edit, not a new D-number. `ci.ps1` green. Open proposals now: the S&P 500 widening, FR-23 hypotheses, and the Phase-4 detection-power sweep. Preceded by v1.9.15 (findings 164–167) and v1.9.14 (finding 163).
@@ -40,9 +40,9 @@
 - [x] Regime proxy feed (FR-38/D73, v1.9.7): `GSPC.INDX` proxy machinery + SPY.US returns cross-check; `Regime.ProxySecurityId` resolved from `Regime.ProxySource` (versioned config row); `FX-RegimeProxyBackfill` green (readiness fails closed pre-warm-up) — checkpoint 1.9; the live ≥3.8y backfill run is via the CLI (1.10)
 
 ### Phase 2 — Funnel, ledger, costs, catch-up
-*Executed as checkpoints 2.1–2.12 (the 0.1–0.6 / 1.0–1.10 pattern). Done: **2.1** (Core domain contracts), **2.2** (M1 ledger schema + persistence + the finding-A fail-fast).*
+*Executed as checkpoints 2.1–2.12 (the 0.1–0.6 / 1.0–1.10 pattern). Done: **2.1** (Core domain contracts), **2.2** (M1 ledger schema + persistence + the finding-A fail-fast), **2.3** (D43 cost model + VirtualBroker; FX-CostModel green).*
 - [ ] Six-stage funnel + ExitPolicy executor; FX-ZeroScore, FX-ExitOnly green
-- [ ] D43 cost model; FX-CostModel green
+- [x] D43 cost model; FX-CostModel green *(2.3 — `CostModel`/`VirtualBroker` pure in Core. The Worker wires `Costs:*` and persists `capacity_rejections` at 2.10; the arithmetic, the cap, the stamp, and the fail-closed refusals are done and tested.)*
 - [ ] Corporate-action semantics complete; FX-Dividend/Split/Merger*/Spinoff/Delist/Unmapped green
 - [ ] B&H CW+EW + ThresholdModel dummies live; B&H total-return acceptance green
 - [ ] Staged pipeline hosted in AlphaLab.Worker (D53/D59/FR-29/FR-34): Stage-1 failure writes nothing; no-overlapping-writers + runs-without-API green; FX-StagedPipeline green
@@ -105,6 +105,34 @@
 - [ ] If pass: D49 logged; Value/Quality + quarterly population + leakage extensions green
 
 ## Session log (newest first)
+
+### 2026-07-17 — Phase 2 checkpoint 2.3: the D43 cost model + VirtualBroker (FR-10)
+
+**`CostModel` + `VirtualBroker` in `AlphaLab.Core` — pure, no I/O. FX-CostModel green. No schema, no migration, no config-key change. 271 → 297 tests; `ci.ps1` green.**
+
+**Shipped (`src/AlphaLab.Core/Ledger/`).**
+- **`CostModel`** — `commission + half-spread(bucket) + k·σ_daily·√(Q/ADV)`. Buckets keyed by 21d ADV **notional** (mega ≥$400M → 1bp, large ≥$100M → 2.5bp, other → 5bp, inclusive lower bounds); `ParticipationCapShares` = 2% of 21d ADV **shares**; every coefficient from `Costs:*`; `ModelVersion` stamped on every fill.
+- **`VirtualBroker`** — prices one order and returns a closed `BrokerResult` (`Filled` | `Rejected`), so a caller cannot forget the rejection case. `MarketInputs` carries price/ADV-shares/ADV-notional/σ, all nullable.
+
+**The units seam, resolved and now pinned by test.** D43 never states whether Q/ADV is shares or notional, and it must be **shares** or the ratio isn't dimensionless and the square-root law means nothing. Mixing them (Q in shares over ADV in dollars) yields a tiny ratio and near-zero impact on every name — costs that *look* modelled but aren't. So: **shares** for the cap and the √(Q/ADV) ratio, **notional** for the spread bucket only (a spread is a property of how much money trades per day), and `capacity_rejections.adv21` stores the shares figure. `FR10_Impact_IsSubLinear` pins the law itself (ratio is exactly √2, not 2) so a silent swap to a proportional model reddens.
+
+**The cap clips, it does not reject the order.** D43 says the *excess quantity* is rejected — so a 3%-ADV order fills at 2% and the shortfall is surfaced as a `CapacityClip` destined for `capacity_rejections`. Costs are priced on the **allowed** size, not the intended one: you do not pay impact on shares you never traded, and pricing the intent would double-punish illiquid names for being capacity-constrained. The cap applies to **sells too** — a book that can't exit is a real risk, and capping only entries would model a fantasy.
+
+**Fail closed on every missing risk input (F-CLOSED / rule 10).** Each of price / ADV-shares / ADV-notional / σ absent → `Rejected` with a named reason. The point is that a missing ADV must not become "assume unlimited liquidity" and a missing σ must not become "assume zero impact" — both would price the fill as **free**, which is precisely the error the cost model exists to make impossible. Note σ = 0 is a *legitimate* input (a name that didn't move has no impact to model but still crosses the spread), and is deliberately distinct from σ missing.
+
+**Verified.** `ci.ps1` green — **297 tests** (+26, `CostModelTests`). Notable: `FR10_Impact_MatchesTheSquareRootLaw_To1e9` (the fixture's stated tolerance, on hand-checkable round numbers: Q/ADV=0.01 ⇒ fraction 0.0002 ⇒ $200 on $1M notional); `FR10_ParticipationCap_RejectsAndLogs`; `FR10_CostsAreAlwaysOn_ThereIsNoCostFreeFlagOnThisPath` — asserts *structurally* (by reflection) that no bool parameter exists on the broker, because hard rule 5's "costs always on" is only real if a cost-free number cannot reach a forward verdict by someone adding a convenience flag. The D36 cost-free population is display-only and will get its own construction in Phase 3.
+
+**A deliberate non-behaviour, documented in test.** A vanishingly thin ADV yields a tiny-but-positive cap and fills proportionally rather than refusing. Adding a "minimum tradeable size" floor would mean inventing a CONFIG key that CONFIG_REFERENCE does not define. Real ADVs come from real volume and never look like this; if that ever changes it is a D-number, not a quiet constant. (The `cap allows nothing` branch is reachable only via a 0% cap — a misconfiguration — and refuses loudly.)
+
+**Red / known-broken:** none.
+
+**Deferred (deliberately):** the `Costs` section is **not** added to the Worker's appsettings yet — nothing reads it until the Worker constructs the broker in 2.10, and shipping config no code reads is the "no dead config" defect the v1.9.6 pass fixed. `CostsOptions`' defaults already mirror CONFIG_REFERENCE and are asserted (2.1). Corporate-action fills do **not** route through the broker: §13.6 waives standard costs on a merger cash-out/conversion ("a corporate action, not a trade") and such events are not capacity-capped — they happen to you regardless of size. The §13.6 ledger (2.6/2.7) builds those trades directly with zero costs; `VirtualBroker`'s doc comment says so.
+
+**Decision proposals (need a D-number):** none new. P1/P2/P3 still queued.
+
+**Operator actions surfaced:** unchanged from 2.2 — M1 is committed but **not applied**; run `pwsh tools/migrate.ps1 -Arena sp500`. The Worker refuses to launch until then (the finding-A fix working as designed).
+
+**Next session starts with:** checkpoint 2.4 — `BarFeatureView` (Data, over `GetCrossSection`/`GetSeries`) + funnel Stages 1/3/5. Carries **P1**: Stage-1's `liquid` gate filters nothing, and the code comment must say so.
 
 ### 2026-07-17 — Phase 2 checkpoint 2.2: the ledger schema (M1) + persistence + the finding-A fail-fast
 
