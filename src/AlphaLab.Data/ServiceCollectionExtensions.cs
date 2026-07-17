@@ -60,6 +60,12 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRegimeProxyIngestion, RegimeProxyIngestion>();
         services.AddScoped<IRegimeProxyReadiness, RegimeProxyReadiness>();
         services.AddScoped<ILedgerStore, LedgerStore>();   // Phase 2 (2.2) — the ledger persistence seam
+        // Phase 2 is the first CONSUMER of these read paths (the funnel + the CA ledger), so it owns the
+        // binds (CONFIG key rule 7 for services): the watermarked bar read (D40/D78) and the watermarked
+        // corporate-action read (D76). Both are pure readers over the versioned stores.
+        services.AddScoped<IBarReadService, BarReadService>();
+        services.AddScoped<ICorporateActionReadService, CorporateActionReadService>();
+        services.AddScoped<CorporateActionApplier>();      // 2.6 — §13.6 part 1 (dividend/split/ticker/freeze)
         return services;
     }
 }
