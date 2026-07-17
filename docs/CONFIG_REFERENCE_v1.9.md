@@ -69,6 +69,13 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     "SpinoffLiquidationDays": 0                    // 0 = exit-only (owner's ExitPolicy manages the spun-off receipt); >0 = liquidate after N sessions — EXECUTION is Phase 7, key carried for fidelity
   },
 
+  "Accounts": {                                    // v1.9.19 (finding K) — the ledger's opening capital
+    "StartingCash": 100000                         // each account (baseline + dummy) opens at $100,000 (decimal → TEXT, D69).
+                                                   // The AUTHORITATIVE runtime value is the versioned `config` row Accounts.StartingCash
+                                                   // (MAX(version) — the Regime.ProxySecurityId precedent), written by DummyRoster from this
+                                                   // default on a fresh store; appsettings documents the default, the DB row is what the accounts opened at.
+  },
+
   "Sizing": {                                      // D32/D42
     "Mode": "inverse_vol",                        // inverse_vol | equal(dummies) | kelly(P6+)
     "PortfolioVolTargetAnn": 0.12,
