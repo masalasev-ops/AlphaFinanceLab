@@ -31,6 +31,22 @@ public interface IFeatureView
     /// visible — which is what makes a replay pinned to the past reproduce byte-identically.</summary>
     string Watermark { get; }
 
+    /// <summary>
+    /// Every security carrying a usable price on <paramref name="date"/> at the watermark, ordered
+    /// by id — the DATE-MAJOR read (D78) behind the funnel's Stage-1 "priced" check.
+    ///
+    /// Why this is on the port rather than a per-name loop: Stage 1 asks "which of the ~101 index
+    /// members have a bar today?", and that is one cross-section read (ix_bars_date), not 101
+    /// single-bar reads. D78 exists for exactly this shape. Keeping it here also keeps Stage 1 pure
+    /// and in Core — the alternative was passing the answer in from Data, which would put a
+    /// point-in-time decision outside the one port that enforces the watermark.
+    ///
+    /// "Usable price" means BOTH bases exist (D30): a raw close (what the ledger fills at) and an
+    /// adjusted close (what signals score on). A name with only one of the two cannot complete the
+    /// funnel, so it is not eligible — a data fact, not a threshold.
+    /// </summary>
+    IReadOnlyList<SecurityId> PricedOn(DateOnly date);
+
     /// <summary>Adjusted close on <paramref name="date"/>, or null. SIGNALS use adjusted
     /// (D30/§13.8) — never mix adjusted and raw within an account.</summary>
     double? AdjClose(SecurityId id, DateOnly date);
