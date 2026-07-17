@@ -42,12 +42,19 @@ public sealed class PipelineHarness : IDisposable
 
     private const int PreSeedCount = 40; // sessions of history pre-seeded (≥ the 21-session ADV window)
 
-    public PipelineHarness()
+    /// <param name="now">The wall clock for the catch-up guard + run timestamps. Default: Run3 (the last
+    /// run day) at 22:00 UTC — past its ET close, so the catch-up "last completed session" is Run3 and the
+    /// natural gap is Run1..Run3. The pipeline tests are unaffected (RunDayAsync stamps timestamps from it
+    /// but never reads it for the watermark).</param>
+    public PipelineHarness(DateTimeOffset? now = null)
     {
         DbPath = Path.Combine(Path.GetTempPath(), "alphalab-pipe-" + Guid.NewGuid().ToString("N") + ".db");
         var cs = $"Data Source={DbPath}";
 
         Sessions = BuildSessions(new DateOnly(2024, 1, 1), 50);
+        var clockNow = now ?? new DateTimeOffset(
+            DateOnly.ParseExact(Sessions[PreSeedCount + 2], "yyyy-MM-dd", CultureInfo.InvariantCulture)
+                .ToDateTime(new TimeOnly(22, 0)), TimeSpan.Zero);
 
         using (var db = Open())
         {
@@ -67,11 +74,24 @@ public sealed class PipelineHarness : IDisposable
         services.AddAlphaLabMembership(new RegimeOptions());
         services.AddSingleton<IMarketDataProvider>(Market);
         services.AddSingleton<IRegimeProxyProvider>(Proxy);
-        services.AddSingleton<TimeProvider>(new FixedTimeProvider(new DateTimeOffset(2024, 3, 1, 22, 0, 0, TimeSpan.Zero)));
+        services.AddSingleton<TimeProvider>(new FixedTimeProvider(clockNow));
         services.AddScoped<Stage1Fetch>();
         services.AddScoped<DailyPipeline>();
+        services.AddScoped<IMissedSessionResolver, MissedSessionResolver>();
+        services.AddSingleton<CatchupRunner>();
         _provider = services.BuildServiceProvider();
     }
+
+    /// <summary>Resolve the missed sessions the D47 resolver would report right now.</summary>
+    public async Task<IReadOnlyList<DateOnly>> ResolveMissedAsync()
+    {
+        using var scope = _provider.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<IMissedSessionResolver>().ResolveAsync();
+    }
+
+    /// <summary>Run the full D47 catch-up loop (resolve → replay each missed day via the pipeline).</summary>
+    public Task<CatchupOutcome> RunCatchupAsync() =>
+        _provider.GetRequiredService<CatchupRunner>().RunAsync();
 
     public AlphaLabDbContext Open() =>
         new(new DbContextOptionsBuilder<AlphaLabDbContext>().UseSqlite($"Data Source={DbPath}").Options);
@@ -161,6 +181,10 @@ public sealed class PipelineHarness : IDisposable
 
     private static ConfigRow Config(string key, string value) =>
         new() { Key = key, ValueJson = value, Version = 1, ChangedOn = "2024-01-01", Reason = "test seed" };
+
+    /// <summary>The ISO date of the standard 50-session calendar's session at <paramref name="index"/> —
+    /// so a test can compute a clock time BEFORE constructing the harness (e.g. a wider or narrower gap).</summary>
+    public static string SessionDate(int index) => BuildSessions(new DateOnly(2024, 1, 1), 50)[index];
 
     private static IReadOnlyList<string> BuildSessions(DateOnly start, int count)
     {

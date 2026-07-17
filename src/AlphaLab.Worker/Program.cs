@@ -79,9 +79,10 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<Stage1Fetch>();
 builder.Services.AddScoped<DailyPipeline>();
 
-// Catch-up resolver (D47) — Phase 0 always resolves to nothing-to-do; the real resolver + the loop that
-// drives DailyPipeline per missed day land in checkpoint 2.11.
-builder.Services.AddScoped<IMissedSessionResolver, Phase0MissedSessionResolver>();
+// Catch-up (D47, checkpoint 2.11): the real resolver (runs + bars + calendar + the ET close-time guard)
+// and the resumable loop that drives DailyPipeline.RunDayAsync per missed session, oldest first.
+builder.Services.AddScoped<IMissedSessionResolver, MissedSessionResolver>();
+builder.Services.AddSingleton<CatchupRunner>();
 
 // Schema application + WAL runs in BOTH modes and MUST be registered first (StartAsync runs in
 // registration order; do not reorder relative to Quartz / the OnDemand runner).
