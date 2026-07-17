@@ -96,7 +96,7 @@ public class SchemaFidelityTests
     }
 
     [Fact]
-    public void Schema_ExactlyTheTwentyThreeTables_Exist()
+    public void Schema_ExactlyTheTwentyFiveTables_Exist()
     {
         var dbPath = TempDb();
         try
@@ -114,11 +114,10 @@ public class SchemaFidelityTests
             while (reader.Read()) tables.Add(reader.GetString(0));
 
             // Phase 0 infra(5) + Phase 1 data(9) + the D77 pre-Phase-2 data_quality_flags(1)
-            // + the Phase-2 checkpoint-2.2 ledger(8) = 23.
+            // + the Phase-2 checkpoint-2.2 ledger(8) + the checkpoint-2.8 regime tables(2) = 25.
             //
             // STILL deliberately absent, and each for its own reason — this list is the guard
             // against a table appearing before the phase that earns it:
-            //   • regime_labels / regime_episodes — checkpoint 2.8 (M2)
             //   • features        — NOT Phase 2 at all. It has no observed_at/version column, so it
             //                       cannot express the watermark read rule (rule 4); persisting a
             //                       feature computed at watermark W and re-reading it at W' is a leak
@@ -136,8 +135,8 @@ public class SchemaFidelityTests
                 "accounts", "api_usage_log", "bars", "capacity_rejections", "cash_events",
                 "catchup_log", "config", "corporate_actions", "data_quality_flags", "decisions",
                 "equity_curve", "index_membership", "index_membership_log", "jobs", "positions",
-                "runs", "sector_changes", "securities", "strategies", "ticker_history",
-                "trades", "trading_calendar", "worker_state"
+                "regime_episodes", "regime_labels", "runs", "sector_changes", "securities",
+                "strategies", "ticker_history", "trades", "trading_calendar", "worker_state"
             }, tables);
         }
         finally { TryDelete(dbPath); }
@@ -208,8 +207,9 @@ public class SchemaFidelityTests
             using (var db = NewContext(dbPath)) db.Database.Migrate();
 
             // Every bare INTEGER PRIMARY KEY per SCHEMA — the migration hand-edit removed AUTOINCREMENT.
-            // Phase 0: runs, jobs. Phase 1: securities, corporate_actions, index_membership_log. D77: data_quality_flags.
-            foreach (var table in new[] { "runs", "jobs", "securities", "corporate_actions", "index_membership_log", "data_quality_flags" })
+            // Phase 0: runs, jobs. Phase 1: securities, corporate_actions, index_membership_log. D77:
+            // data_quality_flags. Checkpoint 2.8: regime_episodes.
+            foreach (var table in new[] { "runs", "jobs", "securities", "corporate_actions", "index_membership_log", "data_quality_flags", "regime_episodes" })
             {
                 Assert.DoesNotContain("AUTOINCREMENT", TableDdl(dbPath, table), StringComparison.OrdinalIgnoreCase);
             }
@@ -269,6 +269,11 @@ public class SchemaFidelityTests
 
             Assert.Contains("ck_corporate_actions_type", TableDdl(dbPath, "corporate_actions"));
             Assert.Contains("ck_trading_calendar_session", TableDdl(dbPath, "trading_calendar"));
+            // regime_labels carries the two cross-product CHECKs (D50); regime_episodes carries none.
+            Assert.Contains("ck_regime_labels_trend", TableDdl(dbPath, "regime_labels"));
+            Assert.Contains("ck_regime_labels_vol", TableDdl(dbPath, "regime_labels"));
+            Assert.Equal(2, Regex.Matches(TableDdl(dbPath, "regime_labels"), "CHECK", RegexOptions.IgnoreCase).Count);
+            Assert.Equal(0, Regex.Matches(TableDdl(dbPath, "regime_episodes"), "CHECK", RegexOptions.IgnoreCase).Count);
             // These data tables carry no CHECK in SCHEMA.
             Assert.Equal(0, Regex.Matches(TableDdl(dbPath, "securities"), "CHECK", RegexOptions.IgnoreCase).Count);
             Assert.Equal(0, Regex.Matches(TableDdl(dbPath, "bars"), "CHECK", RegexOptions.IgnoreCase).Count);

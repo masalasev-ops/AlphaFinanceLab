@@ -30,6 +30,10 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
     public DbSet<ApiUsageLogRow> ApiUsageLog => Set<ApiUsageLogRow>();
     public DbSet<DataQualityFlagRow> DataQualityFlags => Set<DataQualityFlagRow>();
 
+    // ---- Phase 2 regime tables (D34/D45/D50) ----
+    public DbSet<RegimeLabelRow> RegimeLabels => Set<RegimeLabelRow>();
+    public DbSet<RegimeEpisodeRow> RegimeEpisodes => Set<RegimeEpisodeRow>();
+
     // ---- Phase 2 ledger tables (D29/D30/D43; money is decimal → TEXT per D69) ----
     public DbSet<StrategyRow> Strategies => Set<StrategyRow>();
     public DbSet<AccountRow> Accounts => Set<AccountRow>();
@@ -286,6 +290,36 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
             e.Property(x => x.Detail).HasColumnName("detail").IsRequired();
             e.Property(x => x.ObservedAt).HasColumnName("observed_at").IsRequired();
             e.HasIndex(x => x.RunId).HasDatabaseName("ix_data_quality_flags_run");
+        });
+
+        // ---- regime_labels (D34/D50) ---- PK as_of; trend + vol CHECKs. Derived PIT table: no run_kind
+        // (the regime is a market-level fact) and no version (inputs_hash carries the watermark provenance).
+        modelBuilder.Entity<RegimeLabelRow>(e =>
+        {
+            e.ToTable("regime_labels", t =>
+            {
+                t.HasCheckConstraint("ck_regime_labels_trend", "trend IN ('bull','bear')");
+                t.HasCheckConstraint("ck_regime_labels_vol", "vol IN ('normal_vol','high_vol')");
+            });
+            e.HasKey(x => x.AsOf);
+            e.Property(x => x.AsOf).HasColumnName("as_of");
+            e.Property(x => x.Trend).HasColumnName("trend").IsRequired();
+            e.Property(x => x.Vol).HasColumnName("vol").IsRequired();
+            e.Property(x => x.Label).HasColumnName("label").IsRequired();
+            e.Property(x => x.InputsHash).HasColumnName("inputs_hash").IsRequired();
+        });
+
+        // ---- regime_episodes (D45) ---- episode_id bare INTEGER PK (NO AUTOINCREMENT — hand-edit). No CHECK
+        // (SCHEMA declares none; label reuses the trend tokens but is unconstrained here, the trades.reason
+        // precedent). end_date nullable = ongoing.
+        modelBuilder.Entity<RegimeEpisodeRow>(e =>
+        {
+            e.ToTable("regime_episodes");
+            e.HasKey(x => x.EpisodeId);
+            e.Property(x => x.EpisodeId).HasColumnName("episode_id");
+            e.Property(x => x.Label).HasColumnName("label").IsRequired();
+            e.Property(x => x.StartDate).HasColumnName("start_date").IsRequired();
+            e.Property(x => x.EndDate).HasColumnName("end_date");
         });
 
         // ================= Phase 2: the ledger (SCHEMA §"STRATEGIES, ACCOUNTS, LEDGER") =========

@@ -118,6 +118,11 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
                                                    // S&P 100 slice (regimes are market-level facts). ≈3.8y warm-up backfill required before the first label
     "TrendSmaDays": 200, "TrendHysteresisPct": 1.0, "TrendConfirmDays": 5,
     "VolWindowDays": 21, "VolPercentile": 80, "VolLookbackYears": 3
+    // v1.9.18 finding F/X: this section BINDS from Phase 2 (checkpoint 2.8) — the FR-26/D50 label service
+    // is the first consumer, so the composition root binds `Regime` into RegimeOptions and passes it to
+    // AddAlphaLabMembership (before this, an unbound default silently ignored every value here). The label
+    // params map 1:1 to RegimeLabeler; VolLookbackYears is converted to sessions (×252) to match the
+    // RegimeProxyReadiness warm-up. ProxySecurityId stays null here — the live value is the versioned config row.
   },
 
   "Urls": "http://127.0.0.1:5230",              // D71 — the API's listen URL (standard ASP.NET Core key; committed, non-secret; NEVER via the ASPNETCORE_URLS env var — D67 bans env-var reads). Per-arena profiles change only the port (convention: sp500 → 5230, next arena → 5231, …); the Web arena registry's baseUrl for the arena must match this value exactly
