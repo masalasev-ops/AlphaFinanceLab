@@ -63,6 +63,16 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
             // status: defaulted but UNCONSTRAINED — no CHECK (SCHEMA fidelity).
             e.Property(x => x.Status).HasColumnName("status").IsRequired().HasDefaultValue("running");
             e.Property(x => x.InputsHash).HasColumnName("inputs_hash");
+            // Forward-run uniqueness (v1.9.7 finding 109; SCHEMA:341-348, M3/checkpoint 2.10). At most ONE
+            // status='ok' row per as_of among FORWARD kinds — a PARTIAL unique index, not a plain unique(as_of):
+            // failed runs legitimately retry (a second row, same as_of) and replay produces many runs over the
+            // same historical date by design, so both are exempt by the filter. This is what makes catch-up
+            // idempotency ("re-running a recovered day is a no-op") and catchup_log(as_of PK) mutually
+            // consistent. Placed here (M3) because SCHEMA:344 says it is "created when Stage-2 first writes runs".
+            e.HasIndex(x => x.AsOf)
+                .HasDatabaseName("ux_runs_ok_forward")
+                .IsUnique()
+                .HasFilter("status = 'ok' AND run_kind IN ('live','catchup')");
         });
 
         // ---- catchup_log ----

@@ -306,6 +306,55 @@ public class SchemaFidelityTests
         finally { TryDelete(dbPath); }
     }
 
+    [Fact]
+    public void UxRunsOkForward_RejectsASecondForwardOk_ButAllowsReplayAndFailedRetries()
+    {
+        var dbPath = TempDb();
+        try
+        {
+            using (var db = NewContext(dbPath)) db.Database.Migrate();
+
+            // The partial unique index exists on runs (M3 / checkpoint 2.10).
+            using (var db = NewContext(dbPath))
+            {
+                var conn = db.Database.GetDbConnection();
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "SELECT sql FROM sqlite_master WHERE type='index' AND name='ux_runs_ok_forward';";
+                var sql = (string?)cmd.ExecuteScalar();
+                Assert.NotNull(sql);
+                Assert.Contains("as_of", sql);
+                Assert.Matches(new Regex(@"WHERE.*status.*=.*'ok'", RegexOptions.IgnoreCase | RegexOptions.Singleline), sql!);
+            }
+
+            // One 'ok' live row for a day is fine.
+            using (var db = NewContext(dbPath))
+            {
+                db.Runs.Add(new RunRow { AsOf = "2026-01-05", RunKind = "live", Watermark = "w", StartedAt = "t", Status = "ok" });
+                db.SaveChanges();
+            }
+
+            // A SECOND 'ok' FORWARD row for the same as_of is rejected by the store (the partial index).
+            using (var db = NewContext(dbPath))
+            {
+                db.Runs.Add(new RunRow { AsOf = "2026-01-05", RunKind = "catchup", Watermark = "w", StartedAt = "t", Status = "ok" });
+                Assert.ThrowsAny<Exception>(() => db.SaveChanges());
+            }
+
+            // But a FAILED retry (same day) and a REPLAY row over the same date are BOTH allowed — the
+            // index is partial exactly so retries and replay are exempt (v1.9.7 finding 109).
+            using (var db = NewContext(dbPath))
+            {
+                db.Runs.Add(new RunRow { AsOf = "2026-01-05", RunKind = "live", Watermark = "w", StartedAt = "t", Status = "failed" });
+                db.Runs.Add(new RunRow { AsOf = "2026-01-05", RunKind = "replay", Watermark = "w", StartedAt = "t", Status = "ok" });
+                db.Runs.Add(new RunRow { AsOf = "2026-01-05", RunKind = "replay", Watermark = "w2", StartedAt = "t", Status = "ok" });
+                db.SaveChanges(); // no throw
+                Assert.Equal(2, db.Runs.Count(r => r.AsOf == "2026-01-05" && r.RunKind == "replay"));
+            }
+        }
+        finally { TryDelete(dbPath); }
+    }
+
     private static string TempDb() =>
         Path.Combine(Path.GetTempPath(), "alphalab-schema-" + Guid.NewGuid().ToString("N") + ".db");
 

@@ -28,6 +28,13 @@ public static class CapWeightProxy
     public const string OefSymbol = "OEF.US"; // iShares S&P 100 ETF
     public const string IvvSymbol = "IVV.US"; // iShares Core S&P 500 ETF
 
+    /// <summary>The append-only versioned <c>config</c> key holding the resolved cap-weight proxy's
+    /// <c>security_id</c> — the <c>Regime.ProxySecurityId</c> precedent. The proxy's live ingestion
+    /// (OEF.US bars + dividends) is an operator action that writes this row; the D53 pipeline reads
+    /// MAX(version) to hand the CW account its single-name universe. Absent ⇒ the benchmark holds cash
+    /// (a logged data-readiness gap), never a guessed symbol (rule 10).</summary>
+    public const string ProxySecurityIdConfigKey = "Benchmark.CapWeightProxySecurityId";
+
     /// <summary>The EODHD symbol of the cap-weight proxy for a membership source. Throws on an
     /// unknown source (fail closed) — never a silent default.</summary>
     public static string SymbolFor(string membershipPrimary)

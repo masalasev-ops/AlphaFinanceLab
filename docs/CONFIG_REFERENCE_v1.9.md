@@ -154,6 +154,18 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
                                                    // crashed run — cleared, its runs row marked 'failed', logged; the Api's 409 decision ignores stale flags
   },
 
+  "Eodhd": {                                       // v1.9.18 finding D — the Worker's OWN EODHD section (the D53 staged pipeline, checkpoint 2.10, fetches the
+                                                   // daily delta). The token is Secrets:EodhdApiToken (hard rule 11), read DEFENSIVELY: a missing token is NOT a
+                                                   // startup failure (a no-op launch spends nothing); the provider only 401s if a real fetch happens without it
+    "BaseUrl": "https://eodhd.com/api",            // no trailing slash; endpoints appended (/eod, /div, /splits)
+    "ExchangeSuffix": "US"
+  },
+  "Costs": "see the Costs section of this reference — the D43 coefficients; the Worker binds them for the pipeline's cost model (checkpoint 2.10)",
+  "Sizing": { "Mode": "equal" },                   // finding E — Phase 2 runs equal sizing only; the sizer REFUSES inverse_vol/kelly until FR-11 full (Phase 6)
+  "Guardrails": "see the Guardrails section — the three the funnel structurally needs (MinScore, PositionCapPct on Sizing, MaxConcurrentPositions); Phase 7 wires the rest",
+  "Data": "see the Data section — DataQualityOptions (OutlierZ); the D77 gate binds it in the Worker (finding F)",
+  "CorporateActions": "see the CorporateActions section (findings B/C) — the delist haircut + spin-off liquidation rule the CA ledger binds",
+
   "Calendar": {                                    // D54
     "Exchange": "NYSE",
     "RunAfterCloseOffsetMinutes": 150              // trigger = session close (ET) + offset; used only in Scheduled mode
@@ -215,7 +227,7 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
 
 ## tools/Backfill/appsettings.json (the one-time bootstrap CLI — D65/D70)
 
-The backfill CLI is a **separate runnable** with its own `appsettings.json`; it does **not** read the Worker/Api superset above. Besides the shared `Arena` + `ConnectionStrings` keys (the connection string is byte-identical across all four spots — the four-spot rule), it carries two sections the other processes don't:
+The backfill CLI is a **separate runnable** with its own `appsettings.json`; it does **not** read the Worker/Api superset above. Besides the shared `Arena` + `ConnectionStrings` keys (the connection string is byte-identical across all four spots — the four-spot rule), it carries a `Backfill` section the other processes don't, plus an `Eodhd` section — which, as of v1.9.18 (finding D, checkpoint 2.10), the **Worker also carries** (the forward pipeline fetches the daily delta), so `Eodhd` is no longer backfill-only:
 
 ```jsonc
 {

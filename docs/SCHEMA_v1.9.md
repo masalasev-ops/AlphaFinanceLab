@@ -341,7 +341,8 @@ CREATE TABLE runs (
 -- UNIQUENESS INVARIANT (v1.9.7 finding 109): at most ONE status='ok' row per as_of among FORWARD
 -- kinds. Failed runs legitimately retry (a second row, same as_of), and replay produces many runs
 -- over the same historical dates by design, so a blanket unique(as_of) would be wrong. Phase 2
--- enforces the real invariant with a partial index (created when Stage-2 first writes runs):
+-- enforces the real invariant with a partial index, CREATED in migration M3 (RunsForwardUniqueIndex,
+-- checkpoint 2.10 — where Stage-2 first writes runs):
 --   CREATE UNIQUE INDEX ux_runs_ok_forward ON runs(as_of)
 --     WHERE status='ok' AND run_kind IN ('live','catchup');
 -- This is what makes catch-up idempotency ("re-running a recovered day is a no-op") and

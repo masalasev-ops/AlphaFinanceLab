@@ -1,5 +1,10 @@
+using AlphaLab.Core.Config;
 using AlphaLab.Data;
+using AlphaLab.Data.Http;
+using AlphaLab.Data.Providers;
+using AlphaLab.Data.Services;
 using AlphaLab.Worker;
+using AlphaLab.Worker.Pipeline;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -34,7 +39,48 @@ builder.Logging.AddSimpleConsole(o =>
 // The Worker is the sole DB writer (D59): resolve the arena-namespaced path AND ensure its directory.
 builder.Services.AddAlphaLabData(connectionString, arena.Id, ensureDirectory: true);
 
-// Catch-up resolver (D47) — Phase 0 always resolves to nothing-to-do.
+// ---- D53 staged pipeline wiring (checkpoint 2.10) ----
+// CONFIG binds (finding F): the CONSUMING phase owns the bind. Register the BOUND options BEFORE
+// AddAlphaLabMembership so its TryAddSingleton defaults are no-ops — Data (D77 gate), Calendar,
+// CorporateActions (findings B/C), Regime (D50), and Costs (D43) flow from appsettings instead of
+// unbound defaults. UniverseOptions stays unregistered on purpose (finding F — wiring it is the
+// D70-widening job, not Phase-2 work).
+var regimeOptions = builder.Configuration.GetSection(RegimeOptions.SectionName).Get<RegimeOptions>() ?? new RegimeOptions();
+var dataQualityOptions = builder.Configuration.GetSection(DataQualityOptions.SectionName).Get<DataQualityOptions>() ?? new DataQualityOptions();
+var calendarOptions = builder.Configuration.GetSection(CalendarOptions.SectionName).Get<CalendarOptions>() ?? new CalendarOptions();
+var corporateActionsOptions = builder.Configuration.GetSection(CorporateActionsOptions.SectionName).Get<CorporateActionsOptions>() ?? new CorporateActionsOptions();
+var costsOptions = builder.Configuration.GetSection(CostsOptions.SectionName).Get<CostsOptions>() ?? new CostsOptions();
+
+builder.Services.AddSingleton(dataQualityOptions);
+builder.Services.AddSingleton(calendarOptions);
+builder.Services.AddSingleton(corporateActionsOptions);
+builder.Services.AddSingleton(costsOptions);
+builder.Services.AddAlphaLabMembership(regimeOptions);
+
+// EODHD provider (finding D — the Worker needs its OWN Eodhd section; CONFIG previously scoped it to
+// the Backfill CLI). The token is read DEFENSIVELY (hard rule 11 — the gitignored Secrets file only):
+// a missing token is NOT a startup failure, because a no-op launch (nothing to catch up) spends
+// nothing; the provider only 401s if a real fetch happens without it.
+var eodhd = new EodhdOptions
+{
+    BaseUrl = builder.Configuration["Eodhd:BaseUrl"] ?? "https://eodhd.com/api",
+    ExchangeSuffix = builder.Configuration["Eodhd:ExchangeSuffix"] ?? "US",
+    ApiToken = builder.Configuration["Secrets:EodhdApiToken"] ?? string.Empty,
+};
+builder.Services.AddSingleton(eodhd);
+builder.Services.AddScoped<IMarketDataProvider>(sp =>
+    new EodhdMarketDataProvider(sp.GetRequiredService<IResilientHttpClient>(), eodhd, sp.GetService<IRawCache>()));
+builder.Services.AddScoped<IRegimeProxyProvider>(sp =>
+    new EodhdGspcRegimeProxyProvider(sp.GetRequiredService<IResilientHttpClient>(), eodhd, sp.GetService<IRawCache>()));
+
+// The D53 orchestrator + its zero-write Stage-1 fetch. TimeProvider is injectable so run timestamps are
+// deterministic under test (never a bare UtcNow in the pipeline body).
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<Stage1Fetch>();
+builder.Services.AddScoped<DailyPipeline>();
+
+// Catch-up resolver (D47) — Phase 0 always resolves to nothing-to-do; the real resolver + the loop that
+// drives DailyPipeline per missed day land in checkpoint 2.11.
 builder.Services.AddScoped<IMissedSessionResolver, Phase0MissedSessionResolver>();
 
 // Schema application + WAL runs in BOTH modes and MUST be registered first (StartAsync runs in
