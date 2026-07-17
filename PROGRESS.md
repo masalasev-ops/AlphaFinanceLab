@@ -3,7 +3,8 @@
 *Repo root. Updated every working session — what shipped, what's red, what was deliberately deferred, and any decision proposals. This file is the month-one discipline instrument (MASTER §17.1): if it stops being truthful, the phase gates stop working.*
 
 ## Current state
-- **Phase:** 2 — **in progress** (checkpoint 2.1 of 2.1–2.12 done). Phase 1 remains phase-complete: the live `--universe sp100 --years 20` backfill ran clean on 2026-07-15 (304 EODHD calls / 99.7% headroom; 101 members, 488,217 bars, GSPC proxy 5,029 bars over 20y) and the INTEGRATIONS §1 call-limits ⚠VERIFY is confirmed. **Next:** checkpoint 2.2 — the M1 ledger migration + `SchemaStartup` fail-fast (finding A).
+- **Phase:** 2 — **in progress** (checkpoints 2.1–2.2 of 2.1–2.12 done; 271 tests). Phase 1 remains phase-complete: the live `--universe sp100 --years 20` backfill ran clean on 2026-07-15 (304 EODHD calls / 99.7% headroom; 101 members, 488,217 bars, GSPC proxy 5,029 bars over 20y) and the INTEGRATIONS §1 call-limits ⚠VERIFY is confirmed. **Next:** checkpoint 2.3 — the D43 cost model + VirtualBroker.
+- **Operator action pending — the Worker will refuse to launch until it is done:** M1 (`Phase2Ledger`, 8 empty ledger tables) is committed but **not applied** to the live arena. Run `pwsh tools/migrate.ps1 -Arena sp500` (snapshots first). The refusal is the v1.9.17 finding-A fix working as designed — `SchemaStartup` now verifies the schema and never applies it (rule 14), so a pending migration stops the Worker instead of silently migrating your live store un-snapshotted.
 - **Blocking:** none. **Standing operator item — comes due at the first Phase-2 write (checkpoint 2.10, the first committed run):** the Ops-log entry of 2026-07-15 records that no off-machine backup exists *because the store is currently re-fetchable*. That reasoning **expires** the moment the lab writes `trades`/`decisions`/`equity_curve` — its own output, which no provider returns. Off-machine backup becomes mandatory then.
 - **Last session:** 2026-07-16 — **v1.9.16 FR-11 sizing phasing** (finding **169**; docs only — no schema, no migration, no config-key, no test change; count stays **237**): resolves the finding-168 report from v1.9.15. FR-11 (inverse-vol sizing using Ledoit–Wolf covariance, D42) was claimed by both Phase 2 (its Key-FR set) and Phase 6 (BUILD §0 + the Phase-6 prompt); split partial→full per the FR-13/FR-18 convention — Phase 2 carries FR-11 (partial) (the dummies' simple/equal sizing), Phase 6 carries FR-11 full (inverse-vol + LW covariance) — grounded in the `Sizing.Mode` enum and DESIGN_IMPROVEMENTS §3.1. A BUILD-phasing edit, not a new D-number. `ci.ps1` green. Open proposals now: the S&P 500 widening, FR-23 hypotheses, and the Phase-4 detection-power sweep. Preceded by v1.9.15 (findings 164–167) and v1.9.14 (finding 163).
 
@@ -39,7 +40,7 @@
 - [x] Regime proxy feed (FR-38/D73, v1.9.7): `GSPC.INDX` proxy machinery + SPY.US returns cross-check; `Regime.ProxySecurityId` resolved from `Regime.ProxySource` (versioned config row); `FX-RegimeProxyBackfill` green (readiness fails closed pre-warm-up) — checkpoint 1.9; the live ≥3.8y backfill run is via the CLI (1.10)
 
 ### Phase 2 — Funnel, ledger, costs, catch-up
-*Executed as checkpoints 2.1–2.12 (the 0.1–0.6 / 1.0–1.10 pattern). Done: **2.1** (Core domain contracts — FR-8/FR-11-partial surface).*
+*Executed as checkpoints 2.1–2.12 (the 0.1–0.6 / 1.0–1.10 pattern). Done: **2.1** (Core domain contracts), **2.2** (M1 ledger schema + persistence + the finding-A fail-fast).*
 - [ ] Six-stage funnel + ExitPolicy executor; FX-ZeroScore, FX-ExitOnly green
 - [ ] D43 cost model; FX-CostModel green
 - [ ] Corporate-action semantics complete; FX-Dividend/Split/Merger*/Spinoff/Delist/Unmapped green
@@ -104,6 +105,33 @@
 - [ ] If pass: D49 logged; Value/Quality + quarterly population + leakage extensions green
 
 ## Session log (newest first)
+
+### 2026-07-17 — Phase 2 checkpoint 2.2: the ledger schema (M1) + persistence + the finding-A fail-fast
+
+**The M1 `Phase2Ledger` migration (8 tables) + `LedgerStore`/`LedgerMapping`, and the `SchemaStartup` pending-migration fail-fast that M1 makes urgent. 258 → 271 tests; `ci.ps1` green. CHANGELOG v1.9.17 findings A–B. NOT YET APPLIED to the live arena — that is an operator action (see below).**
+
+**Finding A — the hazard M1 creates, closed in the same checkpoint that creates it.** `SchemaStartup` called `MigrateAsync` on every Worker launch. That was harmless only because nothing was ever pending: `tools/migrate.ps1` had always migrated the store before the Worker saw it. **The moment M1 ships un-applied, an ordinary evening launch would migrate the live 79 MB store with no pre-migration snapshot** — what RUNBOOK §2 forbids and rule 14 exists to prevent. BUILD 0.4 specified this fail-fast "from Phase 1"; it was never shipped. It is now: `GetPendingMigrationsAsync()` → log the pending list, fail the host non-zero, name the sanctioned path. The test asserts the store is left with **zero user tables** — proving the non-action, not merely that an exception was thrown.
+The **Backfill CLI** gets the matched treatment with one deliberate asymmetry: it may still **create** an absent store (no data to lose; `snapshot-db.ps1` explicitly no-ops on a fresh install; REBUILD §2's documented bootstrap depends on it) but **refuses to migrate an existing one**. Creating ≠ migrating.
+
+**Shipped.**
+- **M1 `Phase2Ledger`** — `strategies`, `accounts`, `positions`, `trades`, `capacity_rejections`, `cash_events`, `equity_curve`, `decisions`. Hand-edited per rule 14 on the **four** rowid PKs (`account_id`, `trade_id`, `event_id`, `decision_id`); `strategies` is a TEXT PK and three tables are composite, so neither needs it. **Exactly one CHECK** (`trades.side`) — SCHEMA declares none on `strategies.status`/`accounts.run_kind`/`cash_events.type`/`trades.reason`, and adding one would make the on-disk DDL diverge from the source of truth (the `Runs_Status_IsUnconstrained` precedent). All nine money columns explicitly `HasColumnType("TEXT")` (D69).
+- **Core `Ledger/`** — `Account`, `Position`, `Trade`, `CashEvent` as pure records + `RunKind`/`TradeSide`/`TradeReason`/`CashEventType`. Note `RunKind` has **two** values where `runs.run_kind` has three: `live` and `catchup` both map to `Live`, because nothing downstream may treat a caught-up day as lesser evidence than a same-day one (hard rule 1). Only `replay` is quarantined.
+- **`LedgerStore` + `LedgerMapping`** (Data) — the Row↔Core boundary. Every read takes a `RunKind` and filters on it; there is deliberately **no "read all kinds" overload**, so a forward view cannot return a replay row by construction rather than by the caller remembering. Opens accounts with their opening `Deposit` cash event so equity/cash reconcile from events + trades alone. Transactions stay the caller's (the D53 pipeline will wrap a whole day in one).
+- **`decisions` built now** (no FR names it) — the funnel runs exactly once and its stage-1..6 snapshot is unrecoverable from `trades` afterwards. It also turns out to be **structurally load-bearing**: there is no `orders` table, so the decide-at-close-T / fill-at-open-T+1 split needs somewhere for T's orders to live until T+1. Recorded here because 2.5 will lean on it.
+
+**Verified.** `ci.ps1` green — **271 tests** (+13: `LedgerStoreTests` 12, `SchemaStartupTests` 9 rewritten from 2). Migration proven against throwaway temp DBs only. Notable tests: `FR9_Money_RoundTripsExactly_AtCentAndSubCentScale` (0.1+0.1+0.1 = exactly 0.30 — the D69 point); `FR9_TradeSideCheckConstraint_RejectsAnInvalidToken_AtTheDb` (the CHECK is really on disk, not just in the model); `FR19_ReplayEquity_CannotOverwriteTheForwardCurve` (run_kind is IN equity_curve's PK, so the quarantine holds at key level); `FR9_CorpActionTrade_MustCarryItsActionId_AndOnlyACorpActionMay` (both directions — a forced close without its cause is unauditable, and an action_id on a signal trade is a miscategorized fill).
+
+**Red / known-broken:** none.
+
+**Deferred (deliberately):** `features` stays unbuilt and its absence is now asserted with its reason in `SchemaFidelityTests` — it has no `observed_at`/`version` column, so it **cannot express the watermark read rule** (rule 4); persisting a feature at watermark W and re-reading it at W′ is a leak F-LEAK could not catch. No Phase-2 strategy needs it. Also absent: `control_populations`/`control_equity` (Phase 3), `factor_*` (Phase 6), `journal_entries`/`admin_actions` (Phase 7), `regime_labels`/`regime_episodes` (2.8/M2), `ux_runs_ok_forward` (2.10/M3).
+
+**Decision proposals (need a D-number):** none new. P1/P2/P3 remain queued for the checkpoints that surface them.
+
+**Operator actions surfaced (not mine to do).**
+1. **Apply M1 to the live arena when you're ready:** `pwsh tools/migrate.ps1 -Arena sp500` (snapshots first, then applies). It is additive — eight new empty tables, no existing row touched. Until then the Worker will **refuse to launch** with a message naming this exact command; that refusal is the finding-A fix working, not a regression.
+2. **Off-machine backup — still not yet due, but the clock is now visible.** M1 only creates empty tables, so the store stays fully re-fetchable and the 2026-07-15 Ops-log reasoning holds. It expires at the **first committed run** (checkpoint 2.10), when `trades`/`decisions`/`equity_curve` first hold rows no provider returns.
+
+**Next session starts with:** checkpoint 2.3 — the D43 cost model + VirtualBroker (pure, Core): buckets by 21d ADV notional, `k·σ·√(Q/ADV)` to 1e-9, the 2%-ADV participation cap with `capacity_rejections`, `cost_model_version` stamped. Fixture FX-CostModel.
 
 ### 2026-07-16 — Phase 2 checkpoint 2.1: Core domain contracts (FR-8/FR-11 partial)
 

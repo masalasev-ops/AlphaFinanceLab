@@ -3,6 +3,7 @@ using AlphaLab.Data;
 using AlphaLab.Data.Http;
 using AlphaLab.Data.Providers;
 using AlphaLab.Data.Services;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 
@@ -103,12 +104,40 @@ var arenaId = config["Arena:Id"] ?? "sp500";
 var connectionString = config.GetConnectionString("AlphaLab")
     ?? throw new InvalidOperationException("ConnectionStrings:AlphaLab is required in appsettings.json.");
 
-// The CLI is the Phase-1 bootstrap writer (D59 note): resolve the arena-namespaced path (create the dir)
-// and ensure the schema exists. Ongoing schema changes still go through tools/migrate.ps1 (snapshot-safe).
+// The CLI is the bootstrap writer (D59 note): it may CREATE a store that does not exist yet, but it must
+// never MIGRATE one that does (rule 14; v1.9.17 finding A — the SchemaStartup sibling).
+//
+// The distinction is the whole point. Creating an absent file loses nothing — there is no data in it, and
+// tools/snapshot-db.ps1 explicitly no-ops on a fresh install, so "snapshot first" is vacuous there. This is
+// what keeps REBUILD.md §2's documented bootstrap working from a fresh clone. Applying a pending migration
+// to an EXISTING store is the opposite: from Phase 2 on it holds the lab's own output (trades, decisions,
+// equity_curve) that no provider can re-fetch, so it must go through the snapshot-first path. Refuse and
+// name that path (hard rule 10).
 var resolved = DbPathResolver.Resolve(connectionString, arenaId);
 var dbOptions = new DbContextOptionsBuilder<AlphaLabDbContext>().UseSqlite(resolved).Options;
 using var db = new AlphaLabDbContext(dbOptions);
-db.Database.Migrate();
+
+// Checked BEFORE any connection: SQLite creates the file on first connect, so this must precede Migrate().
+var storeExisted = File.Exists(new SqliteConnectionStringBuilder(resolved).DataSource);
+if (storeExisted)
+{
+    var pending = db.Database.GetPendingMigrations().ToList();
+    if (pending.Count > 0)
+    {
+        Console.Error.WriteLine(
+            $"The store already exists and has {pending.Count} pending migration(s): {string.Join(", ", pending)}.\n" +
+            $"Schema is applied ONLY by the snapshot-first path (rule 14) — run:\n" +
+            $"  pwsh tools/migrate.ps1 -Arena {arenaId}\n" +
+            $"then re-run this backfill.");
+        return 1;
+    }
+}
+else
+{
+    // Fresh install: create the store. Nothing to snapshot.
+    db.Database.Migrate();
+    Console.WriteLine($"[schema] created a new store for arena '{arenaId}'.");
+}
 
 // A live backfill needs the EODHD token (hard rule 11 — from the gitignored Secrets file only).
 var eodhd = new EodhdOptions

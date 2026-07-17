@@ -30,6 +30,16 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
     public DbSet<ApiUsageLogRow> ApiUsageLog => Set<ApiUsageLogRow>();
     public DbSet<DataQualityFlagRow> DataQualityFlags => Set<DataQualityFlagRow>();
 
+    // ---- Phase 2 ledger tables (D29/D30/D43; money is decimal → TEXT per D69) ----
+    public DbSet<StrategyRow> Strategies => Set<StrategyRow>();
+    public DbSet<AccountRow> Accounts => Set<AccountRow>();
+    public DbSet<PositionRow> Positions => Set<PositionRow>();
+    public DbSet<TradeRow> Trades => Set<TradeRow>();
+    public DbSet<CapacityRejectionRow> CapacityRejections => Set<CapacityRejectionRow>();
+    public DbSet<CashEventRow> CashEvents => Set<CashEventRow>();
+    public DbSet<EquityCurveRow> EquityCurve => Set<EquityCurveRow>();
+    public DbSet<DecisionRow> Decisions => Set<DecisionRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -276,6 +286,132 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
             e.Property(x => x.Detail).HasColumnName("detail").IsRequired();
             e.Property(x => x.ObservedAt).HasColumnName("observed_at").IsRequired();
             e.HasIndex(x => x.RunId).HasDatabaseName("ix_data_quality_flags_run");
+        });
+
+        // ================= Phase 2: the ledger (SCHEMA §"STRATEGIES, ACCOUNTS, LEDGER") =========
+        // Money → TEXT is declared EXPLICITLY on every money column (D69). EF's default SQLite
+        // decimal mapping is already TEXT, but stating it means a future provider change or a
+        // convention tweak cannot silently demote the ledger to REAL.
+        //
+        // Exactly ONE CHECK across these eight tables — trades.side. SCHEMA declares no CHECK on
+        // strategies.status, accounts.run_kind, cash_events.type, or trades.reason; adding one
+        // would make the on-disk DDL diverge from the single source of truth.
+
+        // ---- strategies ---- TEXT PK (no rowid, so no autoincrement question).
+        modelBuilder.Entity<StrategyRow>(e =>
+        {
+            e.ToTable("strategies");
+            e.HasKey(x => x.StrategyId);
+            e.Property(x => x.StrategyId).HasColumnName("strategy_id");
+            e.Property(x => x.Family).HasColumnName("family").IsRequired();
+            e.Property(x => x.ConfigJson).HasColumnName("config_json").IsRequired();
+            e.Property(x => x.ExitPolicyJson).HasColumnName("exit_policy_json").IsRequired();
+            e.Property(x => x.HoldingHorizonDays).HasColumnName("holding_horizon_days");
+            e.Property(x => x.CreatedOn).HasColumnName("created_on").IsRequired();
+            e.Property(x => x.ParentStrategyId).HasColumnName("parent_strategy_id");
+            // status: defaulted but UNCONSTRAINED — no CHECK (SCHEMA fidelity).
+            e.Property(x => x.Status).HasColumnName("status").IsRequired().HasDefaultValue("candidate");
+        });
+
+        // ---- accounts ----
+        modelBuilder.Entity<AccountRow>(e =>
+        {
+            e.ToTable("accounts");
+            e.HasKey(x => x.AccountId);
+            e.Property(x => x.AccountId).HasColumnName("account_id");
+            e.Property(x => x.StrategyId).HasColumnName("strategy_id").IsRequired();
+            e.Property(x => x.StartingCash).HasColumnName("starting_cash").HasColumnType("TEXT").IsRequired();
+            e.Property(x => x.RunKind).HasColumnName("run_kind").IsRequired().HasDefaultValue("live");
+        });
+
+        // ---- positions ---- PK (account_id, security_id).
+        modelBuilder.Entity<PositionRow>(e =>
+        {
+            e.ToTable("positions");
+            e.HasKey(x => new { x.AccountId, x.SecurityId });
+            e.Property(x => x.AccountId).HasColumnName("account_id");
+            e.Property(x => x.SecurityId).HasColumnName("security_id");
+            e.Property(x => x.Shares).HasColumnName("shares").IsRequired();   // REAL — a quantity
+            e.Property(x => x.CostBasis).HasColumnName("cost_basis").HasColumnType("TEXT").IsRequired();
+            e.Property(x => x.OpenedOn).HasColumnName("opened_on").IsRequired();
+            e.Property(x => x.Frozen).HasColumnName("frozen").IsRequired().HasDefaultValue(false);
+            e.Property(x => x.FrozenReason).HasColumnName("frozen_reason");
+        });
+
+        // ---- trades ---- the one CHECK.
+        modelBuilder.Entity<TradeRow>(e =>
+        {
+            e.ToTable("trades", t =>
+                t.HasCheckConstraint("ck_trades_side", "side IN ('buy','sell')"));
+            e.HasKey(x => x.TradeId);
+            e.Property(x => x.TradeId).HasColumnName("trade_id");
+            e.Property(x => x.AccountId).HasColumnName("account_id").IsRequired();
+            e.Property(x => x.SecurityId).HasColumnName("security_id").IsRequired();
+            e.Property(x => x.Side).HasColumnName("side").IsRequired();
+            e.Property(x => x.DecidedOn).HasColumnName("decided_on").IsRequired();
+            e.Property(x => x.FilledOn).HasColumnName("filled_on").IsRequired();
+            e.Property(x => x.Shares).HasColumnName("shares").IsRequired();   // REAL — a quantity
+            e.Property(x => x.RawFillPrice).HasColumnName("raw_fill_price").HasColumnType("TEXT").IsRequired();
+            e.Property(x => x.Commission).HasColumnName("commission").HasColumnType("TEXT").IsRequired();
+            e.Property(x => x.SpreadCost).HasColumnName("spread_cost").HasColumnType("TEXT").IsRequired();
+            e.Property(x => x.ImpactCost).HasColumnName("impact_cost").HasColumnType("TEXT").IsRequired();
+            e.Property(x => x.CostModelVersion).HasColumnName("cost_model_version").IsRequired();
+            e.Property(x => x.Reason).HasColumnName("reason").IsRequired();
+            e.Property(x => x.ActionId).HasColumnName("action_id");
+            e.Property(x => x.RunKind).HasColumnName("run_kind").IsRequired().HasDefaultValue("live");
+        });
+
+        // ---- capacity_rejections ---- PK (account_id, security_id, as_of).
+        modelBuilder.Entity<CapacityRejectionRow>(e =>
+        {
+            e.ToTable("capacity_rejections");
+            e.HasKey(x => new { x.AccountId, x.SecurityId, x.AsOf });
+            e.Property(x => x.AccountId).HasColumnName("account_id");
+            e.Property(x => x.SecurityId).HasColumnName("security_id");
+            e.Property(x => x.AsOf).HasColumnName("as_of");
+            e.Property(x => x.IntendedShares).HasColumnName("intended_shares");
+            e.Property(x => x.AllowedShares).HasColumnName("allowed_shares");
+            e.Property(x => x.Adv21).HasColumnName("adv21");
+        });
+
+        // ---- cash_events ---- type is UNCONSTRAINED (SCHEMA's list is deliberately open-ended).
+        modelBuilder.Entity<CashEventRow>(e =>
+        {
+            e.ToTable("cash_events");
+            e.HasKey(x => x.EventId);
+            e.Property(x => x.EventId).HasColumnName("event_id");
+            e.Property(x => x.AccountId).HasColumnName("account_id").IsRequired();
+            e.Property(x => x.SecurityId).HasColumnName("security_id");
+            e.Property(x => x.AsOf).HasColumnName("as_of").IsRequired();
+            e.Property(x => x.Type).HasColumnName("type").IsRequired();
+            e.Property(x => x.Amount).HasColumnName("amount").HasColumnType("TEXT").IsRequired();
+            e.Property(x => x.ActionId).HasColumnName("action_id");
+            e.Property(x => x.RunKind).HasColumnName("run_kind").IsRequired().HasDefaultValue("live");
+        });
+
+        // ---- equity_curve ---- PK (account_id, as_of, run_kind): run_kind is IN the key, so a
+        // replay of the same day cannot overwrite the forward curve (D37 quarantine at key level).
+        modelBuilder.Entity<EquityCurveRow>(e =>
+        {
+            e.ToTable("equity_curve");
+            e.HasKey(x => new { x.AccountId, x.AsOf, x.RunKind });
+            e.Property(x => x.AccountId).HasColumnName("account_id");
+            e.Property(x => x.AsOf).HasColumnName("as_of");
+            e.Property(x => x.Equity).HasColumnName("equity").HasColumnType("TEXT").IsRequired();
+            e.Property(x => x.Cash).HasColumnName("cash").HasColumnType("TEXT").IsRequired();
+            e.Property(x => x.RunKind).HasColumnName("run_kind").HasDefaultValue("live");
+        });
+
+        // ---- decisions ----
+        modelBuilder.Entity<DecisionRow>(e =>
+        {
+            e.ToTable("decisions");
+            e.HasKey(x => x.DecisionId);
+            e.Property(x => x.DecisionId).HasColumnName("decision_id");
+            e.Property(x => x.AccountId).HasColumnName("account_id").IsRequired();
+            e.Property(x => x.AsOf).HasColumnName("as_of").IsRequired();
+            e.Property(x => x.StageJson).HasColumnName("stage_json").IsRequired();
+            e.Property(x => x.RunKind).HasColumnName("run_kind").IsRequired().HasDefaultValue("live");
         });
     }
 }

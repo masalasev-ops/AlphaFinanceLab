@@ -59,6 +59,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton(new RegimeOptions());
         services.AddScoped<IRegimeProxyIngestion, RegimeProxyIngestion>();
         services.AddScoped<IRegimeProxyReadiness, RegimeProxyReadiness>();
+        services.AddScoped<ILedgerStore, LedgerStore>();   // Phase 2 (2.2) — the ledger persistence seam
         return services;
     }
 }

@@ -96,7 +96,7 @@ public class SchemaFidelityTests
     }
 
     [Fact]
-    public void Schema_ExactlyTheFifteenTables_Exist()
+    public void Schema_ExactlyTheTwentyThreeTables_Exist()
     {
         var dbPath = TempDb();
         try
@@ -113,14 +113,31 @@ public class SchemaFidelityTests
             using var reader = cmd.ExecuteReader();
             while (reader.Read()) tables.Add(reader.GetString(0));
 
-            // Phase 0 infra(5) + Phase 1 data(9) + the D77 pre-Phase-2 data_quality_flags(1) = 15.
-            // regime_labels/regime_episodes/features/factor_* and the ux_runs_ok_forward partial index
-            // are deliberately deferred to Phase 2.
+            // Phase 0 infra(5) + Phase 1 data(9) + the D77 pre-Phase-2 data_quality_flags(1)
+            // + the Phase-2 checkpoint-2.2 ledger(8) = 23.
+            //
+            // STILL deliberately absent, and each for its own reason — this list is the guard
+            // against a table appearing before the phase that earns it:
+            //   • regime_labels / regime_episodes — checkpoint 2.8 (M2)
+            //   • features        — NOT Phase 2 at all. It has no observed_at/version column, so it
+            //                       cannot express the watermark read rule (rule 4); persisting a
+            //                       feature computed at watermark W and re-reading it at W' is a leak
+            //                       F-LEAK could not catch. No Phase-2 strategy needs it (B&H never
+            //                       re-scores; ThresholdModel is trivial), and IFeatureView computes
+            //                       over the versioned bar reader instead — leak-proof by
+            //                       construction. Phase 6 decides the shape it actually needs.
+            //   • control_populations / control_equity — Phase 3
+            //   • factor_returns / factor_refresh_log  — Phase 6
+            //   • journal_entries / admin_actions      — Phase 7
+            // The ux_runs_ok_forward partial index lands in checkpoint 2.10 (M3), where Stage 2
+            // first writes runs.
             Assert.Equal(new[]
             {
-                "api_usage_log", "bars", "catchup_log", "config", "corporate_actions",
-                "data_quality_flags", "index_membership", "index_membership_log", "jobs", "runs",
-                "sector_changes", "securities", "ticker_history", "trading_calendar", "worker_state"
+                "accounts", "api_usage_log", "bars", "capacity_rejections", "cash_events",
+                "catchup_log", "config", "corporate_actions", "data_quality_flags", "decisions",
+                "equity_curve", "index_membership", "index_membership_log", "jobs", "positions",
+                "runs", "sector_changes", "securities", "strategies", "ticker_history",
+                "trades", "trading_calendar", "worker_state"
             }, tables);
         }
         finally { TryDelete(dbPath); }

@@ -13,11 +13,23 @@ namespace AlphaLab.Worker;
 /// StartAsync completes before anything reads the store (IHostedService.StartAsync runs in
 /// registration order — do not reorder).
 ///
-/// Phase 0: applies the pending InitialCreate migration (MigrateAsync).
-/// Phase 1: this becomes fail-fast — log pending migrations + non-zero exit; schema then applies
-///          ONLY through tools/migrate.ps1 (snapshot first, rule 14). See the marker below.
+/// SCHEMA IS NEVER APPLIED HERE (rule 14; v1.9.17 finding A). This step VERIFIES the schema is
+/// current and fails the host if it is not — it does not migrate. Applying schema is the sole job
+/// of tools/migrate.ps1, which snapshots the exact file it is about to migrate FIRST.
 ///
-/// After a successful migrate it establishes WAL (finding 118): PRAGMA journal_mode=WAL on the
+/// Why this matters now, and why it is not merely tidy: through Phase 1 this class called
+/// MigrateAsync, which was harmless only because nothing was ever pending — the store was
+/// migrated by tools/migrate.ps1 before the Worker ever saw it. The moment a Phase-2 migration
+/// ships un-applied, an ordinary evening Worker launch would silently migrate the operator's live
+/// store with NO pre-migration snapshot, which is exactly what RUNBOOK §2 forbids ("never run
+/// `dotnet ef database update` directly against a non-empty DB") and what rule 14 exists to
+/// prevent. Phase 2 is also the first phase whose tables hold the lab's OWN output (trades,
+/// decisions, equity_curve) — rows no provider can re-fetch. An auto-migrate here is a
+/// silent-data-loss path, so it fails closed instead (hard rule 10).
+///
+/// BUILD 0.4 specified this fail-fast "from Phase 1"; it was never shipped. This is that.
+///
+/// After verifying the schema it establishes WAL (finding 118): PRAGMA journal_mode=WAL on the
 /// context connection, reads the mode back, logs it (arena-tagged), and treats anything other
 /// than 'wal' as a startup failure (log + non-zero exit + StopApplication). WAL is persistent
 /// per file, so this also upgrades a pre-existing rollback-journal DB on its next Worker start.
@@ -37,11 +49,19 @@ public sealed class SchemaStartup(
 
         try
         {
-            // --- Phase 0: apply pending migrations. ---
-            // Phase 1: replace MigrateAsync with a pending-migration fail-fast (log + non-zero exit);
-            //          schema application then goes only through tools/migrate.ps1.
-            await db.Database.MigrateAsync(cancellationToken);
-            logger.LogInformation("Schema up to date (applied any pending migrations).");
+            // --- Verify, never apply (rule 14). ---
+            // A pending migration is an OPERATOR action, not a side effect of launching the Worker:
+            // tools/migrate.ps1 snapshots the exact file before touching it. Refuse and say so.
+            var pending = (await db.Database.GetPendingMigrationsAsync(cancellationToken)).ToList();
+            if (pending.Count > 0)
+            {
+                Fail(
+                    $"The store has {pending.Count} pending migration(s): {string.Join(", ", pending)}. " +
+                    $"Schema is applied ONLY by the snapshot-first path (rule 14) — run: " +
+                    $"pwsh tools/migrate.ps1 -Arena {arena.Id}");
+            }
+
+            logger.LogInformation("Schema verified up to date (no pending migrations).");
 
             var mode = await SetAndReadJournalModeAsync(db, cancellationToken);
             logger.LogInformation("journal_mode={Mode}", mode ?? "(null)");
