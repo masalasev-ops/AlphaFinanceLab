@@ -101,7 +101,11 @@ public sealed class CorporateActionRow
     public string? NewSymbol { get; set; }
     public string ObservedAt { get; set; } = default!;
     public string Source { get; set; } = "eodhd";
-    /// <summary>NULL until the ledger applies the action (Phase 2).</summary>
+    /// <summary>ALWAYS NULL, never written. A global column on a per-account operation would make a
+    /// replay skip an action a forward run marked (breaking the quarantine), and D76 forbids UPDATE
+    /// here anyway; ledger idempotency is one-transaction-per-day + ux_runs_ok_forward, not this flag.
+    /// Retained only because dropping it is a migration + a D-number (PROGRESS proposal P5). See the
+    /// SCHEMA note on corporate_actions.processed_on. Do NOT wire anything to read or write it.</summary>
     public string? ProcessedOn { get; set; }
 }
 

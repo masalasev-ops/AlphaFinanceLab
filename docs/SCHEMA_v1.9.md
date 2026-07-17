@@ -69,9 +69,18 @@ CREATE TABLE corporate_actions (                   -- §13.6 semantics; versione
   new_symbol   TEXT,                               -- ticker_change
   observed_at  TEXT NOT NULL,                      -- when WE first saw this version (the point-in-time key)
   source       TEXT NOT NULL DEFAULT 'eodhd',
-  processed_on TEXT                                -- NULL until ledger applied
+  processed_on TEXT                                -- ALWAYS NULL, never written (see the note below)
 );
 CREATE INDEX ix_corporate_actions_observed ON corporate_actions(observed_at);
+-- processed_on: ALWAYS NULL, NEVER WRITTEN. It was conceived as a per-action "applied" flag, but it is
+-- a GLOBAL column on a PER-ACCOUNT operation (each arena account applies the same action independently),
+-- and stamping it would make a Phase-4 replay skip an action a forward run had marked — breaking the
+-- quarantine. D76 also forbids UPDATE on this table (versioned append-only). Ledger idempotency does NOT
+-- come from this column: it comes from one-transaction-per-day + the ux_runs_ok_forward partial index
+-- (a day's actions apply exactly once because the day commits atomically and at most one 'ok' forward run
+-- exists per as_of). The column is retained only because dropping it is itself a migration + a D-number and
+-- the live store already carries it; that removal is logged as a deferral in PROGRESS (proposal P5), not a
+-- resolution. Do NOT wire anything to read or write it.
 -- Identity = (security_id, type, effective_date); ex_date is EXCLUDED (splits carry NULL ex_date, which
 -- SQLite treats as distinct in a UNIQUE index; effective_date is NOT NULL and, for dividends, == ex_date).
 CREATE UNIQUE INDEX ux_corporate_actions_identity ON corporate_actions(security_id, type, effective_date, version);

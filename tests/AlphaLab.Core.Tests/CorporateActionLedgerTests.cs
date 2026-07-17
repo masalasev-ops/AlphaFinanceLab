@@ -148,20 +148,143 @@ public class CorporateActionLedgerTests
         Assert.Equal(S(1), noop.Id);
     }
 
-    // ============================ Part-2 kinds refuse ============================
+    // ============================ Part 2 — mergers, spin-off, delist ============================
 
-    [Theory]
-    [InlineData(CorporateActionType.MergerCash)]
-    [InlineData(CorporateActionType.MergerStock)]
-    [InlineData(CorporateActionType.MergerMixed)]
-    [InlineData(CorporateActionType.Spinoff)]
-    [InlineData(CorporateActionType.Delist)]
-    public void FR9_Part2Kinds_AreRefused_NamingCheckpoint27(CorporateActionType type)
+    private static SecurityId Acquirer => S(2);
+
+    private static CorporateAction PartTwo(CorporateActionType type, decimal? cash = null, double? ratio = null,
+        SecurityId? counterparty = null) => new()
     {
-        var ex = Assert.Throws<NotSupportedException>(
-            () => CorporateActionLedger.Apply(Held(), Action(type, ratio: 1.0, cash: 1.0m), RunKind.Live));
+        ActionId = 600, SecurityId = S(1), Type = type, EffectiveDate = "2026-07-16",
+        CashPerShare = cash, Ratio = ratio, CounterpartySecurityId = counterparty,
+    };
 
-        Assert.Contains("2.7", ex.Message);
+    /// <summary>Cash merger: the whole position is force-CLOSED at the deal cash, with standard costs
+    /// WAIVED (§13.6 — a corporate action, not a trade), the action_id stamped, and P&L realized.</summary>
+    [Fact]
+    public void FR9_CashMerger_ClosesAtDealCash_CostsWaived_ActionIdStamped()
+    {
+        var effect = CorporateActionLedger.Apply(
+            Held(shares: 100, basis: 4_000m), PartTwo(CorporateActionType.MergerCash, cash: 54.20m), RunKind.Live);
+
+        var sell = Assert.IsType<CorporateActionEffect.PositionForceClosed>(effect).Sell;
+        Assert.Equal(TradeSide.Sell, sell.Side);
+        Assert.Equal(100, sell.Shares);
+        Assert.Equal(54.20m, sell.RawFillPrice);
+        Assert.Equal(0m, sell.TotalCost);                    // costs waived
+        Assert.Equal(TradeReason.CorpAction, sell.Reason);
+        Assert.Equal(600, sell.ActionId);
+        Assert.Equal(5_420m, sell.CashDelta);                // 100 × 54.20 released, no costs
+    }
+
+    /// <summary>Stock merger: shares convert at the exchange ratio into the acquirer's security_id and
+    /// the cost basis CARRIES. No cash, no trade — a conversion realizes nothing.</summary>
+    [Fact]
+    public void FR9_StockMerger_ConvertsAtRatioIntoAcquirer_BasisCarries()
+    {
+        var effect = CorporateActionLedger.Apply(
+            Held(shares: 100, basis: 4_000m), PartTwo(CorporateActionType.MergerStock, ratio: 0.85, counterparty: Acquirer),
+            RunKind.Live);
+
+        var converted = Assert.IsType<CorporateActionEffect.StockMergerConverted>(effect);
+        Assert.Equal(Acquirer, converted.AcquirerAfter.SecurityId);
+        Assert.Equal(85, converted.AcquirerAfter.Shares);    // 100 × 0.85
+        Assert.Equal(4_000m, converted.AcquirerAfter.CostBasis); // basis carried across the security_id
+    }
+
+    /// <summary>Stock merger INTO A NAME ALREADY HELD: shares and basis SUM — you can be converted into
+    /// an acquirer you already own, and the two lots merge.</summary>
+    [Fact]
+    public void FR9_StockMerger_IntoAnAlreadyHeldAcquirer_SumsSharesAndBasis()
+    {
+        var existing = new Position { AccountId = 7, SecurityId = Acquirer, Shares = 50, CostBasis = 3_000m, OpenedOn = "2025-01-02" };
+        var ctx = new CorporateActionContext { ExistingCounterpartyPosition = existing };
+
+        var effect = CorporateActionLedger.Apply(
+            Held(shares: 100, basis: 4_000m), PartTwo(CorporateActionType.MergerStock, ratio: 0.85, counterparty: Acquirer),
+            RunKind.Live, ctx);
+
+        var acquirer = Assert.IsType<CorporateActionEffect.StockMergerConverted>(effect).AcquirerAfter;
+        Assert.Equal(135, acquirer.Shares);                  // 50 + 85
+        Assert.Equal(7_000m, acquirer.CostBasis);            // 3,000 + 4,000
+    }
+
+    /// <summary>Mixed merger: both legs in one action — cash credited AND stock converted.</summary>
+    [Fact]
+    public void FR9_MixedMerger_CreditsCash_AndConvertsStock_InOneAction()
+    {
+        var effect = CorporateActionLedger.Apply(
+            Held(shares: 100, basis: 4_000m),
+            PartTwo(CorporateActionType.MergerMixed, cash: 10m, ratio: 0.5, counterparty: Acquirer), RunKind.Live);
+
+        var mixed = Assert.IsType<CorporateActionEffect.MixedMergerApplied>(effect);
+        Assert.Equal(1_000m, mixed.Cash.Amount);             // 100 × 10 cash leg
+        Assert.Equal(CashEventType.MergerCash, mixed.Cash.Type);
+        Assert.Equal(50, mixed.AcquirerAfter.Shares);        // 100 × 0.5 stock leg
+        Assert.Equal(4_000m, mixed.AcquirerAfter.CostBasis); // full basis carries to the stock leg
+    }
+
+    /// <summary>Delist: force-exit at the last print, costs waived. With a zero haircut the exit is at
+    /// the last print exactly.</summary>
+    [Fact]
+    public void FR9_Delist_ForceExitsAtLastPrint_NoHaircut()
+    {
+        var ctx = new CorporateActionContext { LastPrintPrice = 3.50m, BankruptcyHaircut = 0.0 };
+
+        var sell = Assert.IsType<CorporateActionEffect.PositionForceClosed>(
+            CorporateActionLedger.Apply(Held(shares: 100, basis: 4_000m), PartTwo(CorporateActionType.Delist), RunKind.Live, ctx)).Sell;
+
+        Assert.Equal(3.50m, sell.RawFillPrice);
+        Assert.Equal(0m, sell.TotalCost);
+        Assert.Equal(TradeReason.CorpAction, sell.Reason);
+    }
+
+    /// <summary>The bankruptcy variant: an 80% haircut exits at 20% of the last print.</summary>
+    [Fact]
+    public void FR9_Delist_BankruptcyHaircut_ReducesTheExitPrice()
+    {
+        var ctx = new CorporateActionContext { LastPrintPrice = 10m, BankruptcyHaircut = 0.80 };
+
+        var sell = Assert.IsType<CorporateActionEffect.PositionForceClosed>(
+            CorporateActionLedger.Apply(Held(shares: 100), PartTwo(CorporateActionType.Delist), RunKind.Live, ctx)).Sell;
+
+        Assert.Equal(2.00m, sell.RawFillPrice);              // 10 × (1 − 0.80)
+    }
+
+    [Fact]
+    public void FR9_Delist_WithoutAContext_FailsClosed()
+    {
+        Assert.Throws<InvalidOperationException>(
+            () => CorporateActionLedger.Apply(Held(), PartTwo(CorporateActionType.Delist), RunKind.Live));
+    }
+
+    /// <summary>Spin-off: a NEW position is created and basis is CONSERVED — what the spin-off gains,
+    /// the parent loses; the parent keeps its shares.</summary>
+    [Fact]
+    public void FR9_Spinoff_CreatesANewPosition_ConservingBasis()
+    {
+        var ctx = new CorporateActionContext { SpinoffShares = 20, SpinoffBasisAllocated = 1_500m };
+
+        var effect = CorporateActionLedger.Apply(
+            Held(shares: 100, basis: 4_000m), PartTwo(CorporateActionType.Spinoff, counterparty: Acquirer), RunKind.Live, ctx);
+
+        var spin = Assert.IsType<CorporateActionEffect.SpinoffReceived>(effect);
+        Assert.Equal(100, spin.ParentAfter.Shares);          // parent keeps its shares
+        Assert.Equal(2_500m, spin.ParentAfter.CostBasis);    // 4,000 − 1,500
+        Assert.Equal(Acquirer, spin.SpinoffPosition.SecurityId);
+        Assert.Equal(20, spin.SpinoffPosition.Shares);
+        Assert.Equal(1_500m, spin.SpinoffPosition.CostBasis);
+        // Basis conserved to the cent.
+        Assert.Equal(4_000m, spin.ParentAfter.CostBasis + spin.SpinoffPosition.CostBasis);
+    }
+
+    [Fact]
+    public void FR9_Spinoff_AllocatingMoreBasisThanTheParentHas_FailsClosed()
+    {
+        var ctx = new CorporateActionContext { SpinoffShares = 20, SpinoffBasisAllocated = 5_000m };
+
+        Assert.Throws<InvalidOperationException>(
+            () => CorporateActionLedger.Apply(Held(basis: 4_000m), PartTwo(CorporateActionType.Spinoff, counterparty: Acquirer), RunKind.Live, ctx));
     }
 
     [Fact]

@@ -64,6 +64,11 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     "ParticipationCapPctAdv": 2.0                 // excess rejected + logged
   },
 
+  "CorporateActions": {                            // §13.6 part 2 — the forced-event ledger's configurable rules (CHANGELOG findings B, C). Feeds DORMANT at launch (D49); semantics + fixtures ship, production behaviour is freeze+alert
+    "BankruptcyHaircutPct": 0.0,                    // delist force-exit at last_print × (1 − pct/100); 0 = take the last print (invent no loss); raise per-event for a KNOWN wipeout (Phase-7 admin / versioned config row)
+    "SpinoffLiquidationDays": 0                    // 0 = exit-only (owner's ExitPolicy manages the spun-off receipt); >0 = liquidate after N sessions — EXECUTION is Phase 7, key carried for fidelity
+  },
+
   "Sizing": {                                      // D32/D42
     "Mode": "inverse_vol",                        // inverse_vol | equal(dummies) | kelly(P6+)
     "PortfolioVolTargetAnn": 0.12,

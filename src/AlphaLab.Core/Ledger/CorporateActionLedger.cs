@@ -3,6 +3,35 @@ using AlphaLab.Core.Domain;
 namespace AlphaLab.Core.Ledger;
 
 /// <summary>
+/// The extra facts a PART-2 action needs beyond the position and the action itself — supplied by the
+/// Data adapter from the bar reader / the ledger (Core cannot read either). Part-1 kinds
+/// (dividend/split/ticker) ignore this entirely; each part-2 kind validates only the fields it needs
+/// and fails closed on an absence (rule 10).
+/// </summary>
+public sealed record CorporateActionContext
+{
+    /// <summary>The account's CURRENT position in the counterparty (the acquirer, for a stock/mixed
+    /// merger), or null if it holds none yet. A stock merger MERGES into it — you can be converted
+    /// into a name you already own — so the engine needs it to sum shares and carry basis correctly.</summary>
+    public Position? ExistingCounterpartyPosition { get; init; }
+
+    /// <summary>The last available RAW print for a delist force-exit. Required for a delist; a delist
+    /// with no price cannot be exited (fail closed).</summary>
+    public decimal? LastPrintPrice { get; init; }
+
+    /// <summary>The bankruptcy haircut FRACTION in [0,1) for a delist (from
+    /// CorporateActions.BankruptcyHaircutPct / 100). The exit price is last_print × (1 − haircut).</summary>
+    public double? BankruptcyHaircut { get; init; }
+
+    /// <summary>The spin-off receipt's share count, resolved by the adapter (parent shares × ratio, or
+    /// a first-print fallback — see <see cref="SpinoffAllocation"/>).</summary>
+    public double? SpinoffShares { get; init; }
+
+    /// <summary>The cost basis to move from the parent to the spin-off, resolved by the adapter.</summary>
+    public decimal? SpinoffBasisAllocated { get; init; }
+}
+
+/// <summary>
 /// What applying one corporate action does to the ledger. A closed hierarchy so the Data adapter
 /// cannot forget a case, and so "a ticker change does nothing" is an explicit, tested outcome
 /// rather than a silent fall-through.
@@ -24,6 +53,28 @@ public abstract record CorporateActionEffect
     /// security_id, which is unchanged; the alias was already updated in ticker_history at ingestion.
     /// This case exists to make "zero phantom churn on a rename" a tested fact, not an assumption.</summary>
     public sealed record TickerRenamedNoLedgerEffect(SecurityId Id, string? NewSymbol) : CorporateActionEffect;
+
+    /// <summary>A cash merger / delist: the position is CLOSED by a forced sell at a given price with
+    /// standard costs WAIVED (§13.6 — a corporate action, not a trade; not capacity-capped). The
+    /// <see cref="Trade"/> realizes P&amp;L against the cost basis; the position is then removed.</summary>
+    public sealed record PositionForceClosed(Trade Sell) : CorporateActionEffect;
+
+    /// <summary>A stock merger: the target position is removed and the account is converted into
+    /// <see cref="AcquirerAfter"/> at the exchange ratio, cost basis carried. No cash, no trade — a
+    /// conversion realizes nothing.</summary>
+    public sealed record StockMergerConverted(SecurityId TargetId, Position AcquirerAfter, double SharesConverted)
+        : CorporateActionEffect;
+
+    /// <summary>A mixed merger: the cash leg is credited (<see cref="Cash"/>) AND the stock leg is
+    /// converted into <see cref="AcquirerAfter"/>, in one action. Full basis carries to the stock leg
+    /// (see the note in <see cref="CorporateActionLedger"/>).</summary>
+    public sealed record MixedMergerApplied(CashEvent Cash, SecurityId TargetId, Position AcquirerAfter, double SharesConverted)
+        : CorporateActionEffect;
+
+    /// <summary>A spin-off: the parent's basis is reduced (<see cref="ParentAfter"/>, shares unchanged)
+    /// and a NEW <see cref="SpinoffPosition"/> is created, entering the account even if the spun-off
+    /// name is not in the index (exit-only management thereafter).</summary>
+    public sealed record SpinoffReceived(Position ParentAfter, Position SpinoffPosition) : CorporateActionEffect;
 }
 
 /// <summary>
@@ -58,7 +109,8 @@ public static class CorporateActionLedger
     /// effective on the day being processed — this function does not re-check those; it prices the
     /// effect of an action it is told applies.
     /// </summary>
-    public static CorporateActionEffect Apply(Position position, CorporateAction action, RunKind runKind)
+    public static CorporateActionEffect Apply(
+        Position position, CorporateAction action, RunKind runKind, CorporateActionContext? context = null)
     {
         ArgumentNullException.ThrowIfNull(position);
         ArgumentNullException.ThrowIfNull(action);
@@ -71,6 +123,11 @@ public static class CorporateActionLedger
                 nameof(action));
         }
 
+        // The context is optional at the call site; each part-2 handler validates only the fields it
+        // actually needs and fails closed on an absence (a stock merger into an un-held acquirer needs
+        // no context at all; a delist needs a last print; a spin-off needs its resolved terms).
+        var ctx = context ?? new CorporateActionContext();
+
         return action.Type switch
         {
             CorporateActionType.Dividend => Dividend(position, action, runKind),
@@ -78,17 +135,11 @@ public static class CorporateActionLedger
             CorporateActionType.TickerChange => new CorporateActionEffect.TickerRenamedNoLedgerEffect(
                 position.SecurityId, action.NewSymbol),
 
-            // Part 2 (2.7). Named so a dormant feed (D49) turning on refuses loudly rather than
-            // dropping a merger/spin-off/delist on the floor.
-            CorporateActionType.MergerCash or CorporateActionType.MergerStock or CorporateActionType.MergerMixed
-                => throw new NotSupportedException(
-                    $"Merger handling (type {action.Type}, action {action.ActionId}) is §13.6 part 2 — checkpoint 2.7. " +
-                    "The merger feeds are dormant at launch (D49), so this cannot occur on live data yet; refusing " +
-                    "rather than mispricing a conversion or cash-out."),
-            CorporateActionType.Spinoff => throw new NotSupportedException(
-                $"Spin-off handling (action {action.ActionId}) is §13.6 part 2 — checkpoint 2.7. Dormant feed (D49)."),
-            CorporateActionType.Delist => throw new NotSupportedException(
-                $"Delist force-exit (action {action.ActionId}) is §13.6 part 2 — checkpoint 2.7. Dormant feed (D49)."),
+            CorporateActionType.MergerCash => CashMerger(position, action, runKind),
+            CorporateActionType.MergerStock => StockMerger(position, action, ctx),
+            CorporateActionType.MergerMixed => MixedMerger(position, action, ctx, runKind),
+            CorporateActionType.Spinoff => Spinoff(position, action, ctx),
+            CorporateActionType.Delist => Delist(position, action, ctx, runKind),
 
             _ => throw new ArgumentOutOfRangeException(nameof(action), action.Type, "Unmapped corporate-action type."),
         };
@@ -144,6 +195,194 @@ public static class CorporateActionLedger
         // frozen flag ride along unchanged — a split is not a new position and does not resolve a freeze.
 
         return new CorporateActionEffect.PositionRestated(position, after, ratio);
+    }
+
+    // ============================ Part 2 (2.7) — mergers, spin-off, delist ============================
+    //
+    // FORCED-EVENT COSTS ARE WAIVED (§13.6): a merger cash-out, a conversion, a delist force-exit — "a
+    // corporate action, not a trade" — pay no commission / spread / impact and are not capacity-capped
+    // (the event happens to you regardless of your size). So these build the Trade directly with zero
+    // costs; they never route through the D43 VirtualBroker (which is why OrderFill refuses a CorpAction
+    // order). reason = CorpAction and the action_id travel on every one, per §13.6's "logged with the
+    // action id" and the LedgerStore invariant.
+
+    private static CorporateActionEffect CashMerger(Position position, CorporateAction action, RunKind runKind)
+    {
+        var deal = RequirePositiveCash(action, "cash merger", "deal cash-per-share");
+        // Close the whole position at the deal cash: a forced SELL that realizes P&L vs the basis.
+        return new CorporateActionEffect.PositionForceClosed(
+            ForcedSell(position, action, deal, runKind,
+                $"cash merger: {position.Shares} sh × {deal} deal cash, costs waived (§13.6)."));
+    }
+
+    private static CorporateActionEffect StockMerger(Position position, CorporateAction action, CorporateActionContext ctx)
+    {
+        var (acquirerId, ratio) = RequireExchange(action, "stock merger");
+        var acquirerAfter = ConvertToAcquirer(position, acquirerId, ratio, ctx, carriedBasis: position.CostBasis, action);
+        return new CorporateActionEffect.StockMergerConverted(position.SecurityId, acquirerAfter, position.Shares * ratio);
+    }
+
+    private static CorporateActionEffect MixedMerger(
+        Position position, CorporateAction action, CorporateActionContext ctx, RunKind runKind)
+    {
+        var cashPerShare = RequirePositiveCash(action, "mixed merger", "cash leg per share");
+        var (acquirerId, ratio) = RequireExchange(action, "mixed merger");
+
+        // SIMPLIFICATION (documented stop-and-report seam): the FULL target basis carries to the stock
+        // leg and the cash leg is credited as a distribution, rather than allocating basis between the
+        // two. §13.6 says "cost basis carries" for the stock portion; total value is conserved at the
+        // event either way (cash + new position value = old position value), and only the split between
+        // realize-now and realize-later differs. A tax-grade basis allocation is a nicety a paper
+        // research lab does not need, and inventing one the design does not specify would be worse.
+        var cash = new CashEvent
+        {
+            AccountId = position.AccountId,
+            SecurityId = position.SecurityId,
+            AsOf = action.EffectiveDate,
+            Type = CashEventType.MergerCash,
+            Amount = (decimal)position.Shares * cashPerShare,
+            ActionId = action.ActionId,
+            RunKind = runKind,
+        };
+        var acquirerAfter = ConvertToAcquirer(position, acquirerId, ratio, ctx, carriedBasis: position.CostBasis, action);
+        return new CorporateActionEffect.MixedMergerApplied(cash, position.SecurityId, acquirerAfter, position.Shares * ratio);
+    }
+
+    private static CorporateActionEffect Spinoff(Position parent, CorporateAction action, CorporateActionContext ctx)
+    {
+        if (ctx.SpinoffShares is not { } spinoffShares || spinoffShares <= 0 || !double.IsFinite(spinoffShares))
+        {
+            throw new InvalidOperationException(
+                $"Spin-off action {action.ActionId} has no positive spin-off share count in its context — the adapter " +
+                "must resolve it (parent shares × ratio, or the first-print fallback) before this runs.");
+        }
+        if (ctx.SpinoffBasisAllocated is not { } basisToSpinoff || basisToSpinoff < 0m || basisToSpinoff > parent.CostBasis)
+        {
+            throw new InvalidOperationException(
+                $"Spin-off action {action.ActionId} has an out-of-range allocated basis ({ctx.SpinoffBasisAllocated}) — " +
+                $"it must be in [0, parent basis {parent.CostBasis}]. Basis is conserved: what the spin-off gains, the " +
+                "parent loses.");
+        }
+        if (action.CounterpartySecurityId is not { } spinoffId)
+        {
+            throw new InvalidOperationException(
+                $"Spin-off action {action.ActionId} has no counterparty security_id — there is no spun-off entity to receive.");
+        }
+
+        // The parent KEEPS its shares; only its basis drops by what moved to the spin-off (basis is
+        // conserved). The spin-off is a NEW position that enters even if not in-index (exit-only).
+        var parentAfter = parent with { CostBasis = parent.CostBasis - basisToSpinoff };
+        var spinoffPosition = new Position
+        {
+            AccountId = parent.AccountId,
+            SecurityId = spinoffId,
+            Shares = spinoffShares,
+            CostBasis = basisToSpinoff,
+            OpenedOn = action.EffectiveDate,
+        };
+        return new CorporateActionEffect.SpinoffReceived(parentAfter, spinoffPosition);
+    }
+
+    private static CorporateActionEffect Delist(
+        Position position, CorporateAction action, CorporateActionContext ctx, RunKind runKind)
+    {
+        if (ctx.LastPrintPrice is not { } lastPrint || lastPrint < 0m)
+        {
+            throw new InvalidOperationException(
+                $"Delist action {action.ActionId} has no non-negative last-print price in its context — cannot force-exit " +
+                "(fail closed). A delist with no price to sell into is exactly the unmapped case that freezes instead.");
+        }
+        var haircut = ctx.BankruptcyHaircut ?? 0.0;
+        if (haircut < 0.0 || haircut >= 1.0 || !double.IsFinite(haircut))
+        {
+            throw new InvalidOperationException(
+                $"Delist action {action.ActionId} has an out-of-range bankruptcy haircut ({haircut}); it must be in [0,1).");
+        }
+
+        // Force-exit at last print, less the bankruptcy haircut. haircut=0 → last print; haircut→1 → a
+        // near-total loss; haircut=1 would be exactly zero, disallowed above so the "no price at all"
+        // case stays the freeze path rather than a $0 sale.
+        var exitPrice = lastPrint * (decimal)(1.0 - haircut);
+        return new CorporateActionEffect.PositionForceClosed(
+            ForcedSell(position, action, exitPrice, runKind,
+                $"delist force-exit: {position.Shares} sh × {exitPrice} (last print {lastPrint}, haircut {haircut:P0}), " +
+                "costs waived (§13.6)."));
+    }
+
+    // ---- part-2 helpers ----
+
+    /// <summary>Build the acquirer position after a stock/mixed merger: existing holding (if any) plus
+    /// the converted shares and the carried basis. You can be merged into a name you already own, so
+    /// the shares and basis SUM.</summary>
+    private static Position ConvertToAcquirer(
+        Position target, SecurityId acquirerId, double ratio, CorporateActionContext ctx, decimal carriedBasis, CorporateAction action)
+    {
+        var convertedShares = target.Shares * ratio;
+        var existing = ctx.ExistingCounterpartyPosition;
+
+        if (existing is not null && existing.SecurityId != acquirerId)
+        {
+            throw new InvalidOperationException(
+                $"Merger action {action.ActionId}: the supplied existing counterparty position is in " +
+                $"{existing.SecurityId}, but the acquirer is {acquirerId}. The adapter matched the wrong position.");
+        }
+
+        return new Position
+        {
+            AccountId = target.AccountId,
+            SecurityId = acquirerId,
+            Shares = (existing?.Shares ?? 0.0) + convertedShares,
+            CostBasis = (existing?.CostBasis ?? 0m) + carriedBasis,
+            OpenedOn = existing?.OpenedOn ?? action.EffectiveDate,
+            Frozen = existing?.Frozen ?? false,
+            FrozenReason = existing?.FrozenReason,
+        };
+    }
+
+    /// <summary>A forced sell with standard costs WAIVED (§13.6): commission/spread/impact all zero,
+    /// reason CorpAction, carrying the action_id.</summary>
+    private static Trade ForcedSell(Position position, CorporateAction action, decimal price, RunKind runKind, string _)
+        => new()
+        {
+            AccountId = position.AccountId,
+            SecurityId = position.SecurityId,
+            Side = TradeSide.Sell,
+            DecidedOn = action.EffectiveDate,   // a forced event decides and fills on its effective date
+            FilledOn = action.EffectiveDate,
+            Shares = position.Shares,
+            RawFillPrice = price,
+            Commission = 0m,
+            SpreadCost = 0m,
+            ImpactCost = 0m,
+            CostModelVersion = "corp-action-waived",   // stamps that this fill was NOT priced by the D43 model
+            Reason = TradeReason.CorpAction,
+            ActionId = action.ActionId,
+            RunKind = runKind,
+        };
+
+    private static decimal RequirePositiveCash(CorporateAction action, string kind, string field)
+    {
+        if (action.CashPerShare is not { } cash || cash < 0m)
+        {
+            throw new InvalidOperationException(
+                $"{kind} action {action.ActionId} has no non-negative {field} — cannot price it (fail closed).");
+        }
+        return cash;
+    }
+
+    private static (SecurityId AcquirerId, double Ratio) RequireExchange(CorporateAction action, string kind)
+    {
+        if (action.CounterpartySecurityId is not { } acquirer)
+        {
+            throw new InvalidOperationException(
+                $"{kind} action {action.ActionId} has no counterparty security_id — there is no acquirer to convert into.");
+        }
+        if (action.Ratio is not { } ratio || ratio <= 0 || !double.IsFinite(ratio))
+        {
+            throw new InvalidOperationException(
+                $"{kind} action {action.ActionId} has no positive, finite exchange ratio (got {action.Ratio?.ToString() ?? "null"}).");
+        }
+        return (acquirer, ratio);
     }
 
     /// <summary>

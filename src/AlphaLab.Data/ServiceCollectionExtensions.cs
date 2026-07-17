@@ -65,7 +65,8 @@ public static class ServiceCollectionExtensions
         // corporate-action read (D76). Both are pure readers over the versioned stores.
         services.AddScoped<IBarReadService, BarReadService>();
         services.AddScoped<ICorporateActionReadService, CorporateActionReadService>();
-        services.AddScoped<CorporateActionApplier>();      // 2.6 — §13.6 part 1 (dividend/split/ticker/freeze)
+        services.TryAddSingleton(new AlphaLab.Core.Config.CorporateActionsOptions()); // findings B/C — delist haircut, spin-off liquidation
+        services.AddScoped<CorporateActionApplier>();      // 2.6/2.7 — §13.6 ledger (dividend/split/ticker/freeze; mergers/spin-off/delist)
         return services;
     }
 }

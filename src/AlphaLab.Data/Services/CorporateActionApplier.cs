@@ -1,3 +1,4 @@
+using AlphaLab.Core.Config;
 using AlphaLab.Core.Domain;
 using AlphaLab.Core.Ledger;
 using AlphaLab.Data.Entities;
@@ -35,7 +36,8 @@ public sealed record CorporateActionOutcome(
 public sealed class CorporateActionApplier(
     ILedgerStore ledger,
     ICorporateActionReadService actions,
-    IBarReadService bars)
+    IBarReadService bars,
+    CorporateActionsOptions options)
 {
     /// <summary>
     /// Apply every corporate action effective on <paramref name="asOf"/> to <paramref name="accountId"/>'s
@@ -77,14 +79,15 @@ public sealed class CorporateActionApplier(
                 var position = ledger.GetPosition(accountId, securityId);
                 if (position is null)
                 {
-                    // The account stopped holding it mid-day (a 2.7 delist/merger close). Nothing left to
+                    // The account stopped holding it mid-day (a delist/merger close). Nothing left to
                     // apply — but record the skip so the day's audit is complete rather than silent.
                     applied.Add(new AppliedCorporateAction(action.ActionId, securityId, action.Type,
                         "skipped: the position was closed earlier in the day."));
                     continue;
                 }
 
-                applied.Add(Persist(CorporateActionLedger.Apply(position, action, runKind), action));
+                var context = BuildContext(accountId, position, action, asOf, watermark);
+                applied.Add(Persist(CorporateActionLedger.Apply(position, action, runKind, context), position, action));
             }
 
             // Fail-closed stoppage check (§13.6/rule 10) AFTER any actions: a held name with no bar today
@@ -105,34 +108,126 @@ public sealed class CorporateActionApplier(
         return new CorporateActionOutcome(applied, frozen);
     }
 
-    private AppliedCorporateAction Persist(CorporateActionEffect effect, CorporateAction action)
+    /// <summary>Assemble the extra facts a part-2 kind needs. Part-1 kinds ignore all of it, so this is
+    /// cheap to build unconditionally; each part-2 handler validates only what it uses.</summary>
+    private CorporateActionContext BuildContext(
+        long accountId, Position position, CorporateAction action, string asOf, string watermark)
+    {
+        // The acquirer position (if the account already holds it) — a stock/mixed merger sums into it.
+        Position? counterparty = action.CounterpartySecurityId is { } cp
+            ? ledger.GetPosition(accountId, cp)
+            : null;
+
+        // The last available RAW print for a delist force-exit: the asOf bar's close at the watermark.
+        decimal? lastPrint = action.Type == CorporateActionType.Delist
+            ? (decimal?)bars.GetBar(action.SecurityId.Value, asOf, watermark)?.Close
+            : null;
+
+        // Spin-off terms, resolved by ratio (primary) or first-print relative value (fallback).
+        double? spinoffShares = null;
+        decimal? spinoffBasis = null;
+        if (action.Type == CorporateActionType.Spinoff)
+        {
+            var terms = ResolveSpinoff(position, action, asOf, watermark);
+            spinoffShares = terms.SpinoffShares;
+            spinoffBasis = terms.BasisToSpinoff;
+        }
+
+        return new CorporateActionContext
+        {
+            ExistingCounterpartyPosition = counterparty,
+            LastPrintPrice = lastPrint,
+            BankruptcyHaircut = action.Type == CorporateActionType.Delist ? options.BankruptcyHaircutPct / 100.0 : null,
+            SpinoffShares = spinoffShares,
+            SpinoffBasisAllocated = spinoffBasis,
+        };
+    }
+
+    private SpinoffTerms ResolveSpinoff(Position parent, CorporateAction action, string asOf, string watermark)
+    {
+        // Primary: ratio in the feed → shares × ratio, share-proportional basis (no prices needed).
+        if (action.Ratio is { } ratio && ratio > 0 && double.IsFinite(ratio))
+        {
+            return SpinoffAllocation.ByRatio(parent.Shares, parent.CostBasis, ratio);
+        }
+
+        // Fallback: ratio missing → first-print relative value. Needs the parent's post-spin first price
+        // and the spun-off entity's first price. Fail closed if either is absent (rule 10).
+        if (action.CounterpartySecurityId is not { } spinoffId)
+        {
+            throw new InvalidOperationException(
+                $"Spin-off action {action.ActionId} has neither a ratio nor a counterparty security_id — nothing to receive.");
+        }
+        var parentPrice = bars.GetBar(parent.SecurityId.Value, asOf, watermark)?.Close;
+        var spinoffPrice = bars.GetBar(spinoffId.Value, asOf, watermark)?.Close;
+        if (parentPrice is not { } pp || spinoffPrice is not { } sp)
+        {
+            throw new InvalidOperationException(
+                $"Spin-off action {action.ActionId} has no ratio and is missing a first print (parent={parentPrice}, " +
+                $"spin-off={spinoffPrice}) — the first-print allocation fallback cannot run. Fail closed (§13.6/rule 10).");
+        }
+        return SpinoffAllocation.ByFirstPrint(parent.Shares, parent.CostBasis, pp, sp);
+    }
+
+    private AppliedCorporateAction Persist(CorporateActionEffect effect, Position current, CorporateAction action)
     {
         switch (effect)
         {
             case CorporateActionEffect.DividendCredited d:
                 ledger.RecordCashEvent(d.Cash);
-                return new AppliedCorporateAction(action.ActionId, action.SecurityId, action.Type,
-                    $"dividend: {d.Shares} sh × {d.PerShare} = {d.Cash.Amount} credited on ex-date {d.Cash.AsOf}.");
+                return Note(action, $"dividend: {d.Shares} sh × {d.PerShare} = {d.Cash.Amount} credited on ex-date {d.Cash.AsOf}.");
 
             case CorporateActionEffect.PositionRestated r:
                 ledger.UpsertPosition(r.After);
-                return new AppliedCorporateAction(action.ActionId, action.SecurityId, action.Type,
-                    $"split ×{r.Ratio}: {r.Before.Shares} → {r.After.Shares} sh, basis {r.After.CostBasis} unchanged.");
+                return Note(action, $"split ×{r.Ratio}: {r.Before.Shares} → {r.After.Shares} sh, basis {r.After.CostBasis} unchanged.");
 
             case CorporateActionEffect.TickerRenamedNoLedgerEffect t:
                 // D39: nothing to persist. The alias was updated in ticker_history at ingestion; the
                 // position keeps its security_id. Recorded so the audit shows the non-event explicitly.
-                return new AppliedCorporateAction(action.ActionId, action.SecurityId, action.Type,
-                    $"ticker change → '{t.NewSymbol}': no ledger effect (identity is security_id, D39).");
+                return Note(action, $"ticker change → '{t.NewSymbol}': no ledger effect (identity is security_id, D39).");
+
+            case CorporateActionEffect.PositionForceClosed f:
+                // Cash merger / delist: a forced sell with costs waived, then the position is removed.
+                ledger.RecordTrade(f.Sell);
+                Remove(current);
+                return Note(action, $"force-closed: sell {f.Sell.Shares} sh @ {f.Sell.RawFillPrice} (costs waived), position removed.");
+
+            case CorporateActionEffect.StockMergerConverted s:
+                Remove(current);                      // target gone
+                ledger.UpsertPosition(s.AcquirerAfter); // converted into the acquirer, basis carried
+                return Note(action, $"stock merger: {current.Shares} sh → {s.SharesConverted} sh of {s.AcquirerAfter.SecurityId}, basis carried.");
+
+            case CorporateActionEffect.MixedMergerApplied m:
+                ledger.RecordCashEvent(m.Cash);       // cash leg
+                Remove(current);                      // target gone
+                ledger.UpsertPosition(m.AcquirerAfter); // stock leg
+                return Note(action, $"mixed merger: {m.Cash.Amount} cash + {m.SharesConverted} sh of {m.AcquirerAfter.SecurityId}.");
+
+            case CorporateActionEffect.SpinoffReceived sp:
+                ledger.UpsertPosition(sp.ParentAfter);      // parent basis reduced, shares unchanged
+                ledger.UpsertPosition(sp.SpinoffPosition);  // new receipt, enters even if not in-index
+                return Note(action, $"spin-off: new {sp.SpinoffPosition.Shares} sh of {sp.SpinoffPosition.SecurityId}, " +
+                    $"basis {sp.SpinoffPosition.CostBasis} moved from parent (now {sp.ParentAfter.CostBasis}).");
 
             default:
                 throw new ArgumentOutOfRangeException(nameof(effect), effect, "Unmapped corporate-action effect.");
         }
     }
 
+    /// <summary>Remove a position by upserting it to zero shares (which deletes the row — positions is
+    /// current state, not a log; the trades log keeps the history).</summary>
+    private void Remove(Position position) => ledger.UpsertPosition(position with { Shares = 0 });
+
+    private static AppliedCorporateAction Note(CorporateAction action, string detail) =>
+        new(action.ActionId, action.SecurityId, action.Type, detail);
+
+    /// <summary>Does a corporate action explain why a HELD name has no bar today? Only the events that
+    /// STOP the name trading do — a cash/stock/mixed merger (the target is absorbed) or a delist. A
+    /// SPIN-OFF does NOT: the parent keeps trading, so a spin-off with a missing parent bar is still an
+    /// unexplained stoppage and must still freeze.</summary>
     private static bool IsTerminal(CorporateAction a) => a.Type is
         CorporateActionType.MergerCash or CorporateActionType.MergerStock or CorporateActionType.MergerMixed
-        or CorporateActionType.Spinoff or CorporateActionType.Delist;
+        or CorporateActionType.Delist;
 
     private static CorporateAction ToDomain(CorporateActionRow row) => new()
     {

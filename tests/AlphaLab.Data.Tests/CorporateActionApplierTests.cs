@@ -1,3 +1,4 @@
+using AlphaLab.Core.Config;
 using AlphaLab.Core.Domain;
 using AlphaLab.Core.Ledger;
 using AlphaLab.Data.Entities;
@@ -20,10 +21,11 @@ public class CorporateActionApplierTests
     private const string Watermark = "2026-07-16T22:00:00Z";
     private static readonly string ObservedEarly = "2026-07-16T20:00:00Z"; // visible at the watermark
 
-    private static CorporateActionApplier Applier(AlphaLabDbContext db) => new(
+    private static CorporateActionApplier Applier(AlphaLabDbContext db, CorporateActionsOptions? options = null) => new(
         new LedgerStore(db),
         new CorporateActionReadService(db),
-        new BarReadService(db));
+        new BarReadService(db),
+        options ?? new CorporateActionsOptions());
 
     /// <summary>Seed AAPL + an account holding <paramref name="shares"/>, and (optionally) an asOf-day
     /// bar so the stoppage check sees a live name.</summary>
@@ -260,28 +262,218 @@ public class CorporateActionApplierTests
         finally { TestDb.Delete(path); }
     }
 
-    /// <summary>A dormant-feed action the ledger does not yet handle (a merger — §13.6 part 2, 2.7)
-    /// makes the applier REFUSE loudly rather than silently skip it. The merger feeds are dormant at
-    /// launch (D49), so this cannot occur on live data — but if one appeared, mispricing it silently is
-    /// the failure this prevents.</summary>
+    // ============================ Part 2 — mergers, spin-off, delist ============================
+
+    private const long Acq = 2;
+    private static readonly SecurityId AcqId = new(Acq);
+
+    /// <summary>Register a second security (the acquirer / spun-off entity) so counterparty FKs resolve.</summary>
+    private static void SeedAcquirer(AlphaLabDbContext db) => new SecurityMaster(db).Register("ACQ", "US", "2020-01-01");
+
+    private static void AddAction(AlphaLabDbContext db, string type, decimal? cash = null, double? ratio = null,
+        long? counterparty = null) =>
+        db.CorporateActions.Add(new CorporateActionRow
+        {
+            SecurityId = Aapl, Type = type, EffectiveDate = AsOf, Version = 1,
+            CashPerShare = cash, Ratio = ratio, CounterpartySecurityId = counterparty,
+            ObservedAt = ObservedEarly, Source = "eodhd",
+        });
+
+    /// <summary>FX-MergerCash: held target, $54.20/share effective → position closed at deal cash, costs
+    /// waived, action_id stamped, a Sell trade recorded, the position removed.</summary>
     [Fact]
-    public void FR9_ADormantMergerAction_MakesTheApplierRefuse_NotSilentlySkip()
+    public void FR9_FxMergerCash_ClosesAtDealCash_CostsWaived_PositionRemoved()
     {
         var path = TestDb.CreateMigrated();
         try
         {
             using var db = TestDb.Open(path);
-            var account = Seed(db);
-            db.CorporateActions.Add(new CorporateActionRow
-            {
-                SecurityId = Aapl, Type = "merger_cash", EffectiveDate = AsOf, Version = 1,
-                CashPerShare = 200m, ObservedAt = ObservedEarly, Source = "eodhd",
-            });
+            var account = Seed(db, shares: 100, basis: 4_000m);
+            AddAction(db, "merger_cash", cash: 54.20m);
             db.SaveChanges();
 
-            var ex = Assert.Throws<NotSupportedException>(
-                () => Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark));
-            Assert.Contains("2.7", ex.Message);
+            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark);
+
+            var store = new LedgerStore(db);
+            Assert.Null(store.GetPosition(account, AaplId));              // removed
+            var sell = Assert.Single(store.GetTrades(account, RunKind.Live));
+            Assert.Equal(TradeReason.CorpAction, sell.Reason);
+            Assert.Equal(54.20m, sell.RawFillPrice);
+            Assert.Equal(0m, sell.TotalCost);                            // waived
+            Assert.NotNull(sell.ActionId);
+        }
+        finally { TestDb.Delete(path); }
+    }
+
+    /// <summary>FX-MergerStock: 0.85 exchange ratio → shares converted across security_ids, basis carried.</summary>
+    [Fact]
+    public void FR9_FxMergerStock_ConvertsAcrossSecurityIds_BasisCarried()
+    {
+        var path = TestDb.CreateMigrated();
+        try
+        {
+            using var db = TestDb.Open(path);
+            var account = Seed(db, shares: 100, basis: 4_000m);
+            SeedAcquirer(db);
+            AddAction(db, "merger_stock", ratio: 0.85, counterparty: Acq);
+            db.SaveChanges();
+
+            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark);
+
+            var store = new LedgerStore(db);
+            Assert.Null(store.GetPosition(account, AaplId));              // target gone
+            var acquirer = store.GetPosition(account, AcqId)!;
+            Assert.Equal(85, acquirer.Shares);                           // 100 × 0.85
+            Assert.Equal(4_000m, acquirer.CostBasis);                    // basis carried
+            Assert.Empty(store.GetTrades(account, RunKind.Live));         // a conversion is not a trade
+        }
+        finally { TestDb.Delete(path); }
+    }
+
+    /// <summary>FX-MergerMixed: $10 cash + 0.5 shares → both legs, one action.</summary>
+    [Fact]
+    public void FR9_FxMergerMixed_CreditsCashAndConvertsStock_OneAction()
+    {
+        var path = TestDb.CreateMigrated();
+        try
+        {
+            using var db = TestDb.Open(path);
+            var account = Seed(db, shares: 100, basis: 4_000m);
+            SeedAcquirer(db);
+            AddAction(db, "merger_mixed", cash: 10m, ratio: 0.5, counterparty: Acq);
+            db.SaveChanges();
+
+            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark);
+
+            var store = new LedgerStore(db);
+            Assert.Null(store.GetPosition(account, AaplId));
+            Assert.Equal(50, store.GetPosition(account, AcqId)!.Shares);  // 100 × 0.5
+            var cash = Assert.Single(store.GetCashEvents(account, RunKind.Live), e => e.Type == CashEventType.MergerCash);
+            Assert.Equal(1_000m, cash.Amount);                           // 100 × 10
+        }
+        finally { TestDb.Delete(path); }
+    }
+
+    /// <summary>FX-Spinoff (ratio in feed): a new position with basis allocation; the parent keeps its
+    /// shares and its basis is reduced by exactly what moved. Basis conserved.</summary>
+    [Fact]
+    public void FR9_FxSpinoff_RatioInFeed_CreatesReceipt_ConservesBasis()
+    {
+        var path = TestDb.CreateMigrated();
+        try
+        {
+            using var db = TestDb.Open(path);
+            var account = Seed(db, shares: 100, basis: 5_000m);
+            SeedAcquirer(db);
+            AddAction(db, "spinoff", ratio: 0.25, counterparty: Acq); // 0.25/1.25 = 20% of basis
+            db.SaveChanges();
+
+            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark);
+
+            var store = new LedgerStore(db);
+            var parent = store.GetPosition(account, AaplId)!;
+            var spin = store.GetPosition(account, AcqId)!;
+            Assert.Equal(100, parent.Shares);                            // parent keeps shares
+            Assert.Equal(25, spin.Shares);                               // 100 × 0.25
+            Assert.Equal(1_000m, spin.CostBasis);                        // 20% of 5,000
+            Assert.Equal(5_000m, parent.CostBasis + spin.CostBasis);      // conserved
+        }
+        finally { TestDb.Delete(path); }
+    }
+
+    /// <summary>FX-Spinoff (ratio MISSING): the first-print allocation path. Needs the parent's and the
+    /// spin-off's asOf prints; basis is split by relative value.</summary>
+    [Fact]
+    public void FR9_FxSpinoff_MissingRatio_UsesFirstPrintAllocation()
+    {
+        var path = TestDb.CreateMigrated();
+        try
+        {
+            using var db = TestDb.Open(path);
+            var account = Seed(db, shares: 100, basis: 5_000m); // AAPL asOf bar close = 150 (from Seed)
+            SeedAcquirer(db);
+            // The spun-off entity needs an asOf first print for the value-based split.
+            new BarIngestionService(db).IngestEod(Acq,
+                [new EodBar(AsOf, 15.0, 16.0, 14.0, 15.0, 15.0, 500_000)], ObservedEarly);
+            AddAction(db, "spinoff", ratio: null, counterparty: Acq); // no ratio → first-print path
+            db.SaveChanges();
+
+            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark);
+
+            var store = new LedgerStore(db);
+            var spin = store.GetPosition(account, AcqId)!;
+            Assert.Equal(100, spin.Shares);                              // 1:1 fallback
+            // parent value = 100×150 = 15,000; spinoff value = 100×15 = 1,500; fraction = 1,500/16,500 ≈ 0.0909.
+            Assert.Equal(454.55m, spin.CostBasis);                       // 5,000 × 0.0909, rounded to cents
+            Assert.Equal(5_000m, store.GetPosition(account, AaplId)!.CostBasis + spin.CostBasis);
+        }
+        finally { TestDb.Delete(path); }
+    }
+
+    /// <summary>FX-Delist: force-exit at the last print (the asOf bar close), costs waived. Default
+    /// haircut 0 → exit at the last print exactly.</summary>
+    [Fact]
+    public void FR9_FxDelist_ForceExitsAtLastPrint_CostsWaived()
+    {
+        var path = TestDb.CreateMigrated();
+        try
+        {
+            using var db = TestDb.Open(path);
+            var account = Seed(db, shares: 100, basis: 4_000m); // asOf bar close = 150
+            AddAction(db, "delist");
+            db.SaveChanges();
+
+            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark);
+
+            var store = new LedgerStore(db);
+            Assert.Null(store.GetPosition(account, AaplId));              // force-exited
+            var sell = Assert.Single(store.GetTrades(account, RunKind.Live));
+            Assert.Equal(150.0m, sell.RawFillPrice);                     // the last print
+            Assert.Equal(0m, sell.TotalCost);
+        }
+        finally { TestDb.Delete(path); }
+    }
+
+    /// <summary>FX-Delist bankruptcy variant: an 80%% haircut (config) exits at 20%% of the last print.</summary>
+    [Fact]
+    public void FR9_FxDelist_BankruptcyVariant_AppliesTheHaircutConfig()
+    {
+        var path = TestDb.CreateMigrated();
+        try
+        {
+            using var db = TestDb.Open(path);
+            var account = Seed(db, shares: 100, basis: 4_000m); // asOf bar close = 150
+            AddAction(db, "delist");
+            db.SaveChanges();
+
+            var options = new CorporateActionsOptions { BankruptcyHaircutPct = 80.0 };
+            Applier(db, options).ApplyForAccount(account, RunKind.Live, AsOf, Watermark);
+
+            var sell = Assert.Single(new LedgerStore(db).GetTrades(account, RunKind.Live));
+            Assert.Equal(30.0m, sell.RawFillPrice);                      // 150 × (1 − 0.80)
+        }
+        finally { TestDb.Delete(path); }
+    }
+
+    /// <summary>D74 PROOF: an index-membership drop is NOT a delisting. A held name that left the index
+    /// but keeps printing bars, with no delist action, is neither force-exited nor frozen — the position
+    /// survives untouched. (Membership is stamped on index_membership, never as a corporate action.)</summary>
+    [Fact]
+    public void FR9_D74_AnIndexDrop_IsNotADelist_ThePositionSurvivesUntouched()
+    {
+        var path = TestDb.CreateMigrated();
+        try
+        {
+            using var db = TestDb.Open(path);
+            var account = Seed(db, shares: 100, basis: 4_000m, withBarToday: true); // still trading
+            // No delist action exists — a membership drop would only stamp index_membership.removed_on.
+
+            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark);
+
+            var position = new LedgerStore(db).GetPosition(account, AaplId)!;
+            Assert.Equal(100, position.Shares);                          // untouched
+            Assert.False(position.Frozen);                               // still printing → not frozen
+            Assert.Empty(new LedgerStore(db).GetTrades(account, RunKind.Live)); // never force-exited
         }
         finally { TestDb.Delete(path); }
     }
