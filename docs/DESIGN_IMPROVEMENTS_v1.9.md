@@ -10,7 +10,7 @@
 
 1. **§1 metrics:** MDE is now Newey–West-corrected (D48); the trade-level expectancy track is specified (D44); factor attribution has a named data source and refresh job (D41 — Ken French daily factors + RF); regime metrics carry episode counters (D45).
 2. **§3 sizing/guardrails:** the covariance estimator is specified (Ledoit–Wolf, D42) and the slippage/impact model is fully parameterized (D43).
-3. **§4 LLM:** batching, caching, tiering, and the news ingestion budget (D46); the daily score demoted to experimental; the value model updated accordingly.
+3. **§4 AI seats:** the LLM layer is now the three-seat design (D79-D82; researcher, contestant with mandatory no-LLM twin, deferred advisor) — full spec in MASTER §23; the economics (batching, caching, tiering, news budget, D46) and the context-pack cost model carry over here.
 4. **§5 (new): Arena Replay** (D37) — design, quarantine rules, and the two jobs it exists for (machinery validation, threshold calibration).
 5. **§6 (new): the power reality in full** — the arithmetic behind MASTER_DESIGN_v1.9 §1.1, with the pairing-tightness sensitivity table, and what it implies for how the system should be *used*.
 6. **v1.8 revision:** §1.5 gains the concrete PIT regime-label computation (D50); §3.5 is replaced by the **full allocator specification (D51)** — the primary improvement mechanism is no longer under-specified.
@@ -136,12 +136,18 @@ A strategy with three months of track has a huge `se_i` and lands at ~equal weig
 
 ---
 
-## 4. The LLM layer — value model & economics (D46)
+## 4. The AI seats — the three-seat design (D79-D82; full spec in MASTER §23)
 
-### 4.1 Roles, ranked by expected value
-1. **Research assistant (primary):** structured bull/bear briefs on surfaced names; regime-shift narratives; hypothesis generation ("what would falsify this strategy?"); the **skeptic review** — paste a strategy's stats, ask for the leakage/overfitting story. On-demand, interactive, human-triggered.
-2. **Daily regime brief:** one batched read of budgeted news → structured output (regime enum + rationale + notable events). Cheap, cached, shared.
-3. **Sentiment score (experimental):** the machine-readable number extracted from #2, usable only as a `BlendedModel` sub-signal, priced by the Claude-blend vs non-Claude-blend **paired A/B** — the best-powered comparison in the system (the accounts share everything but the sub-signal). The stated prior: it may price near zero. That outcome is a *finding*, not a failure.
+> This section is the economics- and value-model view. The **authoritative, buildable spec for the AI seats is MASTER_DESIGN_v1.9 §23** — build against that; the summary here exists so the improvement-and-economics story is complete in one place. The earlier "assistant-only" LLM framing is superseded by the seats below.
+
+### 4.1 The three seats (D79)
+The AI occupies exactly three seats, and the arena prices each one the same way it prices any strategy (golden rule 32: no AI output is ever an input to a component that judges AI outputs).
+
+1. **Researcher (primary).** Reads the locally stored, D80-compressed evidence — verdicts, separation states, factor attribution, monitor statuses, regime episodes, closed journal outcomes, the trials ledger — and proposes the next pre-registered hypotheses and forks (MASTER §23.4). This is the generative step that turns the improvement loop into an actual loop: the AI proposes, the **operator** pre-registers (rule 30), and every proposal must cite parent evidence or it is refused. Ranged by a fork budget (`Research.ForkBudgetPerYear`, default 6) so self-improvement rations its own significance spend.
+2. **Contestant.** An LLM decision layer as a first-class `IModel`: a deterministic local pre-filter hands it a ≤25-name shortlist, it returns scores, and it trades its own account under every existing rail (costs, guardrails, populations, gate, monitor). It never runs without a **mechanics-identical no-LLM twin** — same pre-filter, breadth, sizing, exits, costs, seed. The paired daily difference against that twin is the headline number and the fastest honest "does the AI add alpha?" verdict the lab can produce (M.1 pairing). This is the seat that makes the LLM a stock-scorer — and it is only allowed to be one because the twin makes its edge falsifiable rather than hidden.
+3. **Advisor (deferred, opt-in).** LLM allocation advice, evaluated as a paired A/B against the D51 allocator, never wired to applied weights until it has priced positive. Deferred because it is the weakest bet (the statistical allocator is a strong incumbent), it depends on the other two existing to be measurable, and it is the seat closest to capital, so it carries the most risk if wired in early. Nothing else in the design depends on it.
+
+The seats are separable: the researcher improves the lab even if the contestant prices at zero. The daily D46 market-level news read and its with/without A/B continue unchanged and are separate from the seats.
 
 ### 4.2 Economics
 - **Message Batches API** for all scheduled reads (½ price; the job is asynchronous by nature).

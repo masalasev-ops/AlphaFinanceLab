@@ -31,11 +31,9 @@ money as strings/minor-units (never floats).
 - docs/UX_GUIDELINES_v1.9.md — interface rules UX-1..UX-13 as build specs
 - docs/SETUP_v1.9.md — prerequisites, D49 launch tier, secrets, day-zero checklist
 - docs/DESIGN_IMPROVEMENTS_EXPLAINED.md — plain-language "why" companion to DESIGN_IMPROVEMENTS (section numbers match the spec)
-- docs/CHANGELOG_v1.9.md — every consistency finding + decision (D1–D78), the provenance trace
+- docs/CHANGELOG_v1.9.md — every consistency finding + decision (D1–D82), the provenance trace
 - Navigation (not part of any phase diet): START_HERE.md (entry point), docs/README_v1.9.md (file map + build workflow), docs/MANIFEST.md (package manifest + revision state)
-- Mockups (visual direction for the GUI): docs/paper_trading_ui_mockups.html,
-  docs/decision_and_strategies_mockups.html, docs/lab_honesty_ux_mockups.html,
-  docs/allocation_journal_ops_ux_mockups.html
+- Mockups (visual direction for the GUI): docs/alphalab_ux_mockups.html — the single consolidated UX mockup (every screen)
 
 ## Hard rules (violations are bugs, not style)
 1. Forward paper P&L judges strategies. Replay (`run_kind='replay'`) judges only the
