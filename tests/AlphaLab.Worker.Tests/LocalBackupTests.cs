@@ -1,5 +1,4 @@
 using System.Globalization;
-using AlphaLab.Data.Entities;
 using AlphaLab.Worker.Tests.Pipeline;
 using Microsoft.Data.Sqlite;
 
@@ -65,16 +64,29 @@ public class LocalBackupTests
     {
         using var h = new PipelineHarness();
 
-        // Commit a write so the WAL holds frames a reader can pin.
-        using (var db = h.Open())
+        // Hold a dedicated writer connection OPEN for the whole test with autocheckpoint disabled, and
+        // commit the write through it. This pins un-checkpointed frames in the WAL deterministically:
+        // nothing auto-checkpoints, and because this connection never closes there is no close-checkpoint
+        // to reset the WAL. (Previously the write went through a transient EF connection that was disposed
+        // immediately; whether its frames were still resident in the WAL when the reader took its snapshot
+        // was left to connection-pool / close-checkpoint timing — green locally, red on CI, where the WAL
+        // had been reset so the reader pinned read-mark 0 and TRUNCATE had nothing to block on.)
+        using var writer = new SqliteConnection($"Data Source={h.DbPath}");
+        writer.Open();
+        using (var pragma = writer.CreateCommand())
         {
-            db.TradingCalendar.Add(new TradingCalendarRow { Date = "2099-01-01", Session = "full", CloseTimeLocal = "16:00" });
-            db.SaveChanges();
+            pragma.CommandText = "PRAGMA wal_autocheckpoint=0;";
+            pragma.ExecuteNonQuery();
+        }
+        using (var insert = writer.CreateCommand())
+        {
+            insert.CommandText = "INSERT INTO trading_calendar (date, session, close_time_local) VALUES ('2099-01-01', 'full', '16:00');";
+            insert.ExecuteNonQuery();
         }
 
-        // Hold a second reader connection MID-READ (an open deferred read transaction): TRUNCATE cannot
-        // reset the WAL while any reader is using it, so the checkpoint reports busy — the supported
-        // separate-reader-process (Api) topology, reproduced in-process.
+        // Hold a second reader connection MID-READ (an open deferred read transaction) over those pinned
+        // frames: TRUNCATE cannot reset the WAL while any reader is using it, so the checkpoint reports
+        // busy — the supported separate-reader-process (Api) topology, reproduced in-process.
         using var reader = new SqliteConnection($"Data Source={h.DbPath}");
         reader.Open();
         using var txn = reader.BeginTransaction(deferred: true);
