@@ -158,10 +158,11 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   completions (SignFlip, AllPositive, seeded tie-break, `RandomPop-Event`, §6.7 seams, §12 trials arithmetic);
   monitor AI-seat handling (§3½); eight Phase-2-review code findings recorded with deadlines (190–197);
   proposals P8–P11 opened.
-- v1.9.24 reconciliation pass (findings 200–205) — merged. **Docs only; tests stay 528; no new decision.**
+- v1.9.24 reconciliation pass (findings 200–206) — merged. **Docs only; tests stay 528; no new decision.**
   Completes finding 188's sweep: the retired sentiment-score / blend-A/B framing removed from four further
-  MASTER locations (rule 28, §23.1, the D46 row, §0 item 12) and from the §3 mental-model diagram (the fused
-  "Claude read" node); the stale "(pre-implementation)" title qualifier dropped; D73's already-resolved
+  MASTER locations (rule 28, §23.1, the D46 row, §0 item 12), the §3 mental-model diagram (the fused
+  "Claude read" node), and DESIGN_IMPROVEMENTS §4.1 (the same construct finding 188's DI §6 sweep missed —
+  finding 206); the stale "(pre-implementation)" title qualifier dropped; D73's already-resolved
   `⚠VERIFY` index-EOD marker swept (finding 165 had fixed only BUILD); cosmetic — D49 added to the §2
   provenance list, §10 attribution gains the D83 dual-role pointer.
 - The mockups were consolidated into the single `alphalab_ux_mockups.html` in the v1.9.21/v1.9.22 passes
