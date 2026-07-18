@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AlphaLab v2 — UX Overhaul Mockups · v1.9.21</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600;700&family=Instrument+Sans:wght@400;500;600&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F5F4EE; --card:#FFFFFF; --well:#EFEEE6;
+    --ink:#1B1E1B; --dim:#5F675F; --faint:#99A099; --line:#E3E2D8; --line-strong:#CFCFC2;
+    --verd:#2E7D6B; --verd-tint:#E4F0EB; --verd-line:#9CC7BB;
+    --iris:#575DBE; --iris-tint:#E9EAF8; --iris-line:#B4B7E4;
+    --amber:#A27113; --amber-tint:#F6EDD7;
+    --rust:#AC4531; --rust-tint:#F7E7E1;
+    --disp:'Familjen Grotesk',system-ui,sans-serif;
+    --body:'Instrument Sans',system-ui,sans-serif;
+    --mono:'Spline Sans Mono',ui-monospace,monospace;
+    --r:12px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--body);line-height:1.55;-webkit-font-smoothing:antialiased}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+  .wrap{max-width:1160px;margin:0 auto;padding:0 24px}
+
+  /* ---------- showcase header ---------- */
+  .head{padding:64px 0 20px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--verd);margin:0 0 14px}
+  .head h1{font-family:var(--disp);font-weight:700;font-size:clamp(30px,4.6vw,50px);line-height:1.04;letter-spacing:-.015em;margin:0 0 14px;max-width:22ch}
+  .head p{color:var(--dim);font-size:16.5px;max-width:66ch;margin:0}
+  .head .verd{color:var(--verd)} .head .iris{color:var(--iris)}
+
+  /* design system strip */
+  .ds{display:flex;flex-wrap:wrap;gap:30px;margin:30px 0 6px;padding:20px 22px;border:1px solid var(--line);border-radius:var(--r);background:var(--card)}
+  .ds h4{font-family:var(--mono);font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:var(--faint);margin:0 0 10px;font-weight:500}
+  .sw{width:30px;height:30px;border-radius:7px;border:1px solid var(--line)}
+  .swr{display:flex;gap:7px}
+  .ds .k{font-size:13px;color:var(--dim)}
+  .ds .k b{color:var(--ink);font-weight:600}
+  .tf{font-family:var(--disp);font-weight:700} .tm{font-family:var(--mono)}
+
+  .sec{display:flex;align-items:center;gap:14px;margin:58px 0 16px}
+  .sec .n{font-family:var(--mono);font-size:12px;color:var(--verd);border:1px solid var(--verd-line);border-radius:999px;padding:3px 11px;background:var(--verd-tint)}
+  .sec h2{font-family:var(--disp);font-weight:600;font-size:22px;margin:0;letter-spacing:-.01em}
+  .sec .tag{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.12em}
+  .note{color:var(--dim);font-size:14px;max-width:78ch;margin:0 0 16px}
+  .note code{font-family:var(--mono);font-size:12.5px;background:var(--well);padding:1px 6px;border-radius:5px}
+
+  /* ---------- frames ---------- */
+  .frame{border:1px solid var(--line-strong);border-radius:14px;overflow:hidden;background:var(--card);box-shadow:0 24px 50px -34px rgba(27,30,27,.28)}
+  .chrome{display:flex;align-items:center;gap:7px;padding:10px 14px;background:var(--well);border-bottom:1px solid var(--line)}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--line-strong)}
+  .chrome .addr{margin-left:10px;font-family:var(--mono);font-size:11.5px;color:var(--faint);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:3px 12px}
+
+  /* app chrome */
+  .appbar{display:flex;align-items:center;gap:16px;padding:13px 22px;border-bottom:1px solid var(--line)}
+  .logo{font-family:var(--disp);font-weight:700;font-size:16px;letter-spacing:-.01em}
+  .logo span{color:var(--verd)}
+  .arena{font-family:var(--mono);font-size:11.5px;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:3px 11px;background:var(--paper)}
+  .navl{display:flex;gap:16px;margin-left:8px;font-size:13.5px;color:var(--dim)}
+  .navl b{color:var(--ink);font-weight:600;border-bottom:2px solid var(--verd);padding-bottom:2px}
+  .runinfo{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--faint)}
+  /* top-nav seat status strip */
+  .seats{display:flex;align-items:center;gap:10px;padding:8px 22px;background:var(--paper);border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .seats .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin-right:4px}
+  .spill{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:12px;background:var(--card)}
+  .spill .nm{font-weight:600} .spill .st{font-family:var(--mono);font-size:10.5px;color:var(--dim)}
+  .spill .d{width:7px;height:7px;border-radius:50%}
+  .spill.r{border-color:var(--verd-line)} .spill.r .d{background:var(--verd)} .spill.r .nm{color:var(--verd)}
+  .spill.c{border-color:var(--iris-line)} .spill.c .d{background:var(--iris)} .spill.c .nm{color:var(--iris)}
+  .spill.a{border-style:dashed} .spill.a .d{background:var(--faint)} .spill.a .nm{color:var(--faint)}
+  .seats .look{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+  /* AI seats overview cards */
+  .seat-card{border:1px solid var(--line);border-radius:var(--r);padding:15px 17px;margin-bottom:13px;background:var(--card);border-left:3px solid var(--line-strong)}
+  .seat-card.r{border-left-color:var(--verd)} .seat-card.c{border-left-color:var(--iris)} .seat-card.a{border-left-color:var(--faint);background:var(--paper)}
+  .sc-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .sc-decides{font-size:13px;color:var(--ink)} .sc-budget{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--faint)}
+  .sc-last{font-size:13px;color:var(--dim);margin:11px 0 10px;line-height:1.6} .sc-last b{color:var(--ink);font-weight:600}
+  .sc-when{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-right:8px}
+  .sc-links{display:flex;gap:16px;flex-wrap:wrap} .sc-links .lk{font-family:var(--mono);font-size:11px;color:var(--iris)} .sc-links .sc-off{color:var(--faint)}
+  /* decisions ledger + risk + data health */
+  .dlog{width:100%;border-collapse:collapse;font-size:12.5px}
+  .dlog th{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:500;text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+  .dlog td{padding:9px 10px;border-bottom:1px dashed var(--line);vertical-align:top}
+  .dlog .mono{font-family:var(--mono);font-size:11.5px;color:var(--dim)}
+  .dlog .why{color:var(--iris);font-family:var(--mono);font-size:11px}
+  .risk-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .meter{height:8px;background:var(--well);border-radius:999px;overflow:hidden;margin:7px 0 3px}
+  .meter i{display:block;height:100%}
+  .meter i.g{background:var(--verd)} .meter i.a{background:var(--amber)} .meter i.r{background:var(--rust)}
+  .mrow{display:flex;justify-content:space-between;font-size:12.5px;color:var(--dim)}
+  .mrow b{font-family:var(--mono);color:var(--ink);font-weight:500}
+  .hz{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+  .hz i{width:13px;height:13px;border-radius:3px;background:var(--verd-tint);border:1px solid var(--verd-line)}
+  .hz i.warn{background:var(--amber-tint);border-color:var(--amber)}
+  .hz i.rej{background:var(--rust-tint);border-color:var(--rust)}
+  .hz i.gap{background:var(--well);border-color:var(--line-strong)}
+  .pad{padding:20px 22px 26px}
+
+  /* seat marks + chips */
+  .seat{font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;padding:2px 8px;border-radius:999px}
+  .seat.math{background:var(--verd-tint);color:var(--verd)}
+  .seat.ai{background:var(--iris-tint);color:var(--iris)}
+  .seat.ref{background:var(--well);color:var(--faint)}
+  .chip{font-family:var(--mono);font-size:10.5px;padding:2px 8px;border-radius:999px;white-space:nowrap}
+  .chip.early{background:var(--amber-tint);color:var(--amber)}
+  .chip.retired{background:var(--rust-tint);color:var(--rust)}
+  .chip.ok{background:var(--verd-tint);color:var(--verd)}
+  .chip.neutral{background:var(--well);color:var(--dim)}
+  .chip.ab{background:var(--iris-tint);color:var(--iris)}
+
+  /* ---------- the signature: the MDE interval gauge ---------- */
+  .gauge{position:relative;display:inline-block;width:102px;height:12px;vertical-align:-1px;
+    border-left:2px solid var(--line-strong);border-right:2px solid var(--line-strong)}
+  .gauge::before{content:'';position:absolute;left:0;right:0;top:5px;height:2px;background:var(--line)}
+  .gauge::after{content:'';position:absolute;left:50%;top:2px;bottom:2px;width:1px;background:var(--line-strong)}
+  .gauge i{position:absolute;top:2.5px;width:7px;height:7px;border-radius:50%;transform:translateX(-50%)}
+  .gauge i.in{background:var(--faint)}
+  .gauge i.out{background:var(--verd)}
+  .gauge i.ai{background:var(--iris)}
+  .val{font-family:var(--mono);font-size:12.5px}
+  .val.dim{color:var(--faint)}
+  .val.dim::before{content:'~ '}
+  .mde{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+
+  /* tables */
+  table.lb{width:100%;border-collapse:collapse;font-size:13px}
+  .lb th{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:500;text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+  .lb td{padding:10px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+  .lb tr td:first-child{border-left:3px solid transparent}
+  .lb tr.math td:first-child{border-left-color:var(--verd)}
+  .lb tr.ai td:first-child{border-left-color:var(--iris)}
+  .lb tr.ref td{color:var(--faint)}
+  .lb .name{font-weight:600}
+  .lb .sub{font-size:11.5px;color:var(--faint);font-family:var(--mono)}
+
+  .foot{font-size:11.5px;color:var(--faint);font-family:var(--mono);margin-top:12px}
+
+  /* cards + panels */
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .panel{border:1px solid var(--line);border-radius:var(--r);background:var(--card);padding:16px 18px}
+  .panel.well{background:var(--paper)}
+  .ph{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin:0 0 10px}
+  .big{font-family:var(--disp);font-weight:700;font-size:30px;letter-spacing:-.01em}
+  .big small{font-family:var(--mono);font-size:12px;color:var(--faint);font-weight:400;letter-spacing:0}
+
+  /* wide paired gauge */
+  .gauge-xl{position:relative;height:44px;border-left:2px solid var(--line-strong);border-right:2px solid var(--line-strong);margin:10px 0 4px}
+  .gauge-xl .band{position:absolute;left:20%;width:60%;top:8px;bottom:8px;background:var(--amber-tint);border-radius:4px}
+  .gauge-xl .zero{position:absolute;left:50%;top:4px;bottom:4px;width:1px;background:var(--line-strong)}
+  .gauge-xl .pt{position:absolute;top:50%;width:14px;height:14px;border-radius:50%;background:var(--iris);transform:translate(-50%,-50%);border:2px solid var(--card)}
+  .axis{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+
+  /* stage trail + pack inspector */
+  .trail{display:flex;flex-direction:column;gap:0}
+  .stg{display:flex;gap:12px;padding:9px 0;border-bottom:1px dashed var(--line);align-items:baseline;font-size:13px}
+  .stg .sn{font-family:var(--mono);font-size:11px;color:var(--verd);min-width:56px}
+  .stg .sv{font-family:var(--mono);color:var(--dim);margin-left:auto;font-size:12px}
+  .pack{border:1px solid var(--iris-line);border-radius:var(--r);background:var(--card)}
+  .pack .ph{background:var(--iris-tint);color:var(--iris);padding:9px 14px;border-radius:var(--r) var(--r) 0 0;margin:0}
+  .layer{display:flex;gap:12px;align-items:baseline;padding:10px 14px;border-bottom:1px dashed var(--line);font-size:13px}
+  .layer .ln{font-family:var(--mono);font-size:11px;color:var(--iris);min-width:26px}
+  .layer .tok{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--faint)}
+  .mono-block{font-family:var(--mono);font-size:11.5px;line-height:1.7;background:var(--well);border-radius:8px;padding:12px 14px;color:var(--dim);overflow-x:auto}
+  .mono-block b{color:var(--ink);font-weight:500}
+
+  /* research loop */
+  .budget{display:flex;align-items:center;gap:14px;font-size:13px;color:var(--dim)}
+  .bar{flex:1;height:8px;background:var(--well);border-radius:999px;overflow:hidden}
+  .bar i{display:block;height:100%;width:50%;background:var(--verd)}
+  .hyp{border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;background:var(--card);margin-top:12px}
+  .hyp.proposed{border-color:var(--iris-line)}
+  .hyp .meta{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:8px}
+  .hyp .claim{font-size:13.5px;margin-top:8px}
+  .btn{font-family:var(--body);font-size:12.5px;font-weight:600;border:1px solid var(--line-strong);border-radius:8px;background:var(--card);padding:6px 14px;color:var(--ink);cursor:default}
+  .btn.primary{background:var(--ink);color:var(--card);border-color:var(--ink)}
+
+  /* allocation */
+  .arrow{font-family:var(--mono);color:var(--dim);font-size:12.5px}
+  .ops{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-top:16px}
+  .op{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:11px 13px}
+  .op .ph{margin-bottom:5px}
+  .op .v{font-family:var(--mono);font-size:13px;font-weight:500}
+  .op .v.ok{color:var(--verd)}
+
+  .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:var(--dim);align-items:center}
+  .colo{width:11px;height:11px;border-radius:3px;display:inline-block;vertical-align:-1px;margin-right:6px}
+  .endnote{margin:70px 0 60px;padding-top:22px;border-top:1px solid var(--line);color:var(--faint);font-size:12.5px;font-family:var(--mono)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ================= showcase header ================= -->
+  <header class="head">
+    <p class="eyebrow">AlphaLab · v2 UX overhaul · design revision v1.9.21</p>
+    <h1>The bench where every number earns the right to be believed.</h1>
+    <p>Overhauled reference screens replacing the v1 mockup set. Two rosters share one arena: the
+    <span class="verd">mathematical seat</span> and the <span class="iris">AI seat</span>, judged by the same
+    rails. The signature element is the drawn MDE interval gauge: no judged number renders without the
+    bracket that says what the data can and cannot see (UX-1, rule 22). All honesty logic remains in the
+    D58 read-models; these screens render fields verbatim.</p>
+
+    <div class="ds">
+      <div>
+        <h4>Palette · paper bench</h4>
+        <div class="swr">
+          <div class="sw" style="background:#F5F4EE"></div>
+          <div class="sw" style="background:#1B1E1B"></div>
+          <div class="sw" style="background:#2E7D6B"></div>
+          <div class="sw" style="background:#575DBE"></div>
+          <div class="sw" style="background:#A27113"></div>
+          <div class="sw" style="background:#AC4531"></div>
+        </div>
+        <p class="k" style="margin:8px 0 0">verdigris = math seat · iris = AI seat</p>
+      </div>
+      <div>
+        <h4>Type</h4>
+        <p class="k" style="margin:0"><b class="tf">Familjen Grotesk</b> display</p>
+        <p class="k" style="margin:2px 0 0"><b>Instrument Sans</b> interface</p>
+        <p class="k" style="margin:2px 0 0"><b class="tm">Spline Sans Mono</b> every number</p>
+      </div>
+      <div>
+        <h4>Signature · the MDE gauge</h4>
+        <p class="k" style="margin:0 0 6px">estimate dot inside its ± MDE bracket ⇒ dimmed, tilde-prefixed</p>
+        <p class="k" style="margin:0"><span class="val dim">+1.4%</span> <span class="gauge"><i class="in" style="left:62%"></i></span> <span class="mde">±4.8</span>
+        &nbsp;·&nbsp; <span class="val" style="color:var(--verd)">+3.1%</span> <span class="gauge"><i class="out" style="left:88%"></i></span> <span class="mde">±2.2</span></p>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= 01 strategies ================= -->
+  <div class="sec"><span class="n">01</span><h2>Strategies · two rosters, one judge</h2><span class="tag">GET /api/v1/strategies</span></div>
+  <p class="note">Seat ticks on the row edge separate the rosters without separating the competition. Every row:
+  the gauge beside its α, the percentile against its own turnover-matched population, the verdict chip, and the
+  D63 separation state. Sorting never implies ranking by belief: dimmed numbers are unjudgeable by definition.</p>
+  <div class="frame">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /strategies</span></div>
+    <div class="appbar">
+      <span class="logo">Alpha<span>Lab</span></span><span class="arena">arena · sp500</span>
+      <nav class="navl"><b>Strategies</b><span>Allocation</span><span>AI seats</span><span>Research</span><span>Decisions</span><span>Risk</span><span>Data health</span></nav>
+      <span class="runinfo">run 2027-03-19 · watermark stamped · ok</span>
+    </div>
+    <div class="seats">
+      <span class="lbl">AI seats</span>
+      <span class="spill r"><span class="d"></span><span class="nm">Researcher</span><span class="st">active · proposes experiments · 3/6 forks</span></span>
+      <span class="spill c"><span class="d"></span><span class="nm">Contestant</span><span class="st">1 live + 1 control · trades its own account</span></span>
+      <span class="spill a"><span class="d"></span><span class="nm">Advisor</span><span class="st">deferred · opt-in (D79)</span></span>
+      <span class="look">every seat priced by the same arena · rule 32</span>
+    </div>
+    <div class="pad">
+      <table class="lb">
+        <tr><th>strategy</th><th>fwd α · net · β-adj</th><th>vs 200 randoms</th><th>verdict</th><th>separation</th></tr>
+        <tr class="math">
+          <td><span class="name">momentum:v1</span> <span class="seat math">math</span><div class="sub">rank buffer 40/80 · H-14 linked</div></td>
+          <td><span class="val dim">+1.4%</span> <span class="gauge"><i class="in" style="left:63%"></i></span> <span class="mde">±4.8</span></td>
+          <td>71st</td>
+          <td><span class="chip early">too early</span></td>
+          <td class="sub">emerging · 214d</td>
+        </tr>
+        <tr class="math">
+          <td><span class="name">lowvol:v1</span> <span class="seat math">math</span><div class="sub">monthly · sector caps</div></td>
+          <td><span class="val dim">+0.6%</span> <span class="gauge"><i class="in" style="left:56%"></i></span> <span class="mde">±4.1</span></td>
+          <td>55th</td>
+          <td><span class="chip early">too early</span></td>
+          <td class="sub">indistinguishable from random · 417d</td>
+        </tr>
+        <tr class="math">
+          <td><span class="name">meanrev:rsi3</span> <span class="seat math">math</span><div class="sub">trade-level track · D44</div></td>
+          <td><span class="val" style="color:var(--rust)">−$3.90/trade</span></td>
+          <td>22nd</td>
+          <td><span class="chip retired">retired</span></td>
+          <td class="sub">negative expectancy · 412 trades</td>
+        </tr>
+        <tr class="ai">
+          <td><span class="name">llm-contestant-01</span> <span class="seat ai">contestant seat</span><div class="sub">model llm-a · policy v3 · shortlist 25 · memory A</div></td>
+          <td><span class="val dim">+1.1%</span> <span class="gauge"><i class="ai" style="left:64%"></i></span> <span class="mde">±2.4</span></td>
+          <td>66th</td>
+          <td><span class="chip early">too early</span></td>
+          <td class="sub"><span class="chip ab">A/B pair</span> 356d</td>
+        </tr>
+        <tr class="ai">
+          <td><span class="name">llm-contestant-01 · control</span> <span class="seat ai">A/B control</span><div class="sub">identical mechanics · no model call</div></td>
+          <td><span class="val dim">+0.4%</span> <span class="gauge"><i class="in" style="left:55%"></i></span> <span class="mde">±2.4</span></td>
+          <td>58th</td>
+          <td><span class="chip early">too early</span></td>
+          <td class="sub"><span class="chip ab">A/B pair</span> 356d</td>
+        </tr>
+        <tr class="ref">
+          <td><span class="name">buyhold:cw · buyhold:ew</span> <span class="seat ref">reference</span></td>
+          <td class="sub">benchmarks</td><td class="sub">n/a</td>
+          <td><span class="chip neutral">never promotable</span></td>
+          <td class="sub">population band shaded on every chart</td>
+        </tr>
+      </table>
+      <p class="foot">~ dimmed = gap inside its Newey–West MDE (rule 22) · percentile = rank within the strategy's own turnover-matched random population (D36)</p>
+    </div>
+  </div>
+
+  <!-- ================= 02 AI seats overview ================= -->
+  <div class="sec"><span class="n">02</span><h2>AI seats · what each one decides, in the open</h2><span class="tag">GET /api/v1/ai/seats</span></div>
+  <p class="note">The three-seat architecture made legible on one screen. Each seat shows the decision it owns,
+  the model behind it (vendor-neutral id, swappable by frozen-param fork), its live budget, its latest decision
+  in plain terms, and where to open the full record. Nothing here is a black box: every AI decision links to the
+  persisted pack it read and the row the funnel consumed. Rule 32 holds — none of it feeds a metric or verdict.</p>
+  <div class="frame">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /ai/seats</span></div>
+    <div class="pad">
+      <div class="seat-card r">
+        <div class="sc-head"><span class="spill r"><span class="d"></span><span class="nm">Researcher seat</span></span><span class="sc-decides">decides which experiments run next</span><span class="sc-budget">forks 3/6 · model llm-b</span></div>
+        <p class="sc-last"><span class="sc-when">latest · 2027-03-18</span> Proposed <b>H-16</b>: vol-gate momentum when the regime label is high_vol. Cited parent evidence: decay finding #204 + 2 bear episodes. Awaiting your pre-registration.</p>
+        <div class="sc-links"><span class="lk">view proposal →</span><span class="lk">skeptic review →</span><span class="lk">context pack #4,809 →</span></div>
+      </div>
+      <div class="seat-card c">
+        <div class="sc-head"><span class="spill c"><span class="d"></span><span class="nm">Contestant seat</span></span><span class="sc-decides">scores names, trades its own account</span><span class="sc-budget">$0.014/day · cap $0.05 · model llm-a</span></div>
+        <p class="sc-last"><span class="sc-when">latest · 2027-03-19</span> Scored 25 shortlisted names; 9 above zero; top reads NVDA 0.92, LLY 0.81, AVGO 0.74. Ran against its no-model control — paired gap +1.1%/yr, still inside MDE.</p>
+        <div class="sc-links"><span class="lk">decision audit →</span><span class="lk">A/B vs control →</span><span class="lk">ai_decisions #4,812 →</span><span class="lk">frozen policy v3 →</span></div>
+      </div>
+      <div class="seat-card a">
+        <div class="sc-head"><span class="spill a"><span class="d"></span><span class="nm">Advisor seat</span></span><span class="sc-decides">would advise allocation weights</span><span class="sc-budget">deferred · opt-in (D79)</span></div>
+        <p class="sc-last"><span class="sc-when">not yet enabled</span> When switched on, runs as a paired A/B against the D51 allocator and is never wired to applied weights until it has priced positive. Shown here so the architecture is complete, not hidden.</p>
+        <div class="sc-links"><span class="lk sc-off">enable in settings →</span></div>
+      </div>
+      <p class="foot">seat = a defined decision the AI owns · model ids are vendor-neutral and swap by frozen-param fork (D81) · every decision links to its persisted pack + row (NFR-1)</p>
+    </div>
+  </div>
+
+  <!-- ================= 03 ai value ================= -->
+  <div class="sec"><span class="n">03</span><h2>AI value · the paired question</h2><span class="tag">llm-contestant-01 vs its control</span></div>
+  <p class="note">The screen that answers "does the AI add anything?" honestly. Raw totals sit small and gray;
+  the paired daily difference carries the room, drawn on the full-width gauge. Pairing cancels everything the
+  twins share (M.1), which is why this is the fastest verdict the lab can produce.</p>
+  <div class="frame">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /strategies/llm-contestant-01/ab</span></div>
+    <div class="pad">
+      <div class="grid2">
+        <div class="panel">
+          <p class="ph" style="color:var(--iris)">llm-contestant-01 · contestant seat</p>
+          <span class="big">+7.9% <small>1y total</small></span>
+          <p class="note" style="margin:8px 0 0;font-size:12.5px">same signals + the persisted model read · policy v3 frozen (D17)</p>
+        </div>
+        <div class="panel">
+          <p class="ph" style="color:var(--verd)">llm-contestant-01 · control</p>
+          <span class="big">+7.2% <small>1y total</small></span>
+          <p class="note" style="margin:8px 0 0;font-size:12.5px">identical pre-filter, breadth, sizing, exits, costs, seed</p>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:16px">
+        <p class="ph">paired daily-difference gap · β-adj · net</p>
+        <span class="big" style="font-size:24px">+1.1%/yr <small>MDE ±2.4% · 356d of paired track</small></span>
+        <div class="gauge-xl">
+          <div class="band"></div><div class="zero"></div><div class="pt" style="left:63.7%"></div>
+        </div>
+        <div class="axis"><span>−4%</span><span>0</span><span>+4%</span></div>
+        <p class="note" style="margin:12px 0 0;font-size:12.5px"><span class="chip early">too early</span>&nbsp;
+        the dot sits inside the shaded MDE band: not evidence in either direction. At the current tracking
+        error, a +2%/yr contribution becomes decidable near ~2.6y; a zero contribution earns the
+        indistinguishable chip on the same clock. Verdicts arrive on the 21-day cadence, never shopped daily.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 03 decision audit ================= -->
+  <div class="sec"><span class="n">04</span><h2>Decision audit · what the AI saw, exactly</h2><span class="tag">GET /api/v1/why-trade/llm-contestant-01/2027-03-19</span></div>
+  <p class="note">Why-this-trade for an AI-seat strategy. Left: the six-stage funnel trail from
+  <code>decisions.stage_json</code>. Right: the D80 context pack, layer by layer with its token spend, and the
+  persisted <code>ai_decisions</code> row the funnel actually consumed. Re-runs replay the row: zero API calls.</p>
+  <div class="frame">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /why-trade/llm-contestant-01/2027-03-19</span></div>
+    <div class="pad">
+      <div class="grid2">
+        <div>
+          <p class="ph">funnel trail · 2027-03-19 · watermark 2027-03-19T22:00Z</p>
+          <div class="trail">
+            <div class="stg"><span class="sn">stage 1</span> eligibility · shared pool <span class="sv">498 members · 496 priced</span></div>
+            <div class="stg"><span class="sn">stage 1.5</span> local pre-filter · deterministic <span class="sv">496 → 25 shortlist</span></div>
+            <div class="stg"><span class="sn">stage 2</span> AI scoring · from the stored row <span class="sv">25 scored · 9 &gt; 0</span></div>
+            <div class="stg"><span class="sn">stage 3</span> selection · zero-score invariant <span class="sv">wish list 9</span></div>
+            <div class="stg"><span class="sn">stage 4</span> portfolio · exits by policy only <span class="sv">2 opens · 7 holds · 1 close</span></div>
+            <div class="stg"><span class="sn">stage 5</span> sizing · equal, cap 5% <span class="sv">cash 11.2% · honest</span></div>
+            <div class="stg"><span class="sn">stage 6</span> orders · decide close T, fill open T+1 <span class="sv">3 orders → 2027-03-20</span></div>
+          </div>
+        </div>
+        <div>
+          <div class="pack">
+            <p class="ph">context pack · sha 9f3ac2…b71 · recipe cp-1.2 · ai_context_packs #4,812</p>
+            <div class="layer"><span class="ln">L0</span> static instructions + output schema <span class="tok">1,502 tok · cached</span></div>
+            <div class="layer"><span class="ln">L1</span> lesson set · frozen with policy v3 <span class="tok">988 tok · cached</span></div>
+            <div class="layer"><span class="ln">L2</span> regime line + 25 shortlist rows + book <span class="tok">1,764 tok · fresh</span></div>
+            <div class="layer" style="border-bottom:none"><span class="ln">out</span> 25 scores + rationales <span class="tok">611 tok · $0.014</span></div>
+          </div>
+          <p class="ph" style="margin-top:16px">persisted decision · ai_decisions #4,812</p>
+          <div class="mono-block">strategy_id&nbsp;&nbsp;<b>llm-contestant-01</b> · as_of <b>2027-03-19</b><br>
+pack_hash&nbsp;&nbsp;&nbsp;&nbsp;<b>9f3ac2…b71</b> · prompt_v <b>3</b> · model_id <b>llm-a</b> <span style="color:var(--faint)">(vendor-neutral · set per frozen param, D81)</span><br>
+output_json&nbsp;&nbsp;{ "NVDA": 0.92, "LLY": 0.81, "AVGO": 0.74, … }<br>
+replay&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;re-runs consume this row · 0 API calls (FX-AiDecisionIsTheRow)</div>
+        </div>
+      </div>
+      <p class="foot">rule 32: nothing on this screen feeds a metric, verdict, threshold, or population · raw series never entered the prompt (D80)</p>
+    </div>
+  </div>
+
+  <!-- ================= 04 research loop ================= -->
+  <div class="sec"><span class="n">05</span><h2>Research loop · the generative seat</h2><span class="tag">POST /api/v1/analysis/hypotheses</span></div>
+  <p class="note">The AI proposes; the operator registers (rule 30). Every proposal cites parent evidence or the
+  endpoint refuses it, and the fork budget renders beside the deflated-Sharpe trials count so self-improvement
+  rations its own significance spend (D82).</p>
+  <div class="frame">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /research</span></div>
+    <div class="pad">
+      <div class="panel well">
+        <div class="budget"><span class="ph" style="margin:0">fork budget 2027</span><div class="bar"><i></i></div><span class="val">3 of 6 used</span><span class="mde">trials n = 11 · deflated Sharpe uses all of them</span></div>
+      </div>
+      <div class="hyp proposed">
+        <span class="chip ab">proposed · awaiting pre-registration</span>
+        <p class="claim">Momentum's rolling alpha decays into its band during high_vol regimes. A vol-gated fork
+        (halve exposure when the PIT label is high_vol) should cut drawdown without losing net alpha.
+        Confirm metric: paired gap vs momentum:v1 above its MDE within 378d.</p>
+        <p class="meta">H-16 · researcher seat · parent evidence: S6 decay finding #204 + regime episodes n=2 (anecdote badge acknowledged)</p>
+        <div style="display:flex;gap:8px;margin-top:12px"><button class="btn primary">Pre-register and fork</button><button class="btn">Run the skeptic first</button><button class="btn">Decline · log reason</button></div>
+      </div>
+      <div class="hyp">
+        <span class="chip ok">running</span>
+        <p class="claim">The skip-month convention adds net alpha versus plain 12-1 momentum after costs.</p>
+        <p class="meta">H-14 · locked 2026-11-02 · candidate momentum:skipmonth-v2 · evidence window 252d · 96d elapsed</p>
+      </div>
+      <div class="hyp">
+        <span class="chip retired">refuted · outcome recorded</span>
+        <p class="claim">The daily market-level sentiment score improves the blend. Refuted: A/B gap inside its
+        MDE for the full window at the 48th percentile. Lesson: market-level reads carry too little information;
+        the next proposal targets name-level reads on the shortlist.</p>
+        <p class="meta">H-11 · closed 2027-02-14 · lesson feeds the L1 set at the next policy fork (memory option A)</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 05 allocation + ops ================= -->
+  <div class="sec"><span class="n">06</span><h2>Allocation and the ops strip</h2><span class="tag">GET /api/v1/allocation · /data-health</span></div>
+  <p class="note">Every weight shows its derivation and the clamp that bound it (UX-9): shrunk α, target, applied,
+  and the chip naming the binding clamp. Below, the ops strip a solo operator glances at nightly: watermark,
+  membership cross-check, API headroom, backup age, heartbeat.</p>
+  <div class="frame">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /allocation</span></div>
+    <div class="pad">
+      <table class="lb">
+        <tr><th>strategy</th><th>α̂ · se</th><th>shrunk α̃</th><th>target → applied</th><th>binding clamp</th></tr>
+        <tr class="math"><td><span class="name">momentum:v1</span></td><td class="val">1.4 · 2.4</td><td class="val">0.9</td><td><span class="val">31% <span class="arrow">→</span> 28%</span></td><td><span class="chip early">too-early tilt cap</span></td></tr>
+        <tr class="ai"><td><span class="name">llm-contestant-01</span></td><td class="val">1.1 · 1.2</td><td class="val">0.8</td><td><span class="val">27% <span class="arrow">→</span> 27%</span></td><td><span class="chip neutral">band · no move</span></td></tr>
+        <tr class="math"><td><span class="name">lowvol:v1</span></td><td class="val">0.6 · 2.1</td><td class="val">0.5</td><td><span class="val">24% <span class="arrow">→</span> 25%</span></td><td><span class="chip neutral">floor 5% clear</span></td></tr>
+        <tr class="ai"><td><span class="name">llm-contestant-01 · ctrl</span></td><td class="val">0.4 · 1.2</td><td class="val">0.4</td><td><span class="val">18% <span class="arrow">→</span> 20%</span></td><td><span class="chip neutral">renormalize</span></td></tr>
+      </table>
+      <p class="foot">weights reconstruct from allocation_log (NFR-2) · allocator value-add vs static equal weight: <span class="val dim">+0.3%/yr</span> <span class="gauge"><i class="in" style="left:58%"></i></span> <span class="mde">±1.1 · §1.2 KPI</span></p>
+      <div class="ops">
+        <div class="op"><p class="ph">watermark</p><p class="v ok" style="margin:0">2027-03-19T22:00Z</p></div>
+        <div class="op"><p class="ph">membership</p><p class="v ok" style="margin:0">IVV ↔ wiki agree · 498</p></div>
+        <div class="op"><p class="ph">api headroom</p><p class="v ok" style="margin:0">99.2% · 812 calls</p></div>
+        <div class="op"><p class="ph">quality flags</p><p class="v" style="margin:0">2 warn · 0 reject</p></div>
+        <div class="op"><p class="ph">local backup</p><p class="v ok" style="margin:0">0d · off-machine 3d</p></div>
+        <div class="op"><p class="ph">worker</p><p class="v ok" style="margin:0">heartbeat live · 12s</p></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 07 decisions ledger ================= -->
+  <div class="sec"><span class="n">07</span><h2>Decisions · every choice, replayable</h2><span class="tag">GET /api/v1/decisions</span></div>
+  <p class="note">The append-only record of what every strategy decided and why, on a given session. One row per
+  strategy per day, each opening its full six-stage <code>stage_json</code> trail and — for an AI seat — the
+  context pack it read. This is the screen that makes the whole lab auditable: nothing is decided that can't be
+  reconstructed bit-for-bit at its watermark.</p>
+  <div class="frame">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /decisions?date=2027-03-19</span></div>
+    <div class="pad">
+      <table class="dlog">
+        <tr><th>strategy</th><th>seat</th><th>decision</th><th>sized / ordered</th><th>trace</th></tr>
+        <tr>
+          <td><span class="name">momentum:v1</span></td><td><span class="seat math">math</span></td>
+          <td class="mono">wish 12 → 3 opens · 1 close</td><td class="mono">equal · cap 5% · cash 6.1%</td>
+          <td class="why">stage trail → &nbsp; ledger →</td>
+        </tr>
+        <tr>
+          <td><span class="name">llm-contestant-01</span></td><td><span class="seat ai">AI</span></td>
+          <td class="mono">25 scored · 9 &gt; 0 · 2 opens</td><td class="mono">equal · cap 5% · cash 11.2%</td>
+          <td class="why">stage trail → &nbsp; pack #4,812 → &nbsp; ai_decisions →</td>
+        </tr>
+        <tr>
+          <td><span class="name">llm-contestant-01 · ctrl</span></td><td><span class="seat ai">A/B</span></td>
+          <td class="mono">25 scored (no model) · 3 opens</td><td class="mono">equal · cap 5% · cash 9.0%</td>
+          <td class="why">stage trail →</td>
+        </tr>
+        <tr>
+          <td><span class="name">lowvol:v1</span></td><td><span class="seat math">math</span></td>
+          <td class="mono">monthly hold · no rebalance today</td><td class="mono">—</td>
+          <td class="why">stage trail →</td>
+        </tr>
+        <tr>
+          <td><span class="name">meanrev:rsi3</span></td><td><span class="seat ref">retired</span></td>
+          <td class="mono">no decisions · retired 2027-02-02</td><td class="mono">—</td>
+          <td class="why">retirement record →</td>
+        </tr>
+      </table>
+      <p class="foot">append-only (rule: never update/delete) · every row reconstructs at watermark 2027-03-19T22:00Z · AI rows link the exact pack + persisted output (D80/D81)</p>
+    </div>
+  </div>
+
+  <!-- ================= 08 risk ================= -->
+  <div class="sec"><span class="n">08</span><h2>Risk · exposure, concentration, and the leverage guard</h2><span class="tag">GET /api/v1/risk</span></div>
+  <p class="note">Book-level guardrails across all live strategies, each shown against the clamp that bounds it.
+  The cash / gross-exposure meter is the one the Phase-2 review flagged: a strategy that sizes opens past
+  available cash shows red here, so the fix from that review has a visible home rather than living silently in
+  the ledger.</p>
+  <div class="frame">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /risk</span></div>
+    <div class="pad">
+      <div class="risk-grid">
+        <div class="panel">
+          <p class="ph">gross exposure &amp; cash · per strategy</p>
+          <div class="mrow"><span>momentum:v1</span><b>93.9% invested · cash 6.1%</b></div>
+          <div class="meter"><i class="g" style="width:93.9%"></i></div>
+          <div class="mrow"><span>llm-contestant-01</span><b>88.8% invested · cash 11.2%</b></div>
+          <div class="meter"><i class="g" style="width:88.8%"></i></div>
+          <div class="mrow"><span>rankbuffer:mom (Ph6)</span><b style="color:var(--rust)">104.2% · cash −4.2%</b></div>
+          <div class="meter"><i class="r" style="width:100%"></i></div>
+          <p class="foot" style="margin-top:8px">negative cash trips the leverage guard — opens are constrained to available cash + planned sell proceeds (Phase-2 review fix)</p>
+        </div>
+        <div class="panel">
+          <p class="ph">concentration &amp; correlation heat</p>
+          <div class="mrow"><span>largest single position</span><b>4.8% / cap 5.0%</b></div>
+          <div class="meter"><i class="a" style="width:96%"></i></div>
+          <div class="mrow"><span>top-5 names</span><b>21.6%</b></div>
+          <div class="meter"><i class="g" style="width:43%"></i></div>
+          <div class="mrow"><span>sector max (tech)</span><b>28% / cap 35%</b></div>
+          <div class="meter"><i class="g" style="width:80%"></i></div>
+          <div class="mrow"><span>correlation-aware heat (LW cov)</span><b>within guardrail</b></div>
+          <div class="meter"><i class="g" style="width:52%"></i></div>
+        </div>
+      </div>
+      <p class="foot">every clamp names itself (UX-9) · covariance via Ledoit–Wolf on 252d (D42) · guardrails are the same for math and AI seats</p>
+    </div>
+  </div>
+
+  <!-- ================= 09 data health ================= -->
+  <div class="sec"><span class="n">09</span><h2>Data health · what the lab knows it doesn't trust</h2><span class="tag">GET /api/v1/data-health</span></div>
+  <p class="note">The point-in-time honesty of the store, surfaced. Quality flags (D77) are shown, not swallowed:
+  warns and rejects render as a per-day heat row, the watermark and provider cross-checks report their state,
+  and any frozen position or missing bar is named. A solo operator glances here before trusting a run.</p>
+  <div class="frame">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /data-health</span></div>
+    <div class="pad">
+      <div class="risk-grid">
+        <div class="panel">
+          <p class="ph">quality flags · last 30 sessions</p>
+          <div class="hz">
+            <i></i><i></i><i></i><i class="warn"></i><i></i><i></i><i></i><i></i><i class="warn"></i><i></i>
+            <i></i><i></i><i></i><i></i><i></i><i class="rej"></i><i></i><i></i><i></i><i></i>
+            <i></i><i class="warn"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          </div>
+          <p class="foot" style="margin-top:8px"><span style="color:var(--amber)">3 warn</span> · <span style="color:var(--rust)">1 reject</span> · 26 clean · rejects never enter the funnel (D77)</p>
+          <div class="mrow" style="margin-top:12px"><span>watermark</span><b>2027-03-19T22:00Z</b></div>
+          <div class="mrow"><span>bars this session</span><b>498 / 498 expected</b></div>
+          <div class="mrow"><span>frozen positions</span><b>0 held frozen</b></div>
+        </div>
+        <div class="panel">
+          <p class="ph">provider cross-checks &amp; feeds</p>
+          <div class="mrow"><span>membership OEF ↔ Wikipedia</span><b style="color:var(--verd)">agree · 498</b></div>
+          <div class="mrow"><span>corporate actions applied</span><b>2 div · 0 split · 0 merger</b></div>
+          <div class="mrow"><span>regime proxy (GSPC.INDX)</span><b style="color:var(--verd)">live · not fallback</b></div>
+          <div class="mrow"><span>French factors (attribution)</span><b>current · 2d lag ok</b></div>
+          <div class="mrow"><span>API headroom today</span><b>99.2% · 812 / 100k</b></div>
+          <div class="mrow"><span>last off-machine backup</span><b>3d ago</b></div>
+          <p class="foot" style="margin-top:8px">every feed has a named source, a cross-check, and a fail-closed rule (§13) · divergence freezes, never guesses</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend" style="margin-top:26px">
+    <span><span class="colo" style="background:var(--verd)"></span>math seat</span>
+    <span><span class="colo" style="background:var(--iris)"></span>AI seat</span>
+    <span><span class="colo" style="background:var(--amber-tint);border:1px solid var(--amber)"></span>too early · inside MDE</span>
+    <span><span class="colo" style="background:var(--rust)"></span>retired · anti-predictive</span>
+    <span><span class="colo" style="background:var(--well);border:1px solid var(--line-strong)"></span>reference · never promotable</span>
+  </div>
+
+  <p class="endnote">static design mockups · v1.9.21 · nine reference screens · replaces the v1 dark showcase set · every honesty rule shown here
+  (dimming, tildes, percentiles, separation chips, clamp attribution, quarantine) is resolved server-side in the
+  D58 read-models; no client computes a threshold · research/paper-trading only · not investment advice</p>
+
+</div>
+</body>
+</html>
