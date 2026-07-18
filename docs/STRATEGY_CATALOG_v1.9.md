@@ -96,9 +96,12 @@ Stage 4 semantics: **the wish list opens/adds; only the `ExitPolicy` closes** �
 | Mean-Reversion (std + fast variant) | reversal | daily bars | high | 6 | core (momentum's opposite; trade-track flagship) |
 | Low-Volatility | risk | daily bars + **EODHD sectors** | low (monthly) | 6 | diversifier |
 | Breakout (Donchian) | trend | daily bars | medium | 6 (optional) | optional |
+| Residual Momentum | trend | daily bars + factor returns | med-high (banded) | 6 | core (cleaner momentum; lower crash risk) |
+| Time-Series Momentum | trend | daily bars | medium | 6 | diversifier (absolute, not cross-sectional) |
+| Betting-Against-Beta | risk | daily bars (+ index proxy) | low (monthly) | 6 | diversifier (beta-ranked; low-vol's sibling) |
 | Value | value | fundamentals (PIT-validated) | low | **8 (contingent)** | fundamental |
 | Quality | quality | fundamentals (PIT-validated) | low | **8 (contingent)** | fundamental |
-| Blended / Meta | fusion | mixed + Claude read | varies | 6+ | fusion (logistic → LightGBM) |
+| Blended / Meta | fusion | mixed signals | varies | 6+ | fusion (logistic → LightGBM) |
 
 ---
 
@@ -177,7 +180,7 @@ Stage 4 semantics: **the wish list opens/adds; only the `ExitPolicy` closes** �
 
 ### 6.3 `LowVolModel` — the low-volatility diversifier
 
-- **Theory:** low-vol stocks deliver strong *risk-adjusted* returns (the low-risk anomaly). Low turnover; diversifies trend/reversal.
+- **Theory:** low-vol stocks deliver strong *risk-adjusted* returns (the low-risk anomaly). Low turnover; diversifies trend/reversal. **Sibling:** §6.7 (Betting-Against-Beta) targets the same anomaly but ranks on **beta** rather than realized volatility; run both to test which expression the arena rewards (they are close cousins — see the anti-clone note in §10).
 - **The evaluative point that decides its fate:** low-vol runs β ≈ 0.6–0.8 — on raw return vs cap-weight it loses every bull market *while working as designed*. It is judged **only** on β-adjusted alpha / IR (D26).
 - **Data:** `adj_close` daily bars + **sector classification from EODHD (D35)**.
 - **Parameters (defaults):** `volWindow = 252` · `selection = TopN(30)` · `rebalanceDays = 21` · `sectorCap = 25%` (long-only low-vol otherwise converges on a utilities/staples fund; the cap consumes the EODHD sector field and surfaces concentration on the Risk screen from day one).
@@ -203,6 +206,67 @@ Stage 4 semantics: **the wish list opens/adds; only the `ExitPolicy` closes** �
   ```
 - **Gotchas:** exclude the current bar from the channel max. Binary scores ⇒ threshold selection and a degenerate calibration map (a Kelly variant needs distance-above-channel scaling). Participates in the trade-level track (D44).
 - **Acceptance:** new-high fixture triggers 1.0; current-bar exclusion verified; channel exit closes positions; leakage test.
+
+### 6.5 `ResidualMomentumModel` — momentum on factor-residual returns
+
+- **Theory:** conventional momentum's returns are contaminated by time-varying factor exposures (it loads heavily on market/sector, which is why §6.1's own note calls the long-only version "dominated by market beta"). Ranking on the *residual* return, the part of each stock's return not explained by common factors, isolates the stock-specific continuation and strips the factor bet. Blitz, Huij & Martens (2011) show residual momentum earns risk-adjusted profits roughly **twice** those of total-return momentum, is more consistent over time, and is far less exposed to the momentum-crash tail. For a long-only S&P 500 lab where raw momentum is dominated by beta, this is the higher-quality expression of the same idea, and the direct answer to §6.1's honest limitation.
+- **Honest expectations:** the "twice the risk-adjusted profit" figure is, like all of §6, a **long-short** result; a long-only tilt keeps a fraction. What residual momentum should deliver *here* versus plain momentum is **not** a higher raw return, it is a cleaner β-adjusted alpha and a materially smaller drawdown in momentum-crash regimes (2009-style sharp reversals). Judge it head-to-head against `momentum:v1` on the paired-difference statistic (both are trend, so they share most market exposure, tightening the MDE), not against the benchmark. Expect `TooEarly` for a long time on the absolute verdict; the *fast* result is the paired one: if residual momentum does **not** reduce crash-regime drawdown versus total-return momentum, that specific claim is falsified quickly.
+- **Data:** `adj_close` daily bars **plus a factor-return series** for the residualizing regression. Minimum viable: the market excess return (single-factor residual, i.e. residual = stock return minus its beta-times-market). Preferred: the Fama-French 3 factors (MKT, SMB, HML), which the design already ingests for attribution (INTEGRATIONS_v1.9; Ken French data library, already a dependency of the D41 attribution regression, **diagnostic-only there, a signal input here**). Warm-up: `regWindow + lookback + skip`.
+- **Parameters (defaults):** `regWindow = 756` (36 months of daily obs for the rolling factor regression, per Blitz-Huij-Martens) · `lookback = 252` · `skip = 21` (same skip-month discipline as §6.1) · `selection = TopN(40)` · `exitRank = 80` (same rank hysteresis) · `factors = FF3` (fallback `MKT` if only the market proxy is available).
+- **Horizon / exits:** `Horizon = ToRankExit`; `Exits = RankBuffer(exitRank)` — identical machinery to §6.1, so this reuses the momentum plumbing wholesale.
+- **Scoring logic:**
+  ```
+  # 1. rolling factor regression per security over regWindow, ending asOf - skip - lookback
+  for each security s in eligible:
+      if history(s) < regWindow + lookback + skip -> omit s     # depth guard, like Quality
+      estimate (alpha_s, beta_s[]) from daily excess returns of s on `factors`
+          over the window [asOf - skip - lookback - regWindow, asOf - skip - lookback]
+      # 2. residual return over the formation window
+      resid_ret[s] = sum over t in (asOf-skip-lookback , asOf-skip] of
+                     ( ret_s[t] - beta_s · factor_ret[t] )      # factor-neutral cumulative residual
+  score[s] = percentile_rank(resid_ret[s])                      # cross-sectional, standardized
+  ```
+  (Standardizing the residual by its regression standard error before ranking, the Blitz-Huij-Martens t-stat form, is a tested sibling `standardize = true`; the plain cumulative-residual form is the default for auditability.)
+- **Gotchas:** the regression is **point-in-time** — betas are estimated only on data available at `asOf`, and the leakage test must confirm a residual score at `asOf` is unchanged whether later bars exist (this is the same leakage discipline as §6.1 but with a regression in the middle, so it needs its own fixture). Factor returns join **availability-lagged** exactly like fundamentals (French factors publish with a lag; §7.0's leakage warning applies). Turnover is similar to §6.1, so the **D43 cost model is load-bearing** and the participation-cap log matters. Do **not** let the residualization silently drop names with short history, omit them (depth guard) rather than zero-fill, or the cross-section is biased toward long-listed stocks. Matched population: `RandomPop-Banded` (same cadence as momentum).
+- **Acceptance:** a fixture where a stock's raw return is high **only** because of market beta scores **lower** than a stock with the same raw return but positive residual (this is the whole point, and the test that distinguishes it from §6.1); monotone residual fixture ranks monotonically; regression is PIT (betas at `asOf` unaffected by future bars); factor-return availability lag enforced; depth guard omits short-history names; standardize-variant sibling reproduces the t-stat ordering; leakage test through the regression.
+
+### 6.6 `TimeSeriesMomentumModel` — absolute (own-past) trend
+
+- **Theory:** distinct from cross-sectional momentum (§6.1 ranks stocks *against each other*); time-series momentum asks whether each asset's **own** past return predicts its **own** future return. Moskowitz, Ooi & Pedersen (2012) documented that the past 12-month excess return positively predicts the next 1-12 month return, an effect that persists for about a year then partially reverses. It is the academic basis of trend-following. Because it is an absolute signal (a stock can be "in an uptrend" regardless of how it ranks), it goes to cash-equivalent (simply holds fewer names) when the whole market trends down, giving the roster a **defensive** behavior that cross-sectional momentum, always fully invested in the relative winners, does not have. That is the diversification it adds.
+- **Honest expectations — and the key caveat:** MOP (2012) tested TSMOM on **58 futures and forward contracts** (equity indices, currencies, commodities, bonds), **not** individual stocks. Applying it to single-name equities is a documented *adaptation*, not the original result; the single-stock trend literature is weaker and noisier than the futures result, and long-only single-stock trend is closest in spirit to Hurst, Ooi & Pedersen (2017), "A Century of Evidence on Trend-Following Investing," than to the original TSMOM paper. So the honest prior here is **modest**: this is a diversifier expected to earn its keep through *drawdown reduction and low correlation to the cross-sectional strategies* in falling markets, not through a high standalone alpha. State that in the verdict framing; do not sell it as the futures Sharpe. Judge β-adjusted, and expect its value to show up most in the paired difference during bear regimes.
+- **Data:** `adj_close` daily bars. Warm-up: `lookback`.
+- **Parameters (defaults):** `lookback = 252` (the canonical 12-month window) · `signal = sign` (hold if trailing 12-month excess return > 0; sibling `signal = volScaled` sizes by the return divided by ex-ante vol, the MOP construction) · `selection = AllPositive(maxConcurrent 50)` (hold every name whose own trend is positive, capped for capacity; this is what makes it go partially to cash in a downturn) · `rebalanceDays = 21`.
+- **Horizon / exits:** `Horizon = ToNextRebalance`; `Exits = ScheduledRebalance(rebalanceDays)` **or** trend-flip (`Exits = SignFlip(lookback)`), whichever the sibling declares.
+- **Scoring logic:**
+  ```
+  for each security s in eligible:
+      r12[s] = adj_close[s] at (asOf - skip) / adj_close[s] at (asOf - skip - lookback) - 1
+      excess = r12[s] - riskFreeReturn(lookback)          # own excess return
+      if signal == "sign":     score[s] = excess > 0 ? 1.0 : 0.0
+      if signal == "volScaled": score[s] = excess > 0 ? clamp(excess / exAnteVol[s], 0, 1) : 0.0
+  ```
+- **Gotchas:** binary `sign` scoring ⇒ threshold selection and a degenerate calibration map (the `volScaled` sibling gives a continuous score for the Kelly path, same issue flagged for §6.4 Breakout). The "go to cash" behavior means some days select very few names, its equity curve will look nothing like a fully-invested strategy, and that is correct, not a bug; the Risk screen should show the cash weight rising in downturns. Overlaps conceptually with §6.4 Breakout (both are absolute trend), so the CandidateFactory anti-clone check (§10) must keep them from being near-duplicates, prefer running one of {Breakout, TSMOM} unless their signals demonstrably diverge. Matched population: `RandomPop-Monthly` (rebalance cadence). Point-in-time; risk-free series joins availability-safe.
+- **Acceptance:** a name in a sustained uptrend scores 1.0 (or high under `volScaled`); a name in a downtrend scores 0 and is **not** held (verifying the defensive drop-to-cash); a broadly falling fixture reduces the invested count (cash-weight rises); `volScaled` sibling produces a continuous score; sign-flip exit closes a position when the 12-month trend turns negative; leakage test.
+
+### 6.7 `BettingAgainstBetaModel` — the low-beta tilt
+
+- **Theory:** the low-risk anomaly's other formulation. Where §6.3 ranks on realized volatility, Betting-Against-Beta ranks on **market beta**: leverage-constrained investors overweight high-beta stocks (reaching for return without borrowing), bidding them up so they earn *lower* risk-adjusted returns, while low-beta stocks are underpriced and earn higher CAPM alpha. Frazzini & Pedersen (2014) built the canonical BAB factor and found it delivered a Sharpe ratio of ~0.78 from 1926 to 2012, about twice the value effect's and higher than momentum's over the same period, with significant alpha after controlling for market, size, value, momentum, and liquidity. It is one of the most-cited anomalies in asset pricing.
+- **Why it earns a slot next to §6.3:** low-vol and low-beta are close cousins but **not** identical, a stock can have low standalone volatility yet high beta (moves little but in lockstep with the market), or high volatility yet low beta (moves a lot but idiosyncratically). Which one is the "true" low-risk signal in a long-only S&P 500 arena is an empirical question this lab is built to answer. Because beta falls out of the **Ledoit-Wolf covariance you already compute (D42)** for sizing, adding BAB is nearly free on the compute side, it needs no new data pipeline, only a second ranking off a matrix already in memory.
+- **Honest expectations:** the ~0.78 Sharpe is, like every §6 figure, a **long-short, leverage-adjusted** result (the classic BAB factor *leverages* the low-beta leg up to β=1 and *shorts* the high-beta leg). This lab is **long-only and unlevered**, so it captures only the long-leg tilt toward low-beta names, a fraction of the published premium, and it will look like a low-β portfolio that lags in bull markets exactly as §6.3 does. Judge it **only** on β-adjusted alpha / IR (D26), never raw return. Its most useful comparison is the **paired difference against `lowvol:v1`**: since both are long-only low-risk tilts sharing most market exposure, that pairing has a tight MDE and answers the real question, does ranking on beta beat ranking on vol here? A near-zero paired difference is itself a clean finding (the two signals are redundant in this universe); a persistent one tells you which to keep.
+- **Data:** `adj_close` daily bars **plus the market index proxy** for beta estimation (the same `CapWeightProxy` the benchmark uses, `OEF.US`/`IVV.US` per the universe). Warm-up: `betaWindow`.
+- **Parameters (defaults):** `betaWindow = 252` (1y of daily returns for the beta estimate) · `betaSource = LedoitWolf` (derive each name's beta from the D42 shrunk covariance with the market proxy — `cov(s, mkt) / var(mkt)`; sibling `betaSource = rolling_ols` for a plain 1y regression beta as a cross-check) · `selection = TopN(30)` · `rebalanceDays = 21` · `sectorCap = 25%` (same rationale as §6.3, a long-only low-beta book otherwise concentrates in utilities/staples; consumes the EODHD sector field, surfaces on the Risk screen).
+- **Horizon / exits:** `Horizon = ToNextRebalance`; `Exits = ScheduledRebalance(rebalanceDays)` — identical cadence to §6.3, so it reuses the low-vol plumbing.
+- **Scoring logic:**
+  ```
+  # beta of each eligible name vs the market proxy, point-in-time over betaWindow
+  for each security s in eligible:
+      if history(s) < betaWindow -> omit s                      # depth guard
+      beta[s] = cov(returns(s), returns(mkt), betaWindow) / var(returns(mkt), betaWindow)
+                # LedoitWolf source reads the shrunk covariance already solved for D42 sizing
+  score[s] = 1 - percentile_rank(beta[s])                       # low beta -> high score
+  ```
+- **Gotchas:** re-score only at rebalance dates (like §6.3), matched against `RandomPop-Monthly`. Beta is **point-in-time** — estimated only on data available at `asOf`; the leakage test confirms a name's beta at `asOf` is unchanged whether later bars exist. The market-proxy return series must be availability-safe and follow the same universe-driven proxy as the benchmark (do **not** hardcode a single index, finding I / `CapWeightProxy`). Depth guard omits short-history names rather than assigning a noisy beta. **Anti-clone discipline (§10):** BAB and `lowvol:v1` will often overlap heavily, the factory must treat them as a near-clone pair and only keep both live while their holdings/returns demonstrably diverge; if the paired difference sits inside its MDE indefinitely, retire one.
+- **Acceptance:** a low-beta fixture outranks a high-beta one; a **high-volatility-but-low-beta** name scores **higher** than a **low-volatility-but-high-beta** name (the test that distinguishes BAB from §6.3 low-vol — this is the whole reason it exists); beta from the Ledoit-Wolf source matches the `rolling_ols` sibling within tolerance on a fixture; beta is PIT (unaffected by future bars); re-scores only at rebalance; sector cap enforced; depth guard omits short-history names; leakage test.
 
 ---
 
@@ -243,13 +307,13 @@ Record the protocol's results in `PROGRESS.md`; a pass names the source in the d
 
 ### 8.1 `BlendedModel` — fuse several signals into one probability
 
-- **Composition:** sub-strategies (e.g. `[Momentum, LowVol]`, optionally `+ ClaudeSentiment`) combined per security.
+- **Composition:** sub-strategies (e.g. `[Momentum, LowVol, ResidualMomentum]`) combined per security. The blend fuses **mechanical** signals only; the LLM's role in the lab is the three AI seats (MASTER §23), not a sub-signal spliced into this classifier (see the note below).
 - **Fusion modes (ordering):** **Weighted** (deterministic, start here) → **Logistic regression** (first learned mode; out-of-fold training **mandatory** — stacked generalization — or the meta learns leaked in-sample predictions) → **LightGBM** (a later candidate that must beat the logistic blend forward).
 - **Retrain discipline:** ML.NET LightGBM has no warm-start; **every retrain enters as a fresh Candidate and increments `trials_registry`** — a monthly cadence adds ~12 trials/year and deflates everyone's Sharpe. Quarterly is the sane default; write it in `Config`.
 - **Horizon / exits:** declared explicitly in `Config` (typically the dominant sub-signal's).
-- **The Claude tie-in (D46-framed):** a `ClaudeSentiment` sub-signal reads the *stored, shared* daily analysis — **an experimental input**. Run a Claude-using blend and a non-Claude blend as distinct accounts and let the **paired active-return test** price the tokens. They share almost everything, so this is the best-powered comparison in the whole system — and the honest prior is that the score prices near zero while the research-assistant uses carry the LLM's value.
-- **Gotchas:** out-of-fold training mandatory; the Claude sub-signal stays one input among several.
-- **Acceptance:** weighted mode reproduces `Σ wᵢ·scoreᵢ` exactly; learned mode provably out-of-fold (provenance test); Claude/non-Claude blends are distinct accounts; a retrain creates a new strategy id + trial row.
+- **Where the LLM lives (superseded framing):** earlier revisions folded an experimental `ClaudeSentiment` score into this blend as a sub-signal. That is **superseded by the three-seat AI design (D79-D82; MASTER §23)**: the LLM is now a first-class **contestant seat** that scores names and trades its own account against a mechanically-identical no-LLM twin (the paired A/B that prices its contribution), a **researcher seat** that proposes hypotheses, and a deferred **advisor seat** — *not* a hidden numeric input to a classifier that also judges it (golden rule 32). The paired-A/B intuition that made the old sub-signal attractive is preserved and strengthened by the contestant's twin. This `BlendedModel` therefore blends mechanical signals only; do not re-introduce an LLM sub-signal here.
+- **Gotchas:** out-of-fold training mandatory (or the meta learns leaked in-sample predictions). No LLM sub-signal (the LLM is the contestant seat, MASTER §23, not a blend input).
+- **Acceptance:** weighted mode reproduces `Σ wᵢ·scoreᵢ` exactly; learned mode provably out-of-fold (provenance test); a retrain creates a new strategy id + trial row; **no test asserts an LLM sub-signal (that path is retired; the contestant seat's A/B is specified in MASTER §23.3).**
 
 ---
 
@@ -271,7 +335,7 @@ For strategies whose `Horizon` is short and trade count high (fast MR, breakout)
 
 - **Family diversity first:** always keep momentum **and** mean-reversion (ideally + low-vol) live.
 - **Parameter variants second:** perturbations only once a family shows promise; every spawn increments the trials registry.
-- **Anti-clone rule:** no dozens of near-identical arms — clones overlap trades and inflate false discovery. Pool stays small (1 Live + 2–3 Candidates to start).
+- **Anti-clone rule:** no dozens of near-identical arms — clones overlap trades and inflate false discovery. Pool stays small (1 Live + 2–3 Candidates to start). **Known near-clone pairs to watch:** Betting-Against-Beta (§6.7) vs Low-Vol (§6.3) — both long-only low-risk tilts; and Time-Series Momentum (§6.6) vs Breakout (§6.4) — both absolute trend. Keep both members of a pair live **only** while their holdings/returns demonstrably diverge (paired difference outside its MDE); otherwise retire one.
 - **Retrains as candidates:** a retrained model is a fresh Candidate and a fresh trial.
 - **Population hookup (v6):** the factory wires every new candidate to its matched random population by cadence family; a new cadence (e.g. quarterly at Phase 8) spawns a new population.
 
@@ -296,10 +360,28 @@ For strategies whose `Horizon` is short and trade count high (fast MR, breakout)
 |:-----------:|-------------------------|
 | 1–2 | `BuyAndHoldModel` ×2 (CW + EW), `RandomModel` population machinery + a trivial `ThresholdModel` — exercising ledger conventions, corporate-action semantics, funnel, exit plumbing |
 | 3 | Full baseline arena proving the loop: populations live; promotions ≤ chance; population bands rendered |
-| 6 | `MomentumModel` (banded, vol overlay), `MeanReversionModel` (std + fast, explicit exits, trade track), `LowVolModel` (252d, monthly, EODHD sector cap), optional `BreakoutModel`; `BlendedModel` (weighted → logistic; LightGBM later); Claude-blend vs non-Claude-blend paired A/B |
+| 6 | `MomentumModel` (banded, vol overlay), `MeanReversionModel` (std + fast, explicit exits, trade track), `LowVolModel` (252d, monthly, EODHD sector cap), `ResidualMomentumModel` (factor-residual, reuses momentum plumbing), `TimeSeriesMomentumModel` (absolute trend, defensive), `BettingAgainstBetaModel` (beta-ranked, reuses low-vol plumbing + D42 covariance), optional `BreakoutModel`; `BlendedModel` (weighted → logistic; LightGBM later, mechanical signals only). The **AI contestant seat** and its paired no-LLM twin are specified separately in MASTER §23, not here. |
 | **8 (contingent)** | `ValueModel` / `QualityModel` once a source **passes the §7.0 PIT protocol** (EODHD Fundamentals is the first candidate) |
 
 **Recommended day-one live arena (end of Phase 3):** Buy & Hold CW + EW · random populations (3 matched cadences + cost-free) · then Momentum and Mean-Reversion entering in Phase 6.
+
+---
+
+## 12.5 References — the literature each strategy rests on
+
+Every family in this catalog is a documented, peer-reviewed anomaly. The published results are almost always **long-short** and pre-cost; this lab's long-only, cost-and-capacity-realistic, forward-only paper trading is expected to keep a fraction of any of them, which is exactly what the MDE display and the `TooEarly` discipline exist to state honestly.
+
+- **Cross-sectional momentum (§6.1):** Jegadeesh, N. & Titman, S. (1993). "Returns to Buying Winners and Selling Losers: Implications for Stock Market Efficiency." *Journal of Finance* 48(1), 65-91.
+- **Short-term reversal / mean-reversion (§6.2):** De Bondt, W. & Thaler, R. (1985). "Does the Stock Market Overreact?" *Journal of Finance* 40(3), 793-805. Also Jegadeesh, N. (1990), "Evidence of Predictable Behavior of Security Returns," *Journal of Finance* 45(3). The fast RSI(2-4) variant is practitioner: Connors, L. & Alvarez, C. (2008), *Short Term Trading Strategies That Work*.
+- **Low-volatility / low-beta (§6.3 and §6.7):** Frazzini, A. & Pedersen, L.H. (2014). "Betting Against Beta." *Journal of Financial Economics* 111(1), 1-25 — the canonical BAB factor (§6.7 ranks on beta; §6.3 ranks on volatility, the two long-only expressions of the same low-risk anomaly). Also Ang, Hodrick, Xing & Zhang (2006), "The Cross-Section of Volatility and Expected Returns," *Journal of Finance* 61(1); Baker, Bradley & Wurgler (2011), *Financial Analysts Journal* 67(1).
+- **Breakout / Donchian trend (§6.4):** practitioner lineage (Donchian channels; the Turtle Traders). For the academic trend basis, see the time-series-momentum references below.
+- **Residual / idiosyncratic momentum (§6.5):** Blitz, D., Huij, J. & Martens, M. (2011). "Residual Momentum." *Journal of Empirical Finance* 18(3), 506-521. Follow-up: Blitz, Hanauer & Vidojevic (2020), "The Idiosyncratic Momentum Anomaly," *International Review of Economics & Finance*.
+- **Time-series (absolute) momentum (§6.6):** Moskowitz, T.J., Ooi, Y.H. & Pedersen, L.H. (2012). "Time Series Momentum." *Journal of Financial Economics* 104(2), 228-250. **Note:** the original result is on 58 futures/forward contracts, not single stocks; for the long-only equity-trend adaptation see Hurst, Ooi & Pedersen (2017), "A Century of Evidence on Trend-Following Investing," *Journal of Portfolio Management* 44(1), 15-29.
+- **Value (§7.1):** Fama, E. & French, K. (1992), "The Cross-Section of Expected Stock Returns," *Journal of Finance* 47(2); Fama & French (1993), *Journal of Financial Economics* 33(1). Earnings-yield origin: Basu, S. (1977), *Journal of Finance* 32(3).
+- **Quality (§7.2):** Novy-Marx, R. (2013), "The Other Side of Value: The Gross Profitability Premium," *Journal of Financial Economics* 108(1); Asness, C., Frazzini, A. & Pedersen, L.H. (2019), "Quality Minus Junk," *Review of Accounting Studies* 24(1).
+- **Factor model used for §6.5 residualization and D41 attribution:** Fama, E. & French (1993), three-factor model; factor-return series from the Kenneth R. French data library.
+
+*Citations are to the seminal or canonical paper for each anomaly; each is widely replicated (and, in several cases, contested) in later literature. Inclusion here is a statement that the signal is well-studied, not a claim that its premium will survive this lab's forward test, that is what the arena decides.*
 
 ---
 
@@ -314,9 +396,12 @@ For strategies whose `Horizon` is short and trade count high (fast MR, breakout)
 - [ ] `MomentumModel`: skip-month; hysteresis prevents boundary churn; vol overlay PIT with LW covariance; capacity-rejection logging.
 - [ ] `MeanReversionModel`: trend filter; reference-matched RSI; exits via `TargetOrTimeStop` only; sparse-day behavior; **trade-track CI + MDE verified on synthetic clustered trades (D44)**.
 - [ ] `LowVolModel`: rebalance-only changes; EODHD-fed sector cap enforced; reclass applies at next rebalance.
+- [ ] `ResidualMomentumModel`: beta-driven raw return scores **below** equal-raw-return-with-positive-residual (the test that separates it from plain momentum); rolling regression is PIT; factor-return availability lag enforced; depth guard omits short-history names; leakage test through the regression.
+- [ ] `TimeSeriesMomentumModel`: downtrend name scores 0 and is not held (defensive drop-to-cash verified); falling fixture reduces invested count; `volScaled` sibling continuous; sign-flip exit fires on trend reversal; anti-clone check vs Breakout; leakage test.
+- [ ] `BettingAgainstBetaModel`: low-beta outranks high-beta; **high-vol-low-beta name outranks low-vol-high-beta name** (separates it from low-vol); LedoitWolf beta matches OLS sibling on a fixture; beta PIT; rebalance-only re-score; sector cap; depth guard; anti-clone check vs `lowvol:v1`; leakage test.
 - [ ] `BreakoutModel`: current-bar exclusion; channel exit; trade track wired.
 - [ ] Fundamental models (Phase 8): **§7.0 PIT protocol passed and logged before any code**; as-reported availability-lagged join; depth test.
-- [ ] `BlendedModel`: weighted exact; out-of-fold provenance; logistic before LightGBM; retrain ⇒ new id + trial; Claude/non-Claude blends distinct + paired-tested.
+- [ ] `BlendedModel`: weighted exact; out-of-fold provenance; logistic before LightGBM; retrain ⇒ new id + trial; **mechanical signals only (the LLM is the contestant seat in MASTER §23, not a blend sub-signal).**
 - [ ] Calibration over declared horizons with overlapping-label correction; Kelly `b` shrunk with min-sample; inverse-vol default (LW covariance).
 - [ ] CandidateFactory: family diversity; anti-clone; population hookup per cadence.
 - [ ] D43 costs on every strategy; net ≤ gross; cost-model version stamped; ledger/corporate-action conventions tested.

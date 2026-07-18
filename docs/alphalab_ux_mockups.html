@@ -15,7 +15,8 @@
     --gold:#E9B44C; --gold-soft:rgba(233,180,76,.14); --gold-line:rgba(233,180,76,.45);
     --cyan:#4CC9E0; --cyan-soft:rgba(76,201,224,.14); --cyan-line:rgba(76,201,224,.42);
     --violet:#8B7CF6; --violet-soft:rgba(139,124,246,.16); --violet-line:rgba(139,124,246,.45);
-    --up:#3FD68C; --down:#F2555A; --amber:#E9B44C;
+    --replay:#5A6B8C; --replay-soft:rgba(90,107,140,.16); --replay-line:rgba(90,107,140,.5);
+    --up:#3FD68C; --down:#F2555A; --amber:#E2A23B; --amber-line:rgba(226,162,59,.5);
     --disp:'Archivo',system-ui,sans-serif; --body:'Inter',system-ui,sans-serif; --mono:'IBM Plex Mono',ui-monospace,monospace;
     --r:14px;
   }
@@ -90,6 +91,11 @@
   .chip.ok{background:rgba(63,214,140,.14);color:var(--up)}
   .chip.neutral{background:#1a2138;color:var(--ink-dim)}
   .chip.ab{background:var(--violet-soft);color:var(--violet)}
+  .fam{font-family:var(--mono);font-size:10.5px;color:var(--ink-dim);border:1px solid var(--line);border-radius:999px;padding:2px 8px;white-space:nowrap}
+  .fam.trend{color:#7Fb0FF;border-color:rgba(127,176,255,.4)}
+  .fam.risk{color:#4CC9E0;border-color:var(--cyan-line)}
+  .fam.rev{color:#F0A868;border-color:rgba(240,168,104,.4)}
+  .chip.clone{background:rgba(240,168,104,.14);color:#F0A868}
 
   /* the signature: MDE interval gauge */
   .gauge{position:relative;display:inline-block;width:100px;height:12px;vertical-align:-1px;border-left:2px solid #39456e;border-right:2px solid #39456e}
@@ -221,8 +227,8 @@
   .locked{font-family:var(--mono);font-size:11px;color:var(--up);margin-top:6px}
 
   /* replay banner */
-  .replaybar{display:flex;align-items:center;gap:12px;padding:11px 16px;border-radius:10px;background:repeating-linear-gradient(135deg,rgba(233,180,76,.10),rgba(233,180,76,.10) 12px,rgba(233,180,76,.04) 12px,rgba(233,180,76,.04) 24px);border:1px solid var(--gold-line);flex-wrap:wrap}
-  .replaybar .tg{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);font-weight:600}
+  .replaybar{display:flex;align-items:center;gap:12px;padding:11px 16px;border-radius:10px;background:repeating-linear-gradient(135deg,rgba(90,107,140,.16),rgba(90,107,140,.16) 12px,rgba(90,107,140,.06) 12px,rgba(90,107,140,.06) 24px);border:1px solid var(--replay-line);flex-wrap:wrap}
+  .replaybar .tg{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--replay);font-weight:600}
   .replaybar .msg{font-size:12.5px;color:var(--ink-dim)}
 
   /* empty state */
@@ -241,6 +247,30 @@
   .colo{width:11px;height:11px;border-radius:3px;display:inline-block;vertical-align:-1px;margin-right:6px}
   .endnote{margin:64px 0 60px;padding-top:22px;border-top:1px solid var(--line);color:var(--ink-faint);font-size:12.5px;font-family:var(--mono)}
 
+  /* UX-9 stacked allocation bar + weight history */
+  .allocbar{display:flex;height:34px;border-radius:8px;overflow:hidden;border:1px solid var(--line);margin:4px 0 6px}
+  .allocbar .seg{display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:10.5px;color:#0e1220;font-weight:600}
+  .wh{display:flex;align-items:flex-end;gap:3px;height:40px;margin-top:6px}
+  .wh i{flex:1;background:var(--gold-soft);border-top:2px solid var(--gold);border-radius:2px 2px 0 0;position:relative}
+  .wh i.mv::after{content:'';position:absolute;top:-4px;left:50%;width:5px;height:5px;border-radius:50%;background:var(--cyan);transform:translateX(-50%)}
+  /* UX-2 verdict-date line */
+  .vdate{font-family:var(--mono);font-size:10.5px;color:var(--gold)}
+  .vdate.dim{color:var(--ink-faint)}
+  /* UX-7 near-miss rows */
+  .nearrow{display:flex;align-items:baseline;gap:10px;font-size:12.5px;padding:6px 0;border-bottom:1px dashed var(--line-soft)}
+  .nearrow .sym{font-weight:600;min-width:56px}
+  .nearrow .rsn{color:var(--ink-dim);font-family:var(--mono);font-size:11px;margin-left:auto}
+  /* UX-10a assistant actions pane */
+  .aa{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:11px 13px;margin-bottom:9px}
+  .aa .t{font-size:13px;font-weight:600;margin-bottom:3px}
+  .aa .d{font-size:11.5px;color:var(--ink-dim)}
+  .aa .cost{float:right;font-family:var(--mono);font-size:10.5px;color:var(--gold);border:1px solid var(--gold-line);border-radius:999px;padding:1px 8px}
+  /* UX-11c admin intervention panel */
+  .admin{border:1px solid var(--amber-line);border-radius:var(--r);background:rgba(226,162,59,.06);padding:14px 16px}
+  .admin .ah{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--amber);margin:0 0 10px}
+  .confirm{font-family:var(--mono);font-size:12px;background:#0c1020;border:1px dashed var(--amber);border-radius:6px;padding:8px 11px;color:var(--ink);margin:8px 0}
+  .preview{font-family:var(--mono);font-size:11px;color:var(--ink-dim);background:#0c1020;border:1px solid var(--line-soft);border-radius:6px;padding:9px 11px}
+  .preview b{color:var(--amber)}
   /* narrow-viewport pass — proves the layout is mobile-ready (structure only) */
   @media (max-width:640px){
     .runinfo{margin-left:0;width:100%}
@@ -258,7 +288,7 @@
     <p class="eyebrow">AlphaLab · consolidated UX mockups · design revision v1.9.21</p>
     <h1>One bench, two rosters, every number accountable.</h1>
     <p>The single current mockup set. It replaces the earlier per-topic files. Two rosters share one
-    arena, the <span class="cyan">mathematical seat</span> and the <span class="violet">AI seat</span>,
+    arena, a <span class="cyan">mathematical roster</span> (trend, reversal, and risk families: momentum, residual momentum, time-series momentum, mean-reversion, low-vol, betting-against-beta) and the <span class="violet">AI seat</span>,
     judged by the same rails, with a deferred advisor seat shown for completeness. The signature element
     is the drawn MDE interval gauge: no judged number appears without the bracket saying what the data can
     and cannot see (UX-1, rule 22). All honesty logic stays in the D58 read-models; every screen renders
@@ -343,13 +373,16 @@
       </div>
       <div class="pad">
         <div class="tw"><table class="lb">
-          <tr><th>strategy</th><th>fwd α · net · β-adj</th><th>vs 200 randoms</th><th>verdict</th><th>separation</th></tr>
-          <tr class="math"><td><span class="name">momentum:v1</span> <span class="seat math">math</span><div class="sub">rank buffer 40/80 · H-14 linked</div></td><td><span class="val dim">+1.4%</span> <span class="gauge"><i class="in" style="left:63%"></i></span> <span class="mde">±4.8</span></td><td>71st</td><td><span class="chip early">too early</span></td><td class="sub">emerging · 214d</td></tr>
-          <tr class="math"><td><span class="name">lowvol:v1</span> <span class="seat math">math</span><div class="sub">monthly · sector caps</div></td><td><span class="val dim">+0.6%</span> <span class="gauge"><i class="in" style="left:56%"></i></span> <span class="mde">±4.1</span></td><td>55th</td><td><span class="chip early">too early</span></td><td class="sub">indistinguishable from random · 417d</td></tr>
-          <tr class="math"><td><span class="name">meanrev:rsi3</span> <span class="seat math">math</span><div class="sub">trade-level track · D44</div></td><td><span class="val down">−$3.90/trade</span></td><td>22nd</td><td><span class="chip retired">retired</span></td><td class="sub">negative expectancy · 412 trades</td></tr>
-          <tr class="ai"><td><span class="name">llm-contestant-01</span> <span class="seat ai">contestant</span><div class="sub">model llm-a · policy v3 · memory A</div></td><td><span class="val dim">+1.1%</span> <span class="gauge"><i class="ai" style="left:64%"></i></span> <span class="mde">±2.4</span></td><td>66th</td><td><span class="chip early">too early</span></td><td class="sub"><span class="chip ab">A/B pair</span> 356d</td></tr>
-          <tr class="ai"><td><span class="name">llm-contestant-01 · control</span> <span class="seat ai">A/B control</span><div class="sub">identical mechanics · no model call</div></td><td><span class="val dim">+0.4%</span> <span class="gauge"><i class="in" style="left:55%"></i></span> <span class="mde">±2.4</span></td><td>58th</td><td><span class="chip early">too early</span></td><td class="sub"><span class="chip ab">A/B pair</span> 356d</td></tr>
-          <tr class="ref"><td><span class="name">buyhold:cw · buyhold:ew</span> <span class="seat ref">reference</span></td><td class="sub">benchmarks</td><td class="sub">n/a</td><td><span class="chip neutral">never promotable</span></td><td class="sub">population band shaded on every chart</td></tr>
+          <tr><th>strategy</th><th>family</th><th>fwd α · net · β-adj</th><th>vs 200 randoms</th><th>verdict</th><th>separation</th></tr>
+          <tr class="math"><td><span class="name">momentum:v1</span> <span class="seat math">math</span><div class="sub">rank buffer 40/80 · H-14 linked</div></td><td><span class="fam trend">trend</span></td><td><span class="val dim">+1.4%</span> <span class="gauge"><i class="in" style="left:63%"></i></span> <span class="mde">±4.8</span></td><td>71st</td><td><span class="chip early">too early</span></td><td class="sub">emerging · 214d<br><span class="vdate dim">verdict possible ≈ Nov 2027 at current pairing</span></td></tr>
+          <tr class="math"><td><span class="name">resmom:v1</span> <span class="seat math">math</span><div class="sub">factor-residual · FF3 · vs momentum:v1</div></td><td><span class="fam trend">trend</span></td><td><span class="val dim">+1.2%</span> <span class="gauge"><i class="in" style="left:61%"></i></span> <span class="mde">±3.6</span></td><td>69th</td><td><span class="chip early">too early</span></td><td class="sub">emerging · 188d · lower crash-β than momentum</td></tr>
+          <tr class="math"><td><span class="name">tsmom:v1</span> <span class="seat math">math</span><div class="sub">absolute trend · 252d · defensive</div></td><td><span class="fam trend">trend</span></td><td><span class="val dim">+0.9%</span> <span class="gauge"><i class="in" style="left:57%"></i></span> <span class="mde">±3.9</span></td><td>52nd</td><td><span class="chip early">too early</span></td><td class="sub">emerging · 176d · cash-weight rises in drawdowns</td></tr>
+          <tr class="math"><td><span class="name">lowvol:v1</span> <span class="seat math">math</span> <span class="chip clone">≈ bab:v1</span><div class="sub">monthly · sector caps</div></td><td><span class="fam risk">risk</span></td><td><span class="val dim">+0.6%</span> <span class="gauge"><i class="in" style="left:56%"></i></span> <span class="mde">±4.1</span></td><td>55th</td><td><span class="chip early">too early</span></td><td class="sub">indistinguishable from random · 417d</td></tr>
+          <tr class="math"><td><span class="name">bab:v1</span> <span class="seat math">math</span> <span class="chip clone">≈ lowvol:v1</span><div class="sub">beta-ranked · D42 covariance</div></td><td><span class="fam risk">risk</span></td><td><span class="val dim">+0.5%</span> <span class="gauge"><i class="in" style="left:56%"></i></span> <span class="mde">±4.0</span></td><td>54th</td><td><span class="chip early">too early</span></td><td class="sub"><span class="chip clone">paired vs lowvol inside MDE 300d</span></td></tr>
+          <tr class="math"><td><span class="name">meanrev:rsi3</span> <span class="seat math">math</span><div class="sub">trade-level track · D44</div></td><td><span class="fam rev">reversal</span></td><td><span class="val down">−$3.90/trade</span></td><td>22nd</td><td><span class="chip retired">retired</span></td><td class="sub">negative expectancy · 412 trades</td></tr>
+          <tr class="ai"><td><span class="name">llm-contestant-01</span> <span class="seat ai">contestant</span><div class="sub">model llm-a · policy v3 · memory A</div></td><td><span class="fam">AI</span></td><td><span class="val dim">+1.1%</span> <span class="gauge"><i class="ai" style="left:64%"></i></span> <span class="mde">±2.4</span></td><td>66th</td><td><span class="chip early">too early</span></td><td class="sub"><span class="chip ab">A/B pair</span> 356d</td></tr>
+          <tr class="ai"><td><span class="name">llm-contestant-01 · control</span> <span class="seat ai">A/B control</span><div class="sub">identical mechanics · no model call</div></td><td><span class="fam">AI</span></td><td><span class="val dim">+0.4%</span> <span class="gauge"><i class="in" style="left:55%"></i></span> <span class="mde">±2.4</span></td><td>58th</td><td><span class="chip early">too early</span></td><td class="sub"><span class="chip ab">A/B pair</span> 356d</td></tr>
+          <tr class="ref"><td><span class="name">buyhold:cw · buyhold:ew</span> <span class="seat ref">reference</span></td><td class="sub">passive</td><td class="sub">benchmarks</td><td class="sub">n/a</td><td><span class="chip neutral">never promotable</span></td><td class="sub">population band shaded on every chart</td></tr>
         </table></div>
         <p class="foot">~ dimmed = gap inside its Newey–West MDE (rule 22) · percentile = rank within the strategy's own turnover-matched population (D36)</p>
       </div>
@@ -370,7 +403,7 @@
           <p class="ph">verdict &amp; band</p>
           <span class="big">momentum:v1</span>
           <div style="margin-top:10px"><span class="chip early">too early</span> <span class="val dim" style="margin-left:8px">+1.4%/yr</span> <span class="gauge"><i class="in" style="left:63%"></i></span> <span class="mde">±4.8 · 214d</span></div>
-          <p class="note" style="margin:12px 0 0;font-size:12.5px">emerging separation · at the current tracking error a real +2%/yr edge becomes decidable near ~2.4y</p>
+          <p class="note" style="margin:12px 0 0;font-size:12.5px">emerging separation · at the current tracking error a real +2%/yr edge becomes decidable near ~2.4y (verdict possible ≈ Aug 2029); the date moves as the gap moves</p>
         </div>
         <div class="panel">
           <p class="ph">factor attribution · diagnostic only (D41)</p>
@@ -625,23 +658,38 @@
   </div>
 
   <!-- ================= 05 AI value ================= -->
-  <div class="section-label"><span class="n">09</span><h2>AI value · the paired question</h2><span class="tag">llm-contestant-01 vs its control</span></div>
-  <p class="note">The screen that answers "does the AI add anything?" honestly. Raw totals sit small and dim; the
-  paired daily difference carries the room. Pairing cancels everything the twins share (M.1), which is why this is
-  the fastest verdict the lab can produce.</p>
+  <div class="section-label"><span class="n">09</span><h2>Paired comparison · the sharpest question the lab can ask</h2><span class="tag">GET /api/v1/pairs</span></div>
+  <p class="note">When two strategies share most of their exposure, differencing their daily returns cancels the shared
+  market/mechanics/costs and leaves only what separates them, with a far tighter MDE than either standalone verdict
+  (M.1). The screen serves two jobs from one mechanic: pricing an AI seat against its no-LLM twin, and testing
+  whether a near-clone pair (§10 anti-clone) is actually two strategies or one. Raw totals sit small and dim; the
+  paired difference carries the room.</p>
   <div class="desktop">
-    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /strategies/llm-contestant-01/ab</span></div>
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /pairs</span></div>
     <div class="pad">
+      <p class="ph" style="color:var(--violet)">pair A · AI value — contestant vs its no-LLM twin</p>
       <div class="grid2">
         <div class="panel"><p class="ph" style="color:var(--violet)">llm-contestant-01 · contestant seat</p><span class="big">+7.9% <small>1y total</small></span><p class="note" style="margin:8px 0 0;font-size:12.5px">same signals + the persisted model read · policy v3 frozen (D17)</p></div>
         <div class="panel"><p class="ph" style="color:var(--cyan)">llm-contestant-01 · control</p><span class="big">+7.2% <small>1y total</small></span><p class="note" style="margin:8px 0 0;font-size:12.5px">identical pre-filter, breadth, sizing, exits, costs, seed</p></div>
       </div>
-      <div class="panel" style="margin-top:16px">
+      <div class="panel" style="margin-top:12px">
         <p class="ph">paired daily-difference gap · β-adj · net</p>
         <span class="big" style="font-size:23px">+1.1%/yr <small>MDE ±2.4% · 356d paired</small></span>
         <div class="gauge-xl"><div class="band"></div><div class="zero"></div><div class="pt" style="left:63.7%"></div></div>
         <div class="axis"><span>−4%</span><span>0</span><span>+4%</span></div>
         <p class="note" style="margin:12px 0 0;font-size:12.5px"><span class="chip early">too early</span>&nbsp; the dot is inside the shaded MDE band: not evidence in either direction. A +2%/yr contribution becomes decidable near ~2.6y; a zero contribution earns the indistinguishable chip on the same clock. Verdicts arrive on the 21-day cadence, never shopped daily.</p>
+      </div>
+      <p class="ph" style="color:var(--cyan);margin-top:22px">pair B · near-clone test — bab:v1 vs lowvol:v1 (§10 anti-clone)</p>
+      <div class="grid2">
+        <div class="panel"><p class="ph" style="color:var(--cyan)">bab:v1 · beta-ranked</p><span class="big">+5.1% <small>1y total</small></span><p class="note" style="margin:8px 0 0;font-size:12.5px">low-risk tilt, ranks on beta (D42 covariance)</p></div>
+        <div class="panel"><p class="ph" style="color:var(--cyan)">lowvol:v1 · volatility-ranked</p><span class="big">+4.9% <small>1y total</small></span><p class="note" style="margin:8px 0 0;font-size:12.5px">low-risk tilt, ranks on realized vol</p></div>
+      </div>
+      <div class="panel" style="margin-top:12px">
+        <p class="ph">paired daily-difference gap · β-adj · net</p>
+        <span class="big" style="font-size:23px">+0.2%/yr <small>MDE ±1.3% · 300d paired</small></span>
+        <div class="gauge-xl"><div class="band" style="left:24%;width:52%"></div><div class="zero"></div><div class="pt" style="left:52%"></div></div>
+        <div class="axis"><span>−2%</span><span>0</span><span>+2%</span></div>
+        <p class="note" style="margin:12px 0 0;font-size:12.5px"><span class="chip neutral">indistinguishable · 300d</span>&nbsp; the gap has sat inside its MDE for the whole window: in this universe, ranking on beta and ranking on vol are producing the same book. Per §10, keep both live only while this dot stays outside the band; if it does not, retire one. This is the anti-clone rule made visible.</p>
       </div>
     </div>
   </div>
@@ -666,6 +714,11 @@
             <div class="stg"><span class="sn">stage 5</span> sizing · equal, cap 5% <span class="sv">cash 11.2% · honest</span></div>
             <div class="stg"><span class="sn">stage 6</span> orders · close T, fill open T+1 <span class="sv">3 orders → 2027-03-20</span></div>
           </div>
+          <p class="ph" style="margin-top:16px">what almost happened today (UX-7)</p>
+          <div class="nearrow"><span class="sym">TSLA</span><span>scored 0.68 · just under the wish-list bar</span><span class="rsn">rank 26 of 25 · log →</span></div>
+          <div class="nearrow"><span class="sym">SMCI</span><span>wanted 3.1% · trimmed by participation cap</span><span class="rsn">cap 1.9% ADV · log →</span></div>
+          <div class="nearrow"><span class="sym">COIN</span><span>selected then rejected by guardrail</span><span class="rsn">sector cap 35% · log →</span></div>
+          <div class="nearrow" style="border-bottom:none"><span class="sym">MRNA</span><span>held position · live distance-to-exit</span><span class="rsn">rank &lt; 80 · now 71 · held 23d</span></div>
         </div>
         <div>
           <div class="pack">
@@ -706,6 +759,14 @@
   <div class="desktop">
     <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /allocation</span></div>
     <div class="pad">
+      <p class="ph">the book · one stacked bar (gold = live capital; baselines never allocatable, UX-9)</p>
+      <div class="allocbar">
+        <div class="seg" style="width:28%;background:#E9B44C">28%</div>
+        <div class="seg" style="width:27%;background:#C79A45">27%</div>
+        <div class="seg" style="width:25%;background:#A8823C">25%</div>
+        <div class="seg" style="width:20%;background:#8A6D34;color:#e8ecf5">20%</div>
+      </div>
+      <p class="foot" style="margin:0 0 16px">momentum:v1 28% · llm-contestant-01 27% · lowvol:v1 25% · control 20%</p>
       <div class="tw"><table class="lb">
         <tr><th>strategy</th><th>α̂ · se</th><th>shrunk α̃</th><th>target → applied</th><th>binding clamp</th></tr>
         <tr class="math"><td><span class="name">momentum:v1</span></td><td class="val">1.4 · 2.4</td><td class="val">0.9</td><td><span class="val">31% → 28%</span></td><td><span class="chip early">too-early tilt cap</span></td></tr>
@@ -713,6 +774,9 @@
         <tr class="math"><td><span class="name">lowvol:v1</span></td><td class="val">0.6 · 2.1</td><td class="val">0.5</td><td><span class="val">24% → 25%</span></td><td><span class="chip neutral">floor 5% clear</span></td></tr>
         <tr class="ai"><td><span class="name">llm-contestant-01 · ctrl</span></td><td class="val">0.4 · 1.2</td><td class="val">0.4</td><td><span class="val">18% → 20%</span></td><td><span class="chip neutral">renormalize</span></td></tr>
       </table></div>
+      <p class="ph" style="margin-top:16px">weight history · momentum:v1 · each bar a rebalance, dot = band-move (links to allocation_log)</p>
+      <div class="wh"><i style="height:40%"></i><i style="height:44%"></i><i style="height:52%"></i><i class="mv" style="height:60%"></i><i style="height:58%"></i><i style="height:55%"></i><i class="mv" style="height:48%"></i><i style="height:50%"></i></div>
+      <p class="foot" style="margin-top:8px">each band-move marker opens its allocation_log row (UX-9)</p>
       <p class="foot">weights reconstruct from allocation_log (NFR-2) · allocator value-add vs static equal weight: <span class="val dim">+0.3%/yr</span> <span class="gauge"><i class="in" style="left:58%"></i></span> <span class="mde">±1.1 · §1.2 KPI</span></p>
     </div>
   </div>
@@ -792,18 +856,39 @@
           <p class="foot" style="margin-top:8px">every feed has a named source, a cross-check, and a fail-closed rule (§13) · divergence freezes, never guesses</p>
         </div>
       </div>
+      <div class="admin" style="margin-top:16px">
+        <p class="ah">admin intervention · manual unfreeze (D55) · amber, never verdict gold</p>
+        <div class="grid2">
+          <div>
+            <p class="foot" style="margin-top:0">A frozen NVDA position needs a manual corporate-action ratio. Interventions are typed-to-confirm, preview the exact rows, and write an audit trail.</p>
+            <div class="confirm">type "UNFREEZE NVDA" to confirm &nbsp;›&nbsp; <span style="color:var(--amber)">UNFREEZE NVDA▮</span></div>
+          </div>
+          <div>
+            <p class="ph">rows this action will write</p>
+            <div class="preview">+ <b>corporate_actions</b> (source='manual', split 10:1, ex 2027-03-18)<br>+ <b>admin_actions</b> (actor, reason, ts, before/after)<br>~ <b>positions</b> NVDA unfrozen · 210 → 2,100 sh<br><br>audit trail renders beneath on commit (D55)</div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
   <!-- ================= 12 journal / pre-registration ================= -->
   <div class="section-label"><span class="n">16</span><h2>Analysis &amp; journal · pre-registration is the path of least resistance</h2><span class="tag">GET /api/v1/journal</span></div>
-  <p class="note">The research journal (D52). Registering a hypothesis before it runs is made the easy default, and a
-  locked hypothesis can only be closed by the outcome path, never quietly edited. This is the seam the researcher
-  seat feeds into and the loop closes through.</p>
+  <p class="note">The research journal (D52), two panes plus the assistant. Left: the research-assistant actions
+  (regime brief, bull/bear, skeptic), each showing its budget cost before you dispatch it (UX-10a). Middle:
+  registering a hypothesis, the easy default; a locked row closes only by the outcome path. Right: the journal by
+  kind. This is the seam the researcher seat feeds into.</p>
   <div class="desktop">
     <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /journal</span></div>
     <div class="pad">
-      <div class="grid2">
+      <div class="grid3">
+        <div class="panel">
+          <p class="ph">research-assistant actions (D46)</p>
+          <div class="aa"><span class="cost">$0.01</span><p class="t">Today's regime brief</p><p class="d">one batched read → regime label + rationale</p></div>
+          <div class="aa"><span class="cost">$0.02</span><p class="t">Bull / bear brief</p><p class="d">structured case on a surfaced name</p></div>
+          <div class="aa"><span class="cost">$0.03</span><p class="t">Run the skeptic</p><p class="d">paste a strategy's stats → the overfitting story</p></div>
+          <p class="foot" style="margin-top:2px">cost shown before dispatch · output lands as a linked journal entry (UX-10a) · these are assistant reads, separate from the seats</p>
+        </div>
         <div class="panel">
           <p class="ph">register a hypothesis</p>
           <div class="steps">
