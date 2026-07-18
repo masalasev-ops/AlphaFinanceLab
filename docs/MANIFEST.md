@@ -1,6 +1,6 @@
 # AlphaLab — Complete Design Package (revision v1.9)
 
-This is the **full, self-contained** design package. Design revision v1.9. Build status is live, not pre-implementation: Phase 0 and Phase 1 have shipped and Phase 2 (funnel + ledger) is merged. The full pass-by-pass history (v4/v5/v6 through the v1.9.21 AI-role pass, every CHANGELOG finding and decision D1-D82) lives in `docs/CHANGELOG_v1.9.md`; current phase, test count, and the open-item list live in `PROGRESS.md`. Consult those two rather than any count or status quoted inline, which may lag. Every file here is current; nothing external is required.
+This is the **full, self-contained** design package. Design revision v1.9. Build status is live, not pre-implementation: Phase 0 and Phase 1 have shipped and Phase 2 (funnel + ledger) is merged. The full pass-by-pass history (v4/v5/v6 through the v1.9.23 reconciliation pass, every CHANGELOG finding and decision D1-D83) lives in `docs/CHANGELOG_v1.9.md`; current phase, test count, and the open-item list live in `PROGRESS.md`. Consult those two rather than any count or status quoted inline, which may lag. Every file here is current; nothing external is required.
 
 Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to drive the build).
 
@@ -13,7 +13,7 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `CLAUDE.md` (repo root) — hard rules, solution layout, commands (the constitution the build obeys).
 
 **The design**
-- `docs/MASTER_DESIGN_v1.9.md` — the comprehensive document: decisions D1–D78,
+- `docs/MASTER_DESIGN_v1.9.md` — the comprehensive document: decisions D1–D83,
   architecture, golden rules, math appendix, UI boundary.
 - `docs/ARENA_ARCHITECTURE_v1.9.3.md` — how AlphaLab supports multiple isolated universes
   ("arenas"); decision D71. Additive, no schema change; the S&P 500 build is unaffected.
@@ -42,13 +42,13 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `docs/OVERFITTING_MONITOR_v1.9.md` — the eight-signal overfitting monitor.
 - `docs/DESIGN_IMPROVEMENTS_v1.9.md` — the honest-metrics rationale and power tables.
 - `docs/DESIGN_IMPROVEMENTS_EXPLAINED.md` — the plain-language "why" companion to the above (onboarding; section numbers match the spec).
-- `docs/UX_GUIDELINES_v1.9.md` — the UX honesty rules (UX-1…UX-13, incl. the arena no-merge rule).
+- `docs/UX_GUIDELINES_v1.9.md` — the UX honesty rules (UX-1…UX-14, incl. the arena no-merge rule and the paired-comparison screen).
 
 **UI mockups (reference for the Phase 3 screens)**
 - `docs/alphalab_ux_mockups.html` (the single consolidated UX mockup — every screen; supersedes the earlier per-topic mockup files)
 
 **Revision history**
-- `docs/CHANGELOG_v1.9.md` — every consistency finding and decision, v1.9.1 through v1.9.16.
+- `docs/CHANGELOG_v1.9.md` — every consistency finding and decision, v1.9.1 through v1.9.23.
 
 ## Revision state
 - v1.9.1 errata (findings 59–75; D68–D69) — merged.
@@ -144,5 +144,21 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   (grounded in the `Sizing.Mode` enum — `inverse_vol` / `equal(dummies)` / `kelly(P6+)` — and DESIGN_IMPROVEMENTS
   §3.1): Phase 2 gets FR-11 "(partial)" (the dummies' simple/equal sizing), Phase 6 gets FR-11 "full" (inverse-vol
   + LW covariance). A BUILD-phasing edit, not a new decision; D42 unchanged.
-- The mockups are byte-identical to the original v1.9.1 upload (never needed changes). SCHEMA
-  received its first post-v1.9.1 edit in v1.9.7 (the `config` composite PK + invariant notes).
+- v1.9.17–v1.9.21 (the Phase-2 build passes, lettered findings A–NN, decisions D72–D82, golden rule 32) — merged;
+  the per-pass detail lives in `docs/CHANGELOG_v1.9.md` and `PROGRESS.md` (the finding-173 rule: no duplicated
+  inline status here).
+- v1.9.22 strategy-catalog expansion + AI-pass follow-through (findings 174–177, **recorded retroactively in
+  v1.9.23** — the four commits shipped without CHANGELOG rows) — merged. Catalog §6.5–6.7 (ResidualMomentum,
+  TimeSeriesMomentum, BettingAgainstBeta) + §12.5 references; UX-14 + the replay recolour (violet→slate-grey,
+  `--violet` reassigned to AI-seat identity); TEST_PLAN §6 AI-seat fixtures; DESIGN_IMPROVEMENTS §4 three-seat rewrite.
+- v1.9.23 reconciliation pass (findings 174–199; decision **D83**) — merged. **Docs only; tests stay 528.**
+  Retroactive v1.9.22 CHANGELOG section; BUILD reconciled to MASTER §23 (the retired blend-A/B and sentiment-score
+  framings removed from Phase 5/6); the three new strategies propagated (BUILD Phase 6, MASTER §9, DESIGN_IMPROVEMENTS §3.1);
+  D83 resolves the D41 contradiction (factor returns as §6.5's availability-lagged signal input); catalog
+  completions (SignFlip, AllPositive, seeded tie-break, `RandomPop-Event`, §6.7 seams, §12 trials arithmetic);
+  monitor AI-seat handling (§3½); eight Phase-2-review code findings recorded with deadlines (190–197);
+  proposals P8–P11 opened.
+- The mockups were consolidated into the single `alphalab_ux_mockups.html` in the v1.9.21/v1.9.22 passes
+  (the earlier per-topic and v2 files are gone; the consolidated file gained the UX-14 paired-comparison block
+  and the slate-grey replay tokens in v1.9.22). SCHEMA received its first post-v1.9.1 edit in v1.9.7
+  (the `config` composite PK + invariant notes).
