@@ -425,11 +425,44 @@ CREATE TABLE data_quality_flags (                  -- D77: persisted FR-6 gate f
 CREATE INDEX ix_data_quality_flags_run ON data_quality_flags(run_id);
 
 ------------------------------------------------------------------
+-- AI SEATS (D79-D82, v1.9.21) — persisted inputs and outputs of the AI seats (§23.5)
+-- Append-only. NOT on the statistical hot path. No AI value feeds any metric/verdict (golden rule 32).
+------------------------------------------------------------------
+CREATE TABLE ai_context_packs (                    -- exactly what an AI seat was shown, hashed + watermarked (D80)
+  pack_id        INTEGER PRIMARY KEY,              -- plain rowid, no AUTOINCREMENT (rule 14)
+  seat           TEXT NOT NULL CHECK (seat IN ('researcher','contestant','advisor')),
+  strategy_id    TEXT,                             -- contestant only; NULL for researcher/advisor
+  as_of          TEXT NOT NULL,
+  watermark      TEXT NOT NULL,                    -- the D40 data watermark the pack was built at
+  recipe_version TEXT NOT NULL,                    -- Ai.PackRecipeVersion at build time (a frozen param, D81)
+  pack_json      TEXT NOT NULL,                    -- derived features only — NEVER raw series (D80)
+  pack_hash      TEXT NOT NULL,                    -- SHA-256 of pack_json; the audit key
+  token_estimate INTEGER NOT NULL,
+  created_at     TEXT NOT NULL
+);
+CREATE UNIQUE INDEX ux_ai_context_packs ON ai_context_packs(seat, strategy_id, as_of, recipe_version);
+
+CREATE TABLE ai_decisions (                        -- the persisted contestant output IS the decision (D81)
+  decision_id    INTEGER PRIMARY KEY,              -- plain rowid, no AUTOINCREMENT (rule 14)
+  strategy_id    TEXT NOT NULL,
+  as_of          TEXT NOT NULL,
+  pack_hash      TEXT NOT NULL,                    -- ties the decision to the exact ai_context_packs row seen
+  prompt_version TEXT NOT NULL,                    -- frozen param (D81); any change forks a candidate (rule 24)
+  model_version  TEXT NOT NULL,                    -- vendor-neutral model id (frozen param)
+  output_json    TEXT NOT NULL,                    -- the scores; the funnel READS this, never the API (D81)
+  tokens_in      INTEGER NOT NULL,
+  tokens_out     INTEGER NOT NULL,
+  cost_usd       TEXT NOT NULL,                    -- decimal TEXT (D69), never REAL
+  created_at     TEXT NOT NULL
+);
+CREATE UNIQUE INDEX ux_ai_decisions ON ai_decisions(strategy_id, as_of, prompt_version);
+
+------------------------------------------------------------------
 -- WORKER / API INFRA (D59/D60) — created by Phase 0's InitialCreate
 ------------------------------------------------------------------
 CREATE TABLE jobs (                                -- async-command queue (API enqueues, Worker executes)
   job_id       INTEGER PRIMARY KEY,
-  kind         TEXT NOT NULL CHECK (kind IN ('replay','analysis_brief','analysis_skeptic')),
+  kind         TEXT NOT NULL CHECK (kind IN ('replay','analysis_brief','analysis_skeptic','analysis_hypotheses')),  -- 'analysis_hypotheses' added v1.9.21 (D82/§23.4)
   status       TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','running','done','failed')),
   submitted_at TEXT NOT NULL,
   started_at   TEXT,
@@ -461,8 +494,9 @@ CREATE TABLE worker_state (                        -- single row, seeded by Phas
 - **D52:** UPDATEs to a `locked=1` hypothesis row outside the outcome-closure code path are a bug; add a trigger or repository guard + test.
 - **D55:** the only write path to `admin_actions` (and to `source='manual'` domain rows) is the typed-confirmation admin flow.
 - **D57/D58:** no schema change — read-models are computed projections over these tables, served by `AlphaLab.Api`; the UI never queries the DB directly.
+- **D79-D82 (v1.9.21):** `ai_context_packs` and `ai_decisions` are append-only, off the statistical hot path, and hold the AI seats' persisted inputs/outputs. `pack_hash` links a decision to the exact pack seen; a re-run of a day consumes the stored `ai_decisions` row (0 API calls — `FX-AiDecisionIsTheRow`), which is how a nondeterministic sampler satisfies determinism (NFR-1 = f(inputs, watermark, seeds, **stored AI outputs**)). No column here feeds any metric, verdict, threshold, or population (golden rule 32). `cost_usd` is `decimal TEXT` (D69). Both integer PKs are plain rowids — no AUTOINCREMENT (rule 14).
 - **D59/D60:** the `jobs` and `worker_state` tables (full DDL above) back the API's async-command pattern and the Worker's queue; `worker_state` is a single seeded row exposing the writer's status to the API for the 409/queue decision. Neither is on the statistical hot path.
 - **D69:** ledger money columns marked `decimal TEXT` above map to C# `decimal` (EF Core's default SQLite mapping stores exact decimal strings). Never map a money property to `double`/REAL; REAL is reserved for market-data prices and derived statistics.
 - **v1.9.7 finding 108 — `config` is append-only-versioned:** the PK is `(key, version)`; the current value is `MAX(version)` per key; a change INSERTs `version+1` and never UPDATEs or DELETEs an existing row. The Phase-4 calibration curves (D56/D63) rely on this to keep their version history. **Migration-path note (v1.9.8, A.3-1):** for a **from-scratch build** the composite PK ships **inside `InitialCreate`** (there is no prior `config` table to migrate) — this is what BUILD checkpoint 0.3 does and what `SchemaFidelityTests` asserts on-disk. The "snapshot-gated `ConfigVersionedRows` migration" language elsewhere describes the *other* context: retrofitting an **already-deployed** single-column `config` store. Both are correct in their setting; a from-scratch rebuild will not find (and should not hunt for) a separate `ConfigVersionedRows` migration.
 - **v1.9.7 finding 109 — forward-run uniqueness:** enforced by the partial index `ux_runs_ok_forward` (created in Phase 2) — at most one `status='ok'` row per `as_of` for `run_kind IN ('live','catchup')`; replay runs and failed retries are deliberately exempt.
-- **v1.9.7 finding 121 — enum CHECK columns extend only via migration:** `jobs.kind`, `jobs.status`, `runs.run_kind`, `corporate_actions.type`, `data_quality_flags.issue`/`severity` (D77), `overfitting_status.status`, `journal_entries.kind`/`outcome`, `admin_actions.kind`, `trading_calendar.session`, and `regime_labels.trend`/`vol` carry CHECK-IN constraints; adding an allowed value (e.g. a future `jobs.kind`) is a versioned migration + a SCHEMA edit in the same PR — never an unlisted write.
+- **v1.9.7 finding 121 — enum CHECK columns extend only via migration:** `jobs.kind` (its `analysis_hypotheses` value added v1.9.21 by exactly this migration rule, D82), `jobs.status`, `runs.run_kind`, `corporate_actions.type`, `data_quality_flags.issue`/`severity` (D77), `overfitting_status.status`, `journal_entries.kind`/`outcome`, `admin_actions.kind`, `trading_calendar.session`, `regime_labels.trend`/`vol`, and `ai_context_packs.seat` (D80) carry CHECK-IN constraints; adding an allowed value (e.g. a future `jobs.kind`) is a versioned migration + a SCHEMA edit in the same PR — never an unlisted write.

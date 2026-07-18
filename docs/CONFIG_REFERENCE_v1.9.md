@@ -234,6 +234,25 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
 
   "FactorData": { "RefreshDayOfMonth": 5 }         // D41 French library pull
 }
+
+  "Ai": {                                          // D79-D82 (v1.9.21) — the AI seats; budgets are per-seat hard caps (D24)
+    "PackRecipeVersion": "cp-1.0",                 // context-pack recipe id; a frozen param (D80) — a change forks candidates
+    "Contestant": {                                // the LLM decision layer as a first-class IModel (D81)
+      "Model": "llm-a",                            // vendor-neutral model id (Anthropic, local LM Studio, etc.) — set per frozen param, never hardcoded in code
+      "ShortlistSize": 25,                         // the deterministic local pre-filter hands the LLM at most this many names (Level-3 whole-universe scoring stays unreachable, D24)
+      "DailyBudgetUsd": 0.05                        // on exhaustion the contestant ABSTAINS (empty score map — the funnel's honest "nothing scored"), never a padded/stale decision
+    },
+    "Researcher": {                                // the generative seat (D82); runs weekly/on-demand
+      "Model": "llm-b",                            // may differ from the contestant's; a frozen param
+      "MonthlyBudgetUsd": 5.0                       // on exhaustion the researcher job simply queues
+    }
+  },                                               // NOTE: per-strategy frozen params (prompt hash, model id, shortlist size, memory option + rule R) live in strategies.config_json, NOT here (key rule 1)
+
+  "Research": {                                    // D82 — the trials budget that rations self-improvement's deflated-Sharpe spend (S2)
+    "ForkBudgetPerYear": 6,                        // fork cadence; surfaced beside the trials count in the research UI
+    "MaxConcurrentCandidates": 3                   // matches the "1 Live + 2-3 Candidates" roster shape (§8)
+  },
+
 ```
 
 ## tools/Backfill/appsettings.json (the one-time bootstrap CLI — D65/D70)
