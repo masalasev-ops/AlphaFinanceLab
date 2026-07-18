@@ -112,8 +112,13 @@ public sealed class DailyPipeline(
         {
             try
             {
-                // Refresh the heartbeat at Stage-2 start (belt to the HeartbeatService's separate-connection
-                // beat): a long day stays 'live' rather than tripping a false stale-positive (D72).
+                // POST-COMMIT heartbeat refresh ONLY (v1.9.20 finding NN) — this write sits INSIDE the
+                // Stage-2 transaction, so it is invisible to every other connection until commit and lands
+                // already stale by the transaction's duration. It is NOT a mid-transaction liveness signal:
+                // during a long Stage 2 the HeartbeatService's own-connection beats block on the write lock
+                // too, so heartbeat_at effectively freezes at its pre-transaction value. The protections
+                // against a false stale-positive are the run-open stamp (step 2's committed txn), the 5×
+                // StaleRunThresholdSeconds headroom, and the 3× slow-transaction warning after commit.
                 StampHeartbeat();
 
                 IngestStaged(staged, watermark);
@@ -487,9 +492,10 @@ public sealed class DailyPipeline(
     private WorkerStateRow WorkerStateRow() =>
         db.WorkerState.First(w => w.Id == 1);
 
-    // Advance heartbeat_at on the CURRENT (Stage-2) context/transaction. No SaveChanges here — the change
-    // is tracked and committed with the rest of the day (a rollback correctly discards it; the OpenRun
-    // stamp from step 2's committed txn survives).
+    // Advance heartbeat_at on the CURRENT (Stage-2) context/transaction — visible only AT commit, and by
+    // then already stale by the transaction's duration (finding NN: a refresh, not a liveness signal). No
+    // SaveChanges here — the change is tracked and committed with the rest of the day (a rollback correctly
+    // discards it; the OpenRun stamp from step 2's committed txn survives).
     private void StampHeartbeat() => WorkerStateRow().HeartbeatAt = NowIso();
 
     private string NowIso() => clock.GetUtcNow().UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);

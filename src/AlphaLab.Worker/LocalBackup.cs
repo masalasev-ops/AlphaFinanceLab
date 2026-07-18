@@ -9,8 +9,14 @@ using Microsoft.Extensions.Logging;
 namespace AlphaLab.Worker;
 
 /// <summary>What the per-launch backup did. <see cref="Created"/> ⇒ a fresh dated copy was written this
-/// launch; false ⇒ today's copy already existed (a same-day re-launch) and was skipped.</summary>
-public sealed record LocalBackupResult(bool Created, string? BackupPath, int Pruned);
+/// launch; false ⇒ today's copy already existed (a same-day re-launch) and was skipped, OR the step failed
+/// closed (<see cref="Failed"/>) and wrote nothing.</summary>
+public sealed record LocalBackupResult(bool Created, string? BackupPath, int Pruned, string? FailureReason = null)
+{
+    /// <summary>The backup ABORTED (rule 10) — no file was written this launch. Distinct from the benign
+    /// same-day skip, where today's copy already exists.</summary>
+    public bool Failed => FailureReason is not null;
+}
 
 /// <summary>
 /// Step 4 of the D72 launch order (checkpoint 2.12) / RUNBOOK §3: the per-launch LOCAL backup. It runs after
@@ -23,6 +29,12 @@ public sealed record LocalBackupResult(bool Created, string? BackupPath, int Pru
 /// prune copies older than Ops.BackupRetentionDays. Pruning is by the DATE IN THE FILENAME (deterministic),
 /// not file mtime. The backup directory derives from the resolved Data Source via the pure
 /// <see cref="DbPathResolver.BackupDirectory"/> — arena-namespaced by construction (rule 23).
+///
+/// A BUSY checkpoint fails CLOSED (v1.9.20 finding MM). The Api running as a separate reader process is a
+/// supported topology, so a reader can hold the WAL while we checkpoint: a copy taken then can silently
+/// omit recently committed transactions (or catch a partially applied checkpoint). Rule 10: retry the
+/// checkpoint a small bounded number of times; if still busy, abort loudly and write NO file — a backup of
+/// unknown integrity is worse than a missing one with a visible error.
 /// </summary>
 public sealed class LocalBackup(
     IServiceScopeFactory scopeFactory,
@@ -31,7 +43,15 @@ public sealed class LocalBackup(
     ArenaOptions arena,
     ILogger<LocalBackup> logger)
 {
-    public Task<LocalBackupResult> BackupAsync(CancellationToken ct = default)
+    // Bounded checkpoint retry (finding MM): the common blocker (an Api read mid-flight) clears in
+    // milliseconds, so each attempt waits at most CheckpointBusyWaitSeconds on SQLite's busy handler and we
+    // retry a few times with a short pause. Anything that survives ~3.6s of retrying deserves a loud abort,
+    // not a longer wait.
+    private const int CheckpointAttempts = 3;
+    private const int CheckpointBusyWaitSeconds = 1;
+    private static readonly TimeSpan CheckpointRetryDelay = TimeSpan.FromMilliseconds(200);
+
+    public async Task<LocalBackupResult> BackupAsync(CancellationToken ct = default)
     {
         using var arenaScope = logger.BeginArenaScope(arena);
         using var scope = scopeFactory.CreateScope();
@@ -47,7 +67,7 @@ public sealed class LocalBackup(
         {
             // Nothing to back up (e.g. a store that was never created). Not fatal — log and move on.
             logger.LogWarning("Local backup: store '{DbPath}' does not exist — skipping.", dbPath);
-            return Task.FromResult(new LocalBackupResult(false, null, 0));
+            return new LocalBackupResult(false, null, 0);
         }
 
         Directory.CreateDirectory(backupDir);
@@ -58,33 +78,57 @@ public sealed class LocalBackup(
             // have advanced), but do not overwrite (idempotent per day).
             var prunedOnly = PruneOldBackups(backupDir, today, ops.BackupRetentionDays);
             logger.LogInformation("Local backup: today's copy already exists ({File}) — skipped; pruned {Pruned}.", backupFile, prunedOnly);
-            return Task.FromResult(new LocalBackupResult(false, backupFile, prunedOnly));
+            return new LocalBackupResult(false, backupFile, prunedOnly);
         }
 
-        Checkpoint(db);
+        var busy = await CheckpointWithRetryAsync(db, ct).ConfigureAwait(false);
+        if (busy != 0)
+        {
+            // FAIL CLOSED (rule 10 / finding MM): the main file may lack recently committed transactions,
+            // so copying it would produce a backup of unknown integrity. Abort — no file, loud error.
+            var reason = $"wal_checkpoint(TRUNCATE) still busy after {CheckpointAttempts} attempt(s) — no backup written";
+            logger.LogError(
+                "Local backup ABORTED (fail closed): {Reason}. A reader (e.g. the Api) is holding the WAL; " +
+                "re-launch after it finishes, or stop the reader. A backup of unknown integrity is worse than a missing one with a visible error.",
+                reason);
+            return new LocalBackupResult(false, null, 0, reason);
+        }
+
         File.Copy(dbPath, backupFile, overwrite: false);
 
         var pruned = PruneOldBackups(backupDir, today, ops.BackupRetentionDays);
         logger.LogInformation("Local backup: wrote {File}; pruned {Pruned} copy(ies) older than {Days} day(s).",
             backupFile, pruned, ops.BackupRetentionDays);
-        return Task.FromResult(new LocalBackupResult(true, backupFile, pruned));
+        return new LocalBackupResult(true, backupFile, pruned);
     }
 
-    // Fold the WAL into the main .db so the file copy is a complete, consistent snapshot. A non-zero busy
-    // flag means a reader blocked a full truncate — logged, not fatal (the copy is still consistent up to the
-    // last committed frame folded in).
-    private void Checkpoint(AlphaLabDbContext db)
+    private async Task<int> CheckpointWithRetryAsync(AlphaLabDbContext db, CancellationToken ct)
+    {
+        var busy = 0;
+        for (var attempt = 1; attempt <= CheckpointAttempts; attempt++)
+        {
+            busy = Checkpoint(db);
+            if (busy == 0) return 0;
+            logger.LogWarning("Local backup: wal_checkpoint(TRUNCATE) busy={Busy} (attempt {Attempt}/{Max}) — a reader is using the WAL.",
+                busy, attempt, CheckpointAttempts);
+            if (attempt < CheckpointAttempts) await Task.Delay(CheckpointRetryDelay, ct).ConfigureAwait(false);
+        }
+        return busy;
+    }
+
+    // Fold the WAL into the main .db so the file copy is a complete, consistent snapshot. Returns the
+    // pragma's busy column: non-zero means the checkpoint could NOT complete (a reader holds the WAL) and
+    // the main file may lack recently committed transactions — the CALLER must abort rather than copy
+    // (rule 10). CommandTimeout bounds the per-attempt wait on SQLite's internal busy handler.
+    private int Checkpoint(AlphaLabDbContext db)
     {
         var conn = db.Database.GetDbConnection();
         if (conn.State != ConnectionState.Open) conn.Open();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+        cmd.CommandTimeout = CheckpointBusyWaitSeconds;
         using var reader = cmd.ExecuteReader();
-        if (reader.Read())
-        {
-            var busy = reader.GetInt32(0);
-            if (busy != 0) logger.LogWarning("Local backup: wal_checkpoint(TRUNCATE) returned busy={Busy} — a reader was active.", busy);
-        }
+        return reader.Read() ? reader.GetInt32(0) : 0;
     }
 
     private int PruneOldBackups(string backupDir, DateOnly today, int retentionDays)

@@ -76,6 +76,17 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
                                                    // default on a fresh store; appsettings documents the default, the DB row is what the accounts opened at.
   },
 
+  "Benchmark": {                                   // v1.9.20 (finding LL) — the §5.1 cap-weight benchmark's traded ETF proxy
+    "CapWeightProxySecurityId": null               // NEVER set in appsettings — the key exists ONLY as a versioned `config` row
+                                                   // Benchmark.CapWeightProxySecurityId (MAX(version) — the Regime.ProxySecurityId precedent), holding
+                                                   // the resolved proxy ETF's security_id. The OPERATOR writes it after ingesting the proxy as a real
+                                                   // security with its own bars + dividends (OEF.US while Universe.Bootstrap.MembershipPrimary=oef_csv;
+                                                   // IVV.US when the D70 widening flips it to ivv_csv — CapWeightProxy.SymbolFor, never hardcoded).
+                                                   // The D53 pipeline reads it every run: the proxy joins the Stage-1 fetch set, and it IS the CW
+                                                   // account's universe. ABSENT ⇒ the CW account holds cash — a LOGGED readiness gap (rule 10),
+                                                   // never a guessed symbol.
+  },
+
   "Sizing": {                                      // D32/D42
     "Mode": "inverse_vol",                        // inverse_vol | equal(dummies) | kelly(P6+)
     "PortfolioVolTargetAnn": 0.12,

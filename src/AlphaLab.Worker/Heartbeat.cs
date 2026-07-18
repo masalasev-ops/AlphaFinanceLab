@@ -29,10 +29,12 @@ public sealed class HeartbeatWriter(AlphaLabDbContext db, TimeProvider clock)
 /// <summary>
 /// The liveness heartbeat (D72): a BackgroundService that beats every Worker.HeartbeatSeconds while a run is
 /// in progress, on its OWN DI scope (own DbContext + connection). It runs for the whole launch alongside the
-/// OnDemand runner; StopApplication at the end of catch-up cancels it. The pipeline ALSO stamps the heartbeat
-/// at run-open and at Stage-2 start — this service is the backstop for a single day that runs long enough to
-/// approach the stale threshold (5× headroom at the Phase-3 &lt;60s target). A tick failure is logged and
-/// retried next period, never fatal.
+/// OnDemand runner; StopApplication at the end of catch-up cancels it. Its beats land BETWEEN the per-day
+/// transactions of a long catch-up; DURING a single day's Stage-2 transaction the UPDATE blocks on the write
+/// lock and lands only at commit (v1.9.20 finding NN), so within one day the guards against a false
+/// stale-positive are the run-open stamp (the small committed txn), the 5× StaleRunThresholdSeconds
+/// headroom over the Phase-3 &lt;60s day target, and the pipeline's 3× slow-transaction warning. A tick
+/// failure is logged and retried next period, never fatal.
 /// </summary>
 public sealed class HeartbeatService(
     IServiceScopeFactory scopeFactory,
