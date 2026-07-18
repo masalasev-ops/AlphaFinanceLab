@@ -96,7 +96,7 @@ public class SchemaFidelityTests
     }
 
     [Fact]
-    public void Schema_ExactlyTheFifteenTables_Exist()
+    public void Schema_ExactlyTheTwentyFiveTables_Exist()
     {
         var dbPath = TempDb();
         try
@@ -113,14 +113,30 @@ public class SchemaFidelityTests
             using var reader = cmd.ExecuteReader();
             while (reader.Read()) tables.Add(reader.GetString(0));
 
-            // Phase 0 infra(5) + Phase 1 data(9) + the D77 pre-Phase-2 data_quality_flags(1) = 15.
-            // regime_labels/regime_episodes/features/factor_* and the ux_runs_ok_forward partial index
-            // are deliberately deferred to Phase 2.
+            // Phase 0 infra(5) + Phase 1 data(9) + the D77 pre-Phase-2 data_quality_flags(1)
+            // + the Phase-2 checkpoint-2.2 ledger(8) + the checkpoint-2.8 regime tables(2) = 25.
+            //
+            // STILL deliberately absent, and each for its own reason — this list is the guard
+            // against a table appearing before the phase that earns it:
+            //   • features        — NOT Phase 2 at all. It has no observed_at/version column, so it
+            //                       cannot express the watermark read rule (rule 4); persisting a
+            //                       feature computed at watermark W and re-reading it at W' is a leak
+            //                       F-LEAK could not catch. No Phase-2 strategy needs it (B&H never
+            //                       re-scores; ThresholdModel is trivial), and IFeatureView computes
+            //                       over the versioned bar reader instead — leak-proof by
+            //                       construction. Phase 6 decides the shape it actually needs.
+            //   • control_populations / control_equity — Phase 3
+            //   • factor_returns / factor_refresh_log  — Phase 6
+            //   • journal_entries / admin_actions      — Phase 7
+            // The ux_runs_ok_forward partial index lands in checkpoint 2.10 (M3), where Stage 2
+            // first writes runs.
             Assert.Equal(new[]
             {
-                "api_usage_log", "bars", "catchup_log", "config", "corporate_actions",
-                "data_quality_flags", "index_membership", "index_membership_log", "jobs", "runs",
-                "sector_changes", "securities", "ticker_history", "trading_calendar", "worker_state"
+                "accounts", "api_usage_log", "bars", "capacity_rejections", "cash_events",
+                "catchup_log", "config", "corporate_actions", "data_quality_flags", "decisions",
+                "equity_curve", "index_membership", "index_membership_log", "jobs", "positions",
+                "regime_episodes", "regime_labels", "runs", "sector_changes", "securities",
+                "strategies", "ticker_history", "trades", "trading_calendar", "worker_state"
             }, tables);
         }
         finally { TryDelete(dbPath); }
@@ -191,8 +207,9 @@ public class SchemaFidelityTests
             using (var db = NewContext(dbPath)) db.Database.Migrate();
 
             // Every bare INTEGER PRIMARY KEY per SCHEMA — the migration hand-edit removed AUTOINCREMENT.
-            // Phase 0: runs, jobs. Phase 1: securities, corporate_actions, index_membership_log. D77: data_quality_flags.
-            foreach (var table in new[] { "runs", "jobs", "securities", "corporate_actions", "index_membership_log", "data_quality_flags" })
+            // Phase 0: runs, jobs. Phase 1: securities, corporate_actions, index_membership_log. D77:
+            // data_quality_flags. Checkpoint 2.8: regime_episodes.
+            foreach (var table in new[] { "runs", "jobs", "securities", "corporate_actions", "index_membership_log", "data_quality_flags", "regime_episodes" })
             {
                 Assert.DoesNotContain("AUTOINCREMENT", TableDdl(dbPath, table), StringComparison.OrdinalIgnoreCase);
             }
@@ -252,6 +269,11 @@ public class SchemaFidelityTests
 
             Assert.Contains("ck_corporate_actions_type", TableDdl(dbPath, "corporate_actions"));
             Assert.Contains("ck_trading_calendar_session", TableDdl(dbPath, "trading_calendar"));
+            // regime_labels carries the two cross-product CHECKs (D50); regime_episodes carries none.
+            Assert.Contains("ck_regime_labels_trend", TableDdl(dbPath, "regime_labels"));
+            Assert.Contains("ck_regime_labels_vol", TableDdl(dbPath, "regime_labels"));
+            Assert.Equal(2, Regex.Matches(TableDdl(dbPath, "regime_labels"), "CHECK", RegexOptions.IgnoreCase).Count);
+            Assert.Equal(0, Regex.Matches(TableDdl(dbPath, "regime_episodes"), "CHECK", RegexOptions.IgnoreCase).Count);
             // These data tables carry no CHECK in SCHEMA.
             Assert.Equal(0, Regex.Matches(TableDdl(dbPath, "securities"), "CHECK", RegexOptions.IgnoreCase).Count);
             Assert.Equal(0, Regex.Matches(TableDdl(dbPath, "bars"), "CHECK", RegexOptions.IgnoreCase).Count);
@@ -280,6 +302,55 @@ public class SchemaFidelityTests
                 ObservedAt = "2020-02-01T00:00:00Z", Source = "eodhd"
             });
             Assert.ThrowsAny<Exception>(() => db3.SaveChanges());
+        }
+        finally { TryDelete(dbPath); }
+    }
+
+    [Fact]
+    public void UxRunsOkForward_RejectsASecondForwardOk_ButAllowsReplayAndFailedRetries()
+    {
+        var dbPath = TempDb();
+        try
+        {
+            using (var db = NewContext(dbPath)) db.Database.Migrate();
+
+            // The partial unique index exists on runs (M3 / checkpoint 2.10).
+            using (var db = NewContext(dbPath))
+            {
+                var conn = db.Database.GetDbConnection();
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "SELECT sql FROM sqlite_master WHERE type='index' AND name='ux_runs_ok_forward';";
+                var sql = (string?)cmd.ExecuteScalar();
+                Assert.NotNull(sql);
+                Assert.Contains("as_of", sql);
+                Assert.Matches(new Regex(@"WHERE.*status.*=.*'ok'", RegexOptions.IgnoreCase | RegexOptions.Singleline), sql!);
+            }
+
+            // One 'ok' live row for a day is fine.
+            using (var db = NewContext(dbPath))
+            {
+                db.Runs.Add(new RunRow { AsOf = "2026-01-05", RunKind = "live", Watermark = "w", StartedAt = "t", Status = "ok" });
+                db.SaveChanges();
+            }
+
+            // A SECOND 'ok' FORWARD row for the same as_of is rejected by the store (the partial index).
+            using (var db = NewContext(dbPath))
+            {
+                db.Runs.Add(new RunRow { AsOf = "2026-01-05", RunKind = "catchup", Watermark = "w", StartedAt = "t", Status = "ok" });
+                Assert.ThrowsAny<Exception>(() => db.SaveChanges());
+            }
+
+            // But a FAILED retry (same day) and a REPLAY row over the same date are BOTH allowed — the
+            // index is partial exactly so retries and replay are exempt (v1.9.7 finding 109).
+            using (var db = NewContext(dbPath))
+            {
+                db.Runs.Add(new RunRow { AsOf = "2026-01-05", RunKind = "live", Watermark = "w", StartedAt = "t", Status = "failed" });
+                db.Runs.Add(new RunRow { AsOf = "2026-01-05", RunKind = "replay", Watermark = "w", StartedAt = "t", Status = "ok" });
+                db.Runs.Add(new RunRow { AsOf = "2026-01-05", RunKind = "replay", Watermark = "w2", StartedAt = "t", Status = "ok" });
+                db.SaveChanges(); // no throw
+                Assert.Equal(2, db.Runs.Count(r => r.AsOf == "2026-01-05" && r.RunKind == "replay"));
+            }
         }
         finally { TryDelete(dbPath); }
     }

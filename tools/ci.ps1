@@ -127,6 +127,12 @@ try {
     Assert-NoMatch -Files $codeFiles -Pattern 'DELETE\s+FROM\s+bars\b' -Message 'DELETE FROM bars is forbidden (rule 3).'
     Assert-NoMatch -Files $codeFiles -Pattern 'UPDATE\s+bars\b'         -Message 'UPDATE bars is forbidden (rule 3).'
 
+    # 1b. corporate_actions is versioned append-only too (D76 extended rule 3 to a second table); the
+    #     guard follows. A restatement INSERTs a new version — never an UPDATE/DELETE — and processed_on
+    #     is never written (a global column on a per-account op would break replay; SCHEMA note + P5).
+    Assert-NoMatch -Files $codeFiles -Pattern 'DELETE\s+FROM\s+corporate_actions\b' -Message 'DELETE FROM corporate_actions is forbidden (D76 append-only).'
+    Assert-NoMatch -Files $codeFiles -Pattern 'UPDATE\s+corporate_actions\b'         -Message 'UPDATE corporate_actions is forbidden (D76 append-only; processed_on is never written).'
+
     # 2. No committed secret-key material (D67). appsettings.Secrets.json is gitignored, so it is
     #    excluded from the committable set below.
     $committable = Get-CommittableFiles

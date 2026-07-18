@@ -81,4 +81,33 @@ public class DbPathResolverTests
         Assert.DoesNotContain("{Arena.Id}", resolved);
         Assert.EndsWith(Path.Combine("sp500", "alphalab.db"), DbPathResolver.GetDataSourcePath(resolved));
     }
+
+    // ---- D72 backup-path helpers (checkpoint 2.12): pure, arena-namespaced, no filesystem access ----
+
+    [Fact]
+    public void BackupDirectory_IsAnArenaNamespacedSiblingOfTheStore()
+    {
+        const string cs = "Data Source=E:\\AlphaLabDatabase\\{Arena.Id}\\alphalab.db";
+
+        var sp500 = DbPathResolver.BackupDirectory(DbPathResolver.ResolvePath(cs, "sp500"));
+        var sp100 = DbPathResolver.BackupDirectory(DbPathResolver.ResolvePath(cs, "sp100"));
+
+        Assert.EndsWith(Path.Combine("sp500", "backups"), sp500);
+        // Namespaced per arena — no cross-arena backup bleed (rule 23).
+        Assert.EndsWith(Path.Combine("sp100", "backups"), sp100);
+        Assert.NotEqual(sp500, sp100);
+    }
+
+    [Fact]
+    public void BackupFilePath_IsDatedAndDoesNotTouchTheFilesystem()
+    {
+        var tempBase = Path.Combine(Path.GetTempPath(), "alphalab-bkp-" + Guid.NewGuid().ToString("N"));
+        var resolved = DbPathResolver.ResolvePath($"Data Source={tempBase}\\{{Arena.Id}}\\alphalab.db", "sp500");
+
+        var file = DbPathResolver.BackupFilePath(resolved, new DateOnly(2026, 7, 17));
+
+        Assert.EndsWith(Path.Combine("sp500", "backups", "alphalab-2026-07-17.db"), file);
+        // Pure: nothing was created on disk.
+        Assert.False(Directory.Exists(Path.Combine(tempBase, "sp500", "backups")));
+    }
 }

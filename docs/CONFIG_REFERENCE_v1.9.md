@@ -64,6 +64,29 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     "ParticipationCapPctAdv": 2.0                 // excess rejected + logged
   },
 
+  "CorporateActions": {                            // §13.6 part 2 — the forced-event ledger's configurable rules (CHANGELOG findings B, C). Feeds DORMANT at launch (D49); semantics + fixtures ship, production behaviour is freeze+alert
+    "BankruptcyHaircutPct": 0.0,                    // delist force-exit at last_print × (1 − pct/100); 0 = take the last print (invent no loss); raise per-event for a KNOWN wipeout (Phase-7 admin / versioned config row)
+    "SpinoffLiquidationDays": 0                    // 0 = exit-only (owner's ExitPolicy manages the spun-off receipt); >0 = liquidate after N sessions — EXECUTION is Phase 7, key carried for fidelity
+  },
+
+  "Accounts": {                                    // v1.9.19 (finding K) — the ledger's opening capital
+    "StartingCash": 100000                         // each account (baseline + dummy) opens at $100,000 (decimal → TEXT, D69).
+                                                   // The AUTHORITATIVE runtime value is the versioned `config` row Accounts.StartingCash
+                                                   // (MAX(version) — the Regime.ProxySecurityId precedent), written by DummyRoster from this
+                                                   // default on a fresh store; appsettings documents the default, the DB row is what the accounts opened at.
+  },
+
+  "Benchmark": {                                   // v1.9.20 (finding LL) — the §5.1 cap-weight benchmark's traded ETF proxy
+    "CapWeightProxySecurityId": null               // NEVER set in appsettings — the key exists ONLY as a versioned `config` row
+                                                   // Benchmark.CapWeightProxySecurityId (MAX(version) — the Regime.ProxySecurityId precedent), holding
+                                                   // the resolved proxy ETF's security_id. The OPERATOR writes it after ingesting the proxy as a real
+                                                   // security with its own bars + dividends (OEF.US while Universe.Bootstrap.MembershipPrimary=oef_csv;
+                                                   // IVV.US when the D70 widening flips it to ivv_csv — CapWeightProxy.SymbolFor, never hardcoded).
+                                                   // The D53 pipeline reads it every run: the proxy joins the Stage-1 fetch set, and it IS the CW
+                                                   // account's universe. ABSENT ⇒ the CW account holds cash — a LOGGED readiness gap (rule 10),
+                                                   // never a guessed symbol.
+  },
+
   "Sizing": {                                      // D32/D42
     "Mode": "inverse_vol",                        // inverse_vol | equal(dummies) | kelly(P6+)
     "PortfolioVolTargetAnn": 0.12,
@@ -113,6 +136,11 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
                                                    // S&P 100 slice (regimes are market-level facts). ≈3.8y warm-up backfill required before the first label
     "TrendSmaDays": 200, "TrendHysteresisPct": 1.0, "TrendConfirmDays": 5,
     "VolWindowDays": 21, "VolPercentile": 80, "VolLookbackYears": 3
+    // v1.9.18 finding F/X: this section BINDS from Phase 2 (checkpoint 2.8) — the FR-26/D50 label service
+    // is the first consumer, so the composition root binds `Regime` into RegimeOptions and passes it to
+    // AddAlphaLabMembership (before this, an unbound default silently ignored every value here). The label
+    // params map 1:1 to RegimeLabeler; VolLookbackYears is converted to sessions (×252) to match the
+    // RegimeProxyReadiness warm-up. ProxySecurityId stays null here — the live value is the versioned config row.
   },
 
   "Urls": "http://127.0.0.1:5230",              // D71 — the API's listen URL (standard ASP.NET Core key; committed, non-secret; NEVER via the ASPNETCORE_URLS env var — D67 bans env-var reads). Per-arena profiles change only the port (convention: sp500 → 5230, next arena → 5231, …); the Web arena registry's baseUrl for the arena must match this value exactly
@@ -136,6 +164,18 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     "StaleRunThresholdSeconds": 300                // D72 (finding 112): on launch, a run_in_progress=1 whose heartbeat is older than this is treated as a
                                                    // crashed run — cleared, its runs row marked 'failed', logged; the Api's 409 decision ignores stale flags
   },
+
+  "Eodhd": {                                       // v1.9.18 finding D — the Worker's OWN EODHD section (the D53 staged pipeline, checkpoint 2.10, fetches the
+                                                   // daily delta). The token is Secrets:EodhdApiToken (hard rule 11), read DEFENSIVELY: a missing token is NOT a
+                                                   // startup failure (a no-op launch spends nothing); the provider only 401s if a real fetch happens without it
+    "BaseUrl": "https://eodhd.com/api",            // no trailing slash; endpoints appended (/eod, /div, /splits)
+    "ExchangeSuffix": "US"
+  },
+  "Costs": "see the Costs section of this reference — the D43 coefficients; the Worker binds them for the pipeline's cost model (checkpoint 2.10)",
+  "Sizing": { "Mode": "equal" },                   // finding E — Phase 2 runs equal sizing only; the sizer REFUSES inverse_vol/kelly until FR-11 full (Phase 6)
+  "Guardrails": "see the Guardrails section — the three the funnel structurally needs (MinScore, PositionCapPct on Sizing, MaxConcurrentPositions); Phase 7 wires the rest",
+  "Data": "see the Data section — DataQualityOptions (OutlierZ); the D77 gate binds it in the Worker (finding F)",
+  "CorporateActions": "see the CorporateActions section (findings B/C) — the delist haircut + spin-off liquidation rule the CA ledger binds",
 
   "Calendar": {                                    // D54
     "Exchange": "NYSE",
@@ -186,10 +226,10 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     "ScopeLevel": 1                               // 1 market-read; 2 shortlist(<=20); 3 unreachable
   },
 
-  "Ops": {                                         // RUNBOOK
+  "Ops": {                                         // RUNBOOK. Phase 2 (checkpoint 2.12) binds ONLY BackupRetentionDays (OpsOptions); the other two keys are dormant (see comments)
     "BackupNightlyLocal": "02:00",                // Scheduled mode only; in OnDemand mode (the default) the backup runs as the final step of each Worker launch (RUNBOOK §3)
-    "BackupRetentionDays": 30,
-    "AlertSink": "log+gui"                        // extend: email/webhook later
+    "BackupRetentionDays": 30,                    // D72/2.12: local copies under <DbBase>\{arena}\backups\alphalab-{date}.db older than this are pruned (by the date IN the filename); one copy per day, skipped if today's exists
+    "AlertSink": "log+gui"                        // extend: email/webhook later (Phase 7 alerting)
   },
 
   "FactorData": { "RefreshDayOfMonth": 5 }         // D41 French library pull
@@ -198,7 +238,7 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
 
 ## tools/Backfill/appsettings.json (the one-time bootstrap CLI — D65/D70)
 
-The backfill CLI is a **separate runnable** with its own `appsettings.json`; it does **not** read the Worker/Api superset above. Besides the shared `Arena` + `ConnectionStrings` keys (the connection string is byte-identical across all four spots — the four-spot rule), it carries two sections the other processes don't:
+The backfill CLI is a **separate runnable** with its own `appsettings.json`; it does **not** read the Worker/Api superset above. Besides the shared `Arena` + `ConnectionStrings` keys (the connection string is byte-identical across all four spots — the four-spot rule), it carries a `Backfill` section the other processes don't, plus an `Eodhd` section — which, as of v1.9.18 (finding D, checkpoint 2.10), the **Worker also carries** (the forward pipeline fetches the daily delta), so `Eodhd` is no longer backfill-only:
 
 ```jsonc
 {

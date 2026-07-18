@@ -17,6 +17,27 @@ public sealed class ResilientHttpOptions
     /// it (EODHD/BlackRock do not require one but receive it too). INTEGRATIONS §7/§9. Overridable, e.g.
     /// to add a contact per the Wikimedia UA policy.</summary>
     public string UserAgent { get; init; } = "AlphaLab/1.9 (paper-trading research lab)";
+
+    /// <summary>When a response's <c>X-RateLimit-Remaining</c> drops to this many or fewer, the client
+    /// pauses <see cref="RateLimitCooldown"/> before returning, spacing the next request out (INTEGRATIONS
+    /// §1: the 1,000/min limit is independent of the daily cap). 0 disables the reactive throttle. The
+    /// backfill's 304 single-threaded calls never approached the minute limit; the Phase-2 daily delta is
+    /// the first burst-shaped workload that could, so the header is honoured from here on.</summary>
+    public int RateLimitRemainingFloor { get; init; } = 50;
+
+    /// <summary>The pause taken once remaining is at/below <see cref="RateLimitRemainingFloor"/>.</summary>
+    public TimeSpan RateLimitCooldown { get; init; } = TimeSpan.FromSeconds(2);
+}
+
+/// <summary>Pure reactive-throttle arithmetic for the EODHD 1,000/min limit (INTEGRATIONS §1), split out so
+/// the header→delay decision is unit-testable without a live endpoint.</summary>
+public static class RateLimitGuard
+{
+    /// <summary>How long to pause after observing <paramref name="remaining"/> requests left this minute.
+    /// Unknown (null — header absent/unparseable) or above the floor ⇒ no pause. A non-positive floor
+    /// disables the throttle entirely.</summary>
+    public static TimeSpan CooldownFor(int? remaining, int floor, TimeSpan cooldown)
+        => floor > 0 && remaining is { } r && r <= floor ? cooldown : TimeSpan.Zero;
 }
 
 /// <summary>Thrown when the breaker is open (≥ threshold consecutive failures) — the daily run then
@@ -61,6 +82,11 @@ public sealed class ResilientHttpClient : IResilientHttpClient
     private readonly Func<double> _jitter;
     private int _consecutiveFailures;
 
+    /// <summary>The <c>X-RateLimit-Limit</c> / <c>X-RateLimit-Remaining</c> last seen on a response
+    /// (INTEGRATIONS §1), for observability. Null until a response carries the headers.</summary>
+    public int? LastRateLimitLimit { get; private set; }
+    public int? LastRateLimitRemaining { get; private set; }
+
     public ResilientHttpClient(
         HttpClient http,
         ResilientHttpOptions? options = null,
@@ -96,6 +122,15 @@ public sealed class ResilientHttpClient : IResilientHttpClient
                 resp.EnsureSuccessStatusCode();
                 var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
                 _consecutiveFailures = 0; // success resets the breaker
+
+                // Honour the 1,000/min limit (INTEGRATIONS §1): read remaining, and if it is running low
+                // pause before returning so the caller's next request is spaced out. Distinct from the
+                // daily-cap headroom check (api_usage_log) — that guards 100k/day, this guards the minute.
+                LastRateLimitLimit = ReadHeaderInt(resp, "X-RateLimit-Limit");
+                LastRateLimitRemaining = ReadHeaderInt(resp, "X-RateLimit-Remaining");
+                var cooldown = RateLimitGuard.CooldownFor(LastRateLimitRemaining, _opts.RateLimitRemainingFloor, _opts.RateLimitCooldown);
+                if (cooldown > TimeSpan.Zero) await _delay(cooldown, ct).ConfigureAwait(false);
+
                 return body;
             }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException)
@@ -113,4 +148,10 @@ public sealed class ResilientHttpClient : IResilientHttpClient
         _consecutiveFailures++;
         throw new HttpFetchException(url, last!);
     }
+
+    private static int? ReadHeaderInt(HttpResponseMessage resp, string name) =>
+        resp.Headers.TryGetValues(name, out var values)
+            && int.TryParse(values.FirstOrDefault(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var n)
+            ? n
+            : null;
 }

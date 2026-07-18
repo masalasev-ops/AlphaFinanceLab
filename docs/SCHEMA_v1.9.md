@@ -69,9 +69,18 @@ CREATE TABLE corporate_actions (                   -- §13.6 semantics; versione
   new_symbol   TEXT,                               -- ticker_change
   observed_at  TEXT NOT NULL,                      -- when WE first saw this version (the point-in-time key)
   source       TEXT NOT NULL DEFAULT 'eodhd',
-  processed_on TEXT                                -- NULL until ledger applied
+  processed_on TEXT                                -- ALWAYS NULL, never written (see the note below)
 );
 CREATE INDEX ix_corporate_actions_observed ON corporate_actions(observed_at);
+-- processed_on: ALWAYS NULL, NEVER WRITTEN. It was conceived as a per-action "applied" flag, but it is
+-- a GLOBAL column on a PER-ACCOUNT operation (each arena account applies the same action independently),
+-- and stamping it would make a Phase-4 replay skip an action a forward run had marked — breaking the
+-- quarantine. D76 also forbids UPDATE on this table (versioned append-only). Ledger idempotency does NOT
+-- come from this column: it comes from one-transaction-per-day + the ux_runs_ok_forward partial index
+-- (a day's actions apply exactly once because the day commits atomically and at most one 'ok' forward run
+-- exists per as_of). The column is retained only because dropping it is itself a migration + a D-number and
+-- the live store already carries it; that removal is logged as a deferral in PROGRESS (proposal P5), not a
+-- resolution. Do NOT wire anything to read or write it.
 -- Identity = (security_id, type, effective_date); ex_date is EXCLUDED (splits carry NULL ex_date, which
 -- SQLite treats as distinct in a UNIQUE index; effective_date is NOT NULL and, for dividends, == ex_date).
 CREATE UNIQUE INDEX ux_corporate_actions_identity ON corporate_actions(security_id, type, effective_date, version);
@@ -332,7 +341,8 @@ CREATE TABLE runs (
 -- UNIQUENESS INVARIANT (v1.9.7 finding 109): at most ONE status='ok' row per as_of among FORWARD
 -- kinds. Failed runs legitimately retry (a second row, same as_of), and replay produces many runs
 -- over the same historical dates by design, so a blanket unique(as_of) would be wrong. Phase 2
--- enforces the real invariant with a partial index (created when Stage-2 first writes runs):
+-- enforces the real invariant with a partial index, CREATED in migration M3 (RunsForwardUniqueIndex,
+-- checkpoint 2.10 — where Stage-2 first writes runs):
 --   CREATE UNIQUE INDEX ux_runs_ok_forward ON runs(as_of)
 --     WHERE status='ok' AND run_kind IN ('live','catchup');
 -- This is what makes catch-up idempotency ("re-running a recovered day is a no-op") and
@@ -447,7 +457,7 @@ CREATE TABLE worker_state (                        -- single row, seeded by Phas
 - **CI greps:** `DELETE FROM bars`, `UPDATE bars` anywhere in `src/` fail the build.
 - **EF Core:** map these shapes 1:1; migrations are versioned; SCHEMA_v1.9.md updates ride the same PR as any migration.
 - **`REFERENCES` clauses are documentary — no FK constraints are enforced (v1.9.10):** the `REFERENCES` clauses in the DDL above (`bars`/`corporate_actions`/… → `securities`, and the rest) declare **intent**, not enforced constraints. The EF model (`DataEntities.cs`: "the SCHEMA `REFERENCES` links are documentation only") declares **no** foreign keys, creates **no** shadow indexes, and nothing sets `PRAGMA foreign_keys=ON` on any connection — SQLite leaves FK enforcement **off** by default — so the shipped database enforces none of them. The DDL stays a 1:1 description of the migration; referential integrity is upheld in code (the ingestion + reconciliation services keyed on `security_id`), not by the engine.
-- **Integer PKs are plain `INTEGER PRIMARY KEY` — NO `AUTOINCREMENT` (rule 14):** every `… INTEGER PRIMARY KEY` above (e.g. `runs.run_id`, `jobs.job_id`, `corporate_actions.action_id`, `data_quality_flags.flag_id`) is a plain rowid alias, exactly as written — never `AUTOINCREMENT`. EF Core 10's convention **adds** `AUTOINCREMENT` to value-generated integer keys, and its model snapshot cannot express "rowid without AUTOINCREMENT" (`SqliteValueGenerationStrategy.None` never round-trips → perpetual `PendingModelChangesWarning`). So after scaffolding `InitialCreate`, **hand-edit the generated `*_InitialCreate.cs` to delete the `.Annotation("Sqlite:Autoincrement", true)` lines** on those keys (leave the `.Designer.cs`/`ModelSnapshot.cs` untouched — the model keeps `ValueGeneratedOnAdd`, so model == snapshot and there is no pending-model warning; rowid still auto-assigns). Re-apply the edit if `InitialCreate` is ever regenerated. `config.version` and `worker_state.id` carry no autoincrement by construction (both `ValueGeneratedNever()`). Guarded by `SchemaFidelityTests.Schema_IntegerPrimaryKeys_HaveNoAutoincrement` (+ `Schema_IntegerPrimaryKey_StillAutoAssignsOnInsert`). The BUILD Phase-0 prompt (checkpoint 0.3) carries this as a build step.
+- **Integer PKs are plain `INTEGER PRIMARY KEY` — NO `AUTOINCREMENT` (rule 14):** every `… INTEGER PRIMARY KEY` above (e.g. `runs.run_id`, `jobs.job_id`, `corporate_actions.action_id`, `data_quality_flags.flag_id`, and the Phase-2 ledger's `accounts.account_id`, `trades.trade_id`, `cash_events.event_id`, `decisions.decision_id`) is a plain rowid alias, exactly as written — never `AUTOINCREMENT`. *(`strategies.strategy_id` is a TEXT PK and `positions`/`capacity_rejections`/`equity_curve` have composite PKs, so none of those four carries the annotation and none needs the hand-edit.)* EF Core 10's convention **adds** `AUTOINCREMENT` to value-generated integer keys, and its model snapshot cannot express "rowid without AUTOINCREMENT" (`SqliteValueGenerationStrategy.None` never round-trips → perpetual `PendingModelChangesWarning`). So after scaffolding `InitialCreate`, **hand-edit the generated `*_InitialCreate.cs` to delete the `.Annotation("Sqlite:Autoincrement", true)` lines** on those keys (leave the `.Designer.cs`/`ModelSnapshot.cs` untouched — the model keeps `ValueGeneratedOnAdd`, so model == snapshot and there is no pending-model warning; rowid still auto-assigns). Re-apply the edit if `InitialCreate` is ever regenerated. `config.version` and `worker_state.id` carry no autoincrement by construction (both `ValueGeneratedNever()`). Guarded by `SchemaFidelityTests.Schema_IntegerPrimaryKeys_HaveNoAutoincrement` (+ `Schema_IntegerPrimaryKey_StillAutoAssignsOnInsert`). The BUILD Phase-0 prompt (checkpoint 0.3) carries this as a build step.
 - **D52:** UPDATEs to a `locked=1` hypothesis row outside the outcome-closure code path are a bug; add a trigger or repository guard + test.
 - **D55:** the only write path to `admin_actions` (and to `source='manual'` domain rows) is the typed-confirmation admin flow.
 - **D57/D58:** no schema change — read-models are computed projections over these tables, served by `AlphaLab.Api`; the UI never queries the DB directly.

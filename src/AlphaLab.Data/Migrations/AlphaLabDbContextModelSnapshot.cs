@@ -16,6 +16,34 @@ namespace AlphaLab.Data.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.9");
 
+            modelBuilder.Entity("AlphaLab.Data.Entities.AccountRow", b =>
+                {
+                    b.Property<long>("AccountId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("account_id");
+
+                    b.Property<string>("RunKind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("live")
+                        .HasColumnName("run_kind");
+
+                    b.Property<decimal>("StartingCash")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("starting_cash");
+
+                    b.Property<string>("StrategyId")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("strategy_id");
+
+                    b.HasKey("AccountId");
+
+                    b.ToTable("accounts", (string)null);
+                });
+
             modelBuilder.Entity("AlphaLab.Data.Entities.ApiUsageLogRow", b =>
                 {
                     b.Property<string>("AsOf")
@@ -112,6 +140,82 @@ namespace AlphaLab.Data.Migrations
                         .HasDatabaseName("ix_bars_observed");
 
                     b.ToTable("bars", (string)null);
+                });
+
+            modelBuilder.Entity("AlphaLab.Data.Entities.CapacityRejectionRow", b =>
+                {
+                    b.Property<long>("AccountId")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("account_id");
+
+                    b.Property<long>("SecurityId")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("security_id");
+
+                    b.Property<string>("AsOf")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("as_of");
+
+                    b.Property<double>("Adv21")
+                        .HasColumnType("REAL")
+                        .HasColumnName("adv21");
+
+                    b.Property<double>("AllowedShares")
+                        .HasColumnType("REAL")
+                        .HasColumnName("allowed_shares");
+
+                    b.Property<double>("IntendedShares")
+                        .HasColumnType("REAL")
+                        .HasColumnName("intended_shares");
+
+                    b.HasKey("AccountId", "SecurityId", "AsOf");
+
+                    b.ToTable("capacity_rejections", (string)null);
+                });
+
+            modelBuilder.Entity("AlphaLab.Data.Entities.CashEventRow", b =>
+                {
+                    b.Property<long>("EventId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("event_id");
+
+                    b.Property<long>("AccountId")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("account_id");
+
+                    b.Property<long?>("ActionId")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("action_id");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("amount");
+
+                    b.Property<string>("AsOf")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("as_of");
+
+                    b.Property<string>("RunKind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("live")
+                        .HasColumnName("run_kind");
+
+                    b.Property<long?>("SecurityId")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("security_id");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("type");
+
+                    b.HasKey("EventId");
+
+                    b.ToTable("cash_events", (string)null);
                 });
 
             modelBuilder.Entity("AlphaLab.Data.Entities.CatchupLogRow", b =>
@@ -298,6 +402,68 @@ namespace AlphaLab.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("AlphaLab.Data.Entities.DecisionRow", b =>
+                {
+                    b.Property<long>("DecisionId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("decision_id");
+
+                    b.Property<long>("AccountId")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("account_id");
+
+                    b.Property<string>("AsOf")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("as_of");
+
+                    b.Property<string>("RunKind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("live")
+                        .HasColumnName("run_kind");
+
+                    b.Property<string>("StageJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("stage_json");
+
+                    b.HasKey("DecisionId");
+
+                    b.ToTable("decisions", (string)null);
+                });
+
+            modelBuilder.Entity("AlphaLab.Data.Entities.EquityCurveRow", b =>
+                {
+                    b.Property<long>("AccountId")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("account_id");
+
+                    b.Property<string>("AsOf")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("as_of");
+
+                    b.Property<string>("RunKind")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("live")
+                        .HasColumnName("run_kind");
+
+                    b.Property<decimal>("Cash")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("cash");
+
+                    b.Property<decimal>("Equity")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("equity");
+
+                    b.HasKey("AccountId", "AsOf", "RunKind");
+
+                    b.ToTable("equity_curve", (string)null);
+                });
+
             modelBuilder.Entity("AlphaLab.Data.Entities.IndexMembershipLogRow", b =>
                 {
                     b.Property<long>("LogId")
@@ -413,6 +579,106 @@ namespace AlphaLab.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("AlphaLab.Data.Entities.PositionRow", b =>
+                {
+                    b.Property<long>("AccountId")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("account_id");
+
+                    b.Property<long>("SecurityId")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("security_id");
+
+                    b.Property<decimal>("CostBasis")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("cost_basis");
+
+                    b.Property<bool>("Frozen")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(false)
+                        .HasColumnName("frozen");
+
+                    b.Property<string>("FrozenReason")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("frozen_reason");
+
+                    b.Property<string>("OpenedOn")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("opened_on");
+
+                    b.Property<double>("Shares")
+                        .HasColumnType("REAL")
+                        .HasColumnName("shares");
+
+                    b.HasKey("AccountId", "SecurityId");
+
+                    b.ToTable("positions", (string)null);
+                });
+
+            modelBuilder.Entity("AlphaLab.Data.Entities.RegimeEpisodeRow", b =>
+                {
+                    b.Property<long>("EpisodeId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("episode_id");
+
+                    b.Property<string>("EndDate")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("end_date");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("label");
+
+                    b.Property<string>("StartDate")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("start_date");
+
+                    b.HasKey("EpisodeId");
+
+                    b.ToTable("regime_episodes", (string)null);
+                });
+
+            modelBuilder.Entity("AlphaLab.Data.Entities.RegimeLabelRow", b =>
+                {
+                    b.Property<string>("AsOf")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("as_of");
+
+                    b.Property<string>("InputsHash")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("inputs_hash");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("label");
+
+                    b.Property<string>("Trend")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("trend");
+
+                    b.Property<string>("Vol")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("vol");
+
+                    b.HasKey("AsOf");
+
+                    b.ToTable("regime_labels", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_regime_labels_trend", "trend IN ('bull','bear')");
+
+                            t.HasCheckConstraint("ck_regime_labels_vol", "vol IN ('normal_vol','high_vol')");
+                        });
+                });
+
             modelBuilder.Entity("AlphaLab.Data.Entities.RunRow", b =>
                 {
                     b.Property<long>("RunId")
@@ -456,6 +722,11 @@ namespace AlphaLab.Data.Migrations
                         .HasColumnName("watermark");
 
                     b.HasKey("RunId");
+
+                    b.HasIndex("AsOf")
+                        .IsUnique()
+                        .HasDatabaseName("ux_runs_ok_forward")
+                        .HasFilter("status = 'ok' AND run_kind IN ('live','catchup')");
 
                     b.ToTable("runs", null, t =>
                         {
@@ -541,6 +812,52 @@ namespace AlphaLab.Data.Migrations
                     b.ToTable("securities", (string)null);
                 });
 
+            modelBuilder.Entity("AlphaLab.Data.Entities.StrategyRow", b =>
+                {
+                    b.Property<string>("StrategyId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("strategy_id");
+
+                    b.Property<string>("ConfigJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("config_json");
+
+                    b.Property<string>("CreatedOn")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("created_on");
+
+                    b.Property<string>("ExitPolicyJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("exit_policy_json");
+
+                    b.Property<string>("Family")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("family");
+
+                    b.Property<int?>("HoldingHorizonDays")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("holding_horizon_days");
+
+                    b.Property<string>("ParentStrategyId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("parent_strategy_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("candidate")
+                        .HasColumnName("status");
+
+                    b.HasKey("StrategyId");
+
+                    b.ToTable("strategies", (string)null);
+                });
+
             modelBuilder.Entity("AlphaLab.Data.Entities.TickerHistoryRow", b =>
                 {
                     b.Property<long>("SecurityId")
@@ -566,6 +883,85 @@ namespace AlphaLab.Data.Migrations
                         .HasDatabaseName("ix_ticker_hist_symbol");
 
                     b.ToTable("ticker_history", (string)null);
+                });
+
+            modelBuilder.Entity("AlphaLab.Data.Entities.TradeRow", b =>
+                {
+                    b.Property<long>("TradeId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("trade_id");
+
+                    b.Property<long>("AccountId")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("account_id");
+
+                    b.Property<long?>("ActionId")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("action_id");
+
+                    b.Property<decimal>("Commission")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("commission");
+
+                    b.Property<string>("CostModelVersion")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("cost_model_version");
+
+                    b.Property<string>("DecidedOn")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("decided_on");
+
+                    b.Property<string>("FilledOn")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("filled_on");
+
+                    b.Property<decimal>("ImpactCost")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("impact_cost");
+
+                    b.Property<decimal>("RawFillPrice")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("raw_fill_price");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("RunKind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("live")
+                        .HasColumnName("run_kind");
+
+                    b.Property<long>("SecurityId")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("security_id");
+
+                    b.Property<double>("Shares")
+                        .HasColumnType("REAL")
+                        .HasColumnName("shares");
+
+                    b.Property<string>("Side")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("side");
+
+                    b.Property<decimal>("SpreadCost")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("spread_cost");
+
+                    b.HasKey("TradeId");
+
+                    b.ToTable("trades", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_trades_side", "side IN ('buy','sell')");
+                        });
                 });
 
             modelBuilder.Entity("AlphaLab.Data.Entities.TradingCalendarRow", b =>

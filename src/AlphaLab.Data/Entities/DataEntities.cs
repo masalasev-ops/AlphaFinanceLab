@@ -1,8 +1,10 @@
 namespace AlphaLab.Data.Entities;
 
 // Phase 1 data-domain tables (SCHEMA_v1.9 §"Identity & Market Data" + §"v1.8 additions"). Nine tables
-// landed in Phase 1; data_quality_flags (D77) is a tenth, pre-Phase-2 addition. regime_labels/
-// regime_episodes/features/factor_* and the ux_runs_ok_forward index are deferred to Phase 2.
+// landed in Phase 1; data_quality_flags (D77) is a tenth, pre-Phase-2 addition; regime_labels/
+// regime_episodes (D34/D45/D50) land in checkpoint 2.8. features/factor_* and the ux_runs_ok_forward
+// index remain deferred (features has no observed_at/version column and no Phase-2 consumer; the index
+// lands in 2.10 where Stage 2 first writes runs).
 // Timestamps + dates are TEXT (UTC ISO-8601 / trading date) per
 // SCHEMA. Market-data prices/derived stats are REAL (double); ledger money is decimal→TEXT (D69).
 // Column/table names are mapped snake_case in AlphaLabDbContext.OnModelCreating. Following the
@@ -101,7 +103,11 @@ public sealed class CorporateActionRow
     public string? NewSymbol { get; set; }
     public string ObservedAt { get; set; } = default!;
     public string Source { get; set; } = "eodhd";
-    /// <summary>NULL until the ledger applies the action (Phase 2).</summary>
+    /// <summary>ALWAYS NULL, never written. A global column on a per-account operation would make a
+    /// replay skip an action a forward run marked (breaking the quarantine), and D76 forbids UPDATE
+    /// here anyway; ledger idempotency is one-transaction-per-day + ux_runs_ok_forward, not this flag.
+    /// Retained only because dropping it is a migration + a D-number (PROGRESS proposal P5). See the
+    /// SCHEMA note on corporate_actions.processed_on. Do NOT wire anything to read or write it.</summary>
     public string? ProcessedOn { get; set; }
 }
 
@@ -175,4 +181,41 @@ public sealed class DataQualityFlagRow
     public string Severity { get; set; } = default!;
     public string Detail { get; set; } = default!;
     public string ObservedAt { get; set; } = default!;
+}
+
+/// <summary>
+/// regime_labels — daily point-in-time regime labels (D34/D50, §20.1). PK as_of (one label per
+/// session). NOT versioned and carries NO run_kind: the regime is a market-level fact, so it is a
+/// DERIVED table recomputed from the index-proxy series at the run's watermark, with inputs_hash =
+/// hash(proxy security_id, parameter set, watermark) carrying that provenance. trend and vol are
+/// CHECK-constrained to the cross-product tokens; label is their denormalized product ('bull/high_vol').
+/// </summary>
+public sealed class RegimeLabelRow
+{
+    public string AsOf { get; set; } = default!;
+    /// <summary>CHECK IN ('bull','bear').</summary>
+    public string Trend { get; set; } = default!;
+    /// <summary>CHECK IN ('normal_vol','high_vol').</summary>
+    public string Vol { get; set; } = default!;
+    /// <summary>Denormalized cross product, e.g. 'bull/high_vol' (D50).</summary>
+    public string Label { get; set; } = default!;
+    /// <summary>hash(proxy security_id, parameter set, watermark) — provenance of the PIT computation.</summary>
+    public string InputsHash { get; set; } = default!;
+}
+
+/// <summary>
+/// regime_episodes — maximal runs of the TREND component (D45). episode_id is a bare INTEGER PRIMARY
+/// KEY (rowid alias, NO AUTOINCREMENT — the migration hand-edit strips the annotation, rule 14).
+/// end_date NULL = ongoing; a confirmed trend flip closes the current episode (its end_date is set to
+/// the last session of the old trend) and opens a new one. The D45 evidence counter counts these
+/// episodes, so they accrue FORWARD from the first live label — never backfilled across warm-up history.
+/// </summary>
+public sealed class RegimeEpisodeRow
+{
+    public long EpisodeId { get; set; }
+    /// <summary>The trend token this episode holds ('bull'|'bear').</summary>
+    public string Label { get; set; } = default!;
+    public string StartDate { get; set; } = default!;
+    /// <summary>NULL = ongoing.</summary>
+    public string? EndDate { get; set; }
 }
