@@ -1,6 +1,6 @@
 # AlphaLab — Complete Design Package (revision v1.9)
 
-This is the **full, self-contained** design package. Design revision v1.9. Build status is live, not pre-implementation: Phase 0 and Phase 1 have shipped and Phase 2 (funnel + ledger) is merged. The full pass-by-pass history (v4/v5/v6 through the v1.9.23 reconciliation pass, every CHANGELOG finding and decision D1-D83) lives in `docs/CHANGELOG_v1.9.md`; current phase, test count, and the open-item list live in `PROGRESS.md`. Consult those two rather than any count or status quoted inline, which may lag. Every file here is current; nothing external is required.
+This is the **full, self-contained** design package. Design revision v1.9. Build status is live, not pre-implementation: Phase 0 and Phase 1 have shipped and Phase 2 (funnel + ledger) is merged. The full pass-by-pass history (v4/v5/v6 through the v1.9.24 reconciliation pass, every CHANGELOG finding and decision D1-D83) lives in `docs/CHANGELOG_v1.9.md`; current phase, test count, and the open-item list live in `PROGRESS.md`. Consult those two rather than any count or status quoted inline, which may lag. Every file here is current; nothing external is required.
 
 Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to drive the build).
 
@@ -158,6 +158,12 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   completions (SignFlip, AllPositive, seeded tie-break, `RandomPop-Event`, §6.7 seams, §12 trials arithmetic);
   monitor AI-seat handling (§3½); eight Phase-2-review code findings recorded with deadlines (190–197);
   proposals P8–P11 opened.
+- v1.9.24 reconciliation pass (findings 200–205) — merged. **Docs only; tests stay 528; no new decision.**
+  Completes finding 188's sweep: the retired sentiment-score / blend-A/B framing removed from four further
+  MASTER locations (rule 28, §23.1, the D46 row, §0 item 12) and from the §3 mental-model diagram (the fused
+  "Claude read" node); the stale "(pre-implementation)" title qualifier dropped; D73's already-resolved
+  `⚠VERIFY` index-EOD marker swept (finding 165 had fixed only BUILD); cosmetic — D49 added to the §2
+  provenance list, §10 attribution gains the D83 dual-role pointer.
 - The mockups were consolidated into the single `alphalab_ux_mockups.html` in the v1.9.21/v1.9.22 passes
   (the earlier per-topic and v2 files are gone; the consolidated file gained the UX-14 paired-comparison block
   and the slate-grey replay tokens in v1.9.22). SCHEMA received its first post-v1.9.1 edit in v1.9.7
