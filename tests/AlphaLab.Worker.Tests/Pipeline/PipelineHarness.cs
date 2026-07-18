@@ -30,10 +30,22 @@ public sealed class PipelineHarness : IDisposable
     public const string MemberASymbol = "MEMBERA", MemberBSymbol = "MEMBERB", CwSymbol = "OEF", RegimeSymbol = "GSPC";
 
     private readonly ServiceProvider _provider;
+    private readonly string _arenaDir;
     public string DbPath { get; }
     public FakeMarketData Market { get; } = new();
     public FakeRegimeProxy Proxy { get; } = new();
     public IReadOnlyList<string> Sessions { get; }
+
+    /// <summary>The Worker + Ops options the harness registers as singletons — mutable, so a test can tune a
+    /// knob (e.g. StaleRunThresholdSeconds, BackupRetentionDays) before running a step.</summary>
+    public WorkerOptions WorkerOptions { get; } = new();
+    public OpsOptions OpsOptions { get; } = new();
+
+    /// <summary>The fixed wall clock the harness runs at (for computing fresh/stale heartbeat timestamps).</summary>
+    public DateTimeOffset Now { get; }
+
+    /// <summary>The store's sibling backups\ directory (D72 / LocalBackup).</summary>
+    public string BackupDir => Path.Combine(_arenaDir, "backups");
 
     /// <summary>The three run days (sessions just past the pre-seed boundary).</summary>
     public string Run1 => Sessions[PreSeedCount];
@@ -46,15 +58,20 @@ public sealed class PipelineHarness : IDisposable
     /// run day) at 22:00 UTC — past its ET close, so the catch-up "last completed session" is Run3 and the
     /// natural gap is Run1..Run3. The pipeline tests are unaffected (RunDayAsync stamps timestamps from it
     /// but never reads it for the watermark).</param>
-    public PipelineHarness(DateTimeOffset? now = null)
+    public PipelineHarness(DateTimeOffset? now = null, Action<IServiceCollection>? configure = null)
     {
-        DbPath = Path.Combine(Path.GetTempPath(), "alphalab-pipe-" + Guid.NewGuid().ToString("N") + ".db");
+        // A per-instance directory so the store's sibling backups\ folder (D72 / LocalBackup) is isolated:
+        // every harness gets its own <temp>\alphalab-pipe-{guid}\alphalab.db, mirroring <DbBase>\{arena}\.
+        _arenaDir = Path.Combine(Path.GetTempPath(), "alphalab-pipe-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_arenaDir);
+        DbPath = Path.Combine(_arenaDir, "alphalab.db");
         var cs = $"Data Source={DbPath}";
 
         Sessions = BuildSessions(new DateOnly(2024, 1, 1), 50);
         var clockNow = now ?? new DateTimeOffset(
             DateOnly.ParseExact(Sessions[PreSeedCount + 2], "yyyy-MM-dd", CultureInfo.InvariantCulture)
                 .ToDateTime(new TimeOnly(22, 0)), TimeSpan.Zero);
+        Now = clockNow;
 
         using (var db = Open())
         {
@@ -66,6 +83,8 @@ public sealed class PipelineHarness : IDisposable
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(new ArenaOptions { Id = "sp500", DisplayName = "S&P 500" });
+        services.AddSingleton(WorkerOptions);
+        services.AddSingleton(OpsOptions);
         services.AddAlphaLabData(cs, "sp500", ensureDirectory: true);
         services.AddSingleton(new CostsOptions());
         services.AddSingleton(new DataQualityOptions());
@@ -79,7 +98,52 @@ public sealed class PipelineHarness : IDisposable
         services.AddScoped<DailyPipeline>();
         services.AddScoped<IMissedSessionResolver, MissedSessionResolver>();
         services.AddSingleton<CatchupRunner>();
+
+        // D72 launch order + liveness (checkpoint 2.12).
+        services.AddScoped<HeartbeatWriter>();
+        services.AddScoped<IWorkerLiveness, WorkerLivenessReader>();
+        services.AddSingleton<StaleRunRecovery>();
+        services.AddSingleton<JobDrainer>();
+        services.AddSingleton<LocalBackup>();
+
+        configure?.Invoke(services); // e.g. a test-only IJobExecutor for FX-JobDrain
         _provider = services.BuildServiceProvider();
+    }
+
+    // ---- D72 launch-order accessors (checkpoint 2.12) ----
+
+    public Task<StaleRunRecoveryResult> RunStaleRecoveryAsync() =>
+        _provider.GetRequiredService<StaleRunRecovery>().RecoverAsync();
+
+    public Task<JobDrainOutcome> RunJobDrainAsync() =>
+        _provider.GetRequiredService<JobDrainer>().DrainAsync();
+
+    public Task<LocalBackupResult> RunBackupAsync() =>
+        _provider.GetRequiredService<LocalBackup>().BackupAsync();
+
+    public bool BeatHeartbeat()
+    {
+        using var scope = _provider.CreateScope();
+        return scope.ServiceProvider.GetRequiredService<HeartbeatWriter>().Beat();
+    }
+
+    public async Task<WorkerLiveness> GetLivenessAsync(int thresholdSeconds)
+    {
+        using var scope = _provider.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<IWorkerLiveness>().GetAsync(thresholdSeconds);
+    }
+
+    /// <summary>The whole OnDemand launch order minus StopApplication — the exact sequence OnDemandRunner
+    /// drives, run with ONLY Worker+Data components (no Api present): FR34_LabRunsWithoutApi.</summary>
+    public async Task<(StaleRunRecoveryResult Recovery, CatchupOutcome Catchup, JobDrainOutcome? Drain, LocalBackupResult Backup)> RunLaunchAsync()
+    {
+        var recovery = await _provider.GetRequiredService<StaleRunRecovery>().RecoverAsync();
+        var catchup = await _provider.GetRequiredService<CatchupRunner>().RunAsync();
+        JobDrainOutcome? drain = WorkerOptions.DrainQueuedJobsOnLaunch
+            ? await _provider.GetRequiredService<JobDrainer>().DrainAsync()
+            : null;
+        var backup = await _provider.GetRequiredService<LocalBackup>().BackupAsync();
+        return (recovery, catchup, drain, backup);
     }
 
     /// <summary>Resolve the missed sessions the D47 resolver would report right now.</summary>
@@ -212,9 +276,7 @@ public sealed class PipelineHarness : IDisposable
     {
         _provider.Dispose();
         SqliteConnection.ClearAllPools();
-        foreach (var suffix in new[] { "", "-wal", "-shm" })
-        {
-            try { if (File.Exists(DbPath + suffix)) File.Delete(DbPath + suffix); } catch { /* best effort */ }
-        }
+        // Remove the whole per-instance arena directory (store + -wal/-shm + the backups\ folder).
+        try { if (Directory.Exists(_arenaDir)) Directory.Delete(_arenaDir, recursive: true); } catch { /* best effort */ }
     }
 }

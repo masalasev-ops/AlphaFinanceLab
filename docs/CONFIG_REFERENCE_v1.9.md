@@ -215,10 +215,10 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     "ScopeLevel": 1                               // 1 market-read; 2 shortlist(<=20); 3 unreachable
   },
 
-  "Ops": {                                         // RUNBOOK
+  "Ops": {                                         // RUNBOOK. Phase 2 (checkpoint 2.12) binds ONLY BackupRetentionDays (OpsOptions); the other two keys are dormant (see comments)
     "BackupNightlyLocal": "02:00",                // Scheduled mode only; in OnDemand mode (the default) the backup runs as the final step of each Worker launch (RUNBOOK §3)
-    "BackupRetentionDays": 30,
-    "AlertSink": "log+gui"                        // extend: email/webhook later
+    "BackupRetentionDays": 30,                    // D72/2.12: local copies under <DbBase>\{arena}\backups\alphalab-{date}.db older than this are pruned (by the date IN the filename); one copy per day, skipped if today's exists
+    "AlertSink": "log+gui"                        // extend: email/webhook later (Phase 7 alerting)
   },
 
   "FactorData": { "RefreshDayOfMonth": 5 }         // D41 French library pull

@@ -157,6 +157,9 @@ public sealed class BackfillRunner(
     public IReadOnlyDictionary<string, int> ApiCalls => _apiCalls;
 
     private void Log(string message) => log?.Invoke(message);
+    // n is the endpoint's request COST (INTEGRATIONS §1 / EodhdEndpointCost), not a flat 1: /eod·/div·
+    // /splits weigh 1, /news 5, /eod-bulk-last-day 100. The backfill uses only cost-1 endpoints, so its
+    // total is unchanged — but api_usage_log is now weight-correct for when the heavier endpoints come online.
     private void Count(string source, int n = 1) => _apiCalls[source] = _apiCalls.GetValueOrDefault(source) + n;
 
     // ---- Steps (each idempotent; safe to re-run) ----
@@ -173,7 +176,7 @@ public sealed class BackfillRunner(
     {
         var id = new RegimeProxyIngestion(db).ResolveProxySecurityId(o.RegimeProxySource, o.AsOf);
         var bars = await regimeProxy.GetProxyBarsAsync(o.From, o.AsOf, o.AsOf, ct).ConfigureAwait(false);
-        Count(o.RegimeProxySource);
+        Count(o.RegimeProxySource, EodhdEndpointCost.Eod); // GSPC.INDX daily = an /eod-family call (cost 1)
         var written = new RegimeProxyIngestion(db).IngestProxyBars(id, bars, o.ObservedAt);
         Log($"[regime] proxy security_id={id}; {bars.Count} bars fetched, {written} written.");
     }
@@ -217,11 +220,11 @@ public sealed class BackfillRunner(
         // o.AsOf is passed as both the eod query bound (`to`) and the observation day (`asOf`) — they
         // coincide for a backfill, but the archival date is now the explicit asOf, not the bound (P1R-4).
         var bars = await marketData.GetEodAsync(symbol, o.From, o.AsOf, o.AsOf, ct).ConfigureAwait(false);
-        Count("eodhd");
+        Count("eodhd", EodhdEndpointCost.Eod);
         var dividends = await marketData.GetDividendsAsync(symbol, o.From, o.AsOf, ct).ConfigureAwait(false);
-        Count("eodhd");
+        Count("eodhd", EodhdEndpointCost.Div);
         var splits = await marketData.GetSplitsAsync(symbol, o.From, o.AsOf, ct).ConfigureAwait(false);
-        Count("eodhd");
+        Count("eodhd", EodhdEndpointCost.Splits);
 
         var barsWritten = new BarIngestionService(db).IngestEod(securityId, bars, o.ObservedAt);
         var ca = new CorporateActionIngestion(db);

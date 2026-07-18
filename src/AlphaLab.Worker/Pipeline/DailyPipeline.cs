@@ -60,6 +60,7 @@ public sealed class DailyPipeline(
     IDataQualityFlagStore flagStore,
     CostsOptions costs,
     ArenaOptions arena,
+    WorkerOptions worker,
     TimeProvider clock,
     ILogger<DailyPipeline> logger)
 {
@@ -106,10 +107,15 @@ public sealed class DailyPipeline(
         var runId = OpenRun(asOf, runKind, watermark);
 
         // ---- Step 3: STAGE 2 — ONE atomic transaction. ----
+        var stage2Start = clock.GetTimestamp();
         using (var txn = db.Database.BeginTransaction())
         {
             try
             {
+                // Refresh the heartbeat at Stage-2 start (belt to the HeartbeatService's separate-connection
+                // beat): a long day stays 'live' rather than tripping a false stale-positive (D72).
+                StampHeartbeat();
+
                 IngestStaged(staged, watermark);
 
                 // Regime label (reads the proxy series at the watermark — includes today's just-ingested
@@ -148,6 +154,17 @@ public sealed class DailyPipeline(
 
         // ---- Step 4: small txn — clear run_in_progress (success only). ----
         ClearRunInProgress();
+
+        // Canary for the sp500 widen + replay scale: a day whose write transaction runs long enough to
+        // approach the stale threshold is worth a warning even when it succeeds (D72). 3× the heartbeat
+        // interval is well inside the StaleRunThresholdSeconds headroom.
+        var stage2Elapsed = clock.GetElapsedTime(stage2Start);
+        if (stage2Elapsed > TimeSpan.FromSeconds(worker.HeartbeatSeconds * 3))
+        {
+            logger.LogWarning(
+                "{AsOf}: Stage-2 transaction took {Seconds:F1}s (> 3× the {Heartbeat}s heartbeat) — watch this as the universe/replay scale grows.",
+                asOf, stage2Elapsed.TotalSeconds, worker.HeartbeatSeconds);
+        }
 
         logger.LogInformation("{AsOf}: run {RunId} committed ok ({Flags} quality flag(s) persisted).", asOf, runId, staged.FlagCount);
         return new DailyRunResult(true, false, runId, asOf, staged.FlagCount, null);
@@ -469,6 +486,11 @@ public sealed class DailyPipeline(
 
     private WorkerStateRow WorkerStateRow() =>
         db.WorkerState.First(w => w.Id == 1);
+
+    // Advance heartbeat_at on the CURRENT (Stage-2) context/transaction. No SaveChanges here — the change
+    // is tracked and committed with the rest of the day (a rollback correctly discards it; the OpenRun
+    // stamp from step 2's committed txn survives).
+    private void StampHeartbeat() => WorkerStateRow().HeartbeatAt = NowIso();
 
     private string NowIso() => clock.GetUtcNow().UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
 

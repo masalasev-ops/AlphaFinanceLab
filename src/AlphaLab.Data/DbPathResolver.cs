@@ -63,6 +63,27 @@ public static class DbPathResolver
         return Path.GetFullPath(builder.DataSource);
     }
 
+    /// <summary>
+    /// The per-launch local-backup directory (RUNBOOK §3 / D72): a <c>backups</c> folder beside the store,
+    /// i.e. <c>&lt;DbBase&gt;\{arena}\backups</c>. PURE — string composition only, no filesystem access (the
+    /// <see cref="ResolvePath"/> purity precedent); the backup step creates it. Because the store is already
+    /// arena-namespaced (<c>…\{arena}\alphalab.db</c>), so is this — no cross-arena bleed (rule 23).
+    /// </summary>
+    public static string BackupDirectory(string resolvedConnectionString)
+    {
+        var dbPath = GetDataSourcePath(resolvedConnectionString);
+        var dir = Path.GetDirectoryName(dbPath)
+            ?? throw new InvalidOperationException($"Resolved store path '{dbPath}' has no parent directory.");
+        return Path.Combine(dir, "backups");
+    }
+
+    /// <summary>The dated backup file path for a given calendar day: <c>…\backups\alphalab-{yyyy-MM-dd}.db</c>.
+    /// PURE. One file per day (a second launch the same day skips — the backup step checks existence).</summary>
+    public static string BackupFilePath(string resolvedConnectionString, DateOnly day) =>
+        Path.Combine(
+            BackupDirectory(resolvedConnectionString),
+            $"alphalab-{day:yyyy-MM-dd}.db");
+
     private static void EnsureDirectoryExists(string resolvedConnectionString)
     {
         var fullPath = GetDataSourcePath(resolvedConnectionString);

@@ -84,6 +84,22 @@ builder.Services.AddScoped<DailyPipeline>();
 builder.Services.AddScoped<IMissedSessionResolver, MissedSessionResolver>();
 builder.Services.AddSingleton<CatchupRunner>();
 
+// ---- D72 launch order + liveness + backup (checkpoint 2.12) ----
+var opsOptions = builder.Configuration.GetSection(OpsOptions.SectionName).Get<OpsOptions>() ?? new OpsOptions();
+builder.Services.AddSingleton(opsOptions);
+
+// The worker-liveness reader (AlphaLab.Data): the 409 decision the API reaches via Api->Data in Phase 3.
+builder.Services.AddScoped<IWorkerLiveness, WorkerLivenessReader>();
+
+// Launch-order steps (each opens its own scope/txn as needed) + the heartbeat backstop.
+builder.Services.AddScoped<HeartbeatWriter>();
+builder.Services.AddSingleton<StaleRunRecovery>();
+builder.Services.AddSingleton<JobDrainer>();
+builder.Services.AddSingleton<LocalBackup>();
+// Phase 2 registers NO IJobExecutor — a queued job fails closed in the drainer (named reason). Real
+// executors (replay, analysis briefs/skeptic) arrive with their phases (FR-32+).
+builder.Services.AddHostedService<HeartbeatService>();
+
 // Schema application + WAL runs in BOTH modes and MUST be registered first (StartAsync runs in
 // registration order; do not reorder relative to Quartz / the OnDemand runner).
 builder.Services.AddHostedService<SchemaStartup>();
