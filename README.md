@@ -12,17 +12,17 @@ without the honesty that qualifies it.
 
 ## Status
 
-**Phase 1 complete — the data foundation.** Phase 0 stood up the skeleton (solution, schema, process
+**Phase 2 complete — funnel + ledger merged.** (Phase and test count move fast; **`PROGRESS.md` is the source of truth** for both. This section describes the shape of the build, not the live count.) Phase 0 stood up the skeleton (solution, schema, process
 model, API boundary, empty UI); **Phase 1 adds the market-data layer** — the EODHD provider, the
 security master, versioned append-only bars + watermark reads, index-membership reconciliation (iShares
 OEF + Wikipedia cross-check), the trading calendar, the regime-proxy feed, and the data-quality gate,
 all driven by a bootstrap backfill CLI. That CLI has been run **live against the S&P 100** — 101
-members, ~488k versioned bars over 20 years, plus the GSPC regime proxy. Still ahead in Phases 2–8 (see
+members, ~488k versioned bars over 20 years, plus the GSPC regime proxy. Still ahead in Phases 3–8 (see
 [`docs/BUILD_AND_PROMPTS_v1.9.md`](docs/BUILD_AND_PROMPTS_v1.9.md) §2 and [`PROGRESS.md`](PROGRESS.md)):
 the six-stage funnel, the ledger + cost model, the strategies, the honest-arena evaluation, and the
 daily pipeline hosted in `AlphaLab.Worker`. No forward pipeline run has been committed yet, so the
 strategy/evaluation screens still return empty, `no_run_yet`-stamped read-models. `tools/ci.ps1` is
-green: build + 237 tests + guard greps.
+green (build + the full test suite + guard greps); see `PROGRESS.md` for the current test count.
 
 **What "working" will look like — set expectations now.** By construction, the lab's *fast* outputs
 are the honest-but-unglamorous ones: **anti-predictive kills** (a strategy the monitor can show is

@@ -70,12 +70,23 @@
 | `FX-PlantRealism` | realistic (regime-conditional, autocorrelated) vs naive constant-drift edge plants, same annualized target, same seeds count | FR-36/D64: the realistic plant's P_edge(t) sits materially below the naive plant's at t = 252d (a lumpy edge separates later); the divergence chart lands as a permanent calibration-report section; realistic curves adopted when divergence > `SensitivityMaxGapPts` |
 | `FX-SeparationChip` | no-edge plant + edge plant tracked past `Verdicts.SeparationMinTrackDays` | FR-35/D63: no-edge renders `separation_state='none'` + the IndistinguishableFromRandom chip with its day count at the threshold; the edge plant's median path transitions none → emerging → distinguishable; state reconstructs from persisted percentile rows (NFR-2) |
 
-## 6. LLM layer (Phase 5)
+## 6. LLM layer — news read + the AI seats (Phase 5; D79-D82, spec MASTER §23)
+
+*Daily market-level news read (D46):*
 - `FR22_NewsBudget_CapsAndDedupes` — 80 raw articles in ⇒ ≤25 admitted, duplicates collapsed by title hash, each ≤2,000 chars, all pre-token.
 - `FR21_CacheHit_CostsZero` — second read same (prompt_hash, model, date) spends nothing.
 - `FR21_Replay_HasNoAnalysisPath` — replay runs produce zero analysis_cache rows by construction (compile-time absence preferred: the replay composition root has no IAnalysisProvider registration).
 - `FR22_Budget_DegradesInOrder` — over-budget day: held names served, then cached, then neutral fallback; never a blackout; llm_budget_log.degraded = 1.
 - Mocked provider for CI; one live smoke test gated by an xUnit `[Trait("Category","LiveSmoke")]` (excluded from the default run via `--filter`) — not an env flag (D67).
+
+*The AI seats (D79-D82; every seat priced by the arena, golden rule 32):*
+- `FX-PackWatermark` — a context pack built at watermark W is byte-identical regardless of later bars/actions; any post-watermark fact fails construction (D80; the AI analog of NFR-1).
+- `FX-AiDecisionIsTheRow` — a re-run consumes the stored `ai_decisions` row; the provider seam proves **zero API calls** on re-run (D81 determinism; replay stays LLM-free).
+- `FX-ContestantReplayRefused` — an `IArenaReplay` run refuses to admit an AI contestant seat by construction (D16/D81 forward-only; compile-time absence preferred over a runtime guard).
+- `FX-TwinPairing` — the contestant and its mechanics-identical no-LLM twin share pre-filter, breadth, sizing, exits, costs, and seed; the paired daily difference is the only promotable signal, and the twin is never promoted alone (M.1/D81).
+- `FX-BudgetAbstain` — an exhausted per-seat budget yields an empty score map ⇒ a sparse wish list (the funnel's honest "nothing scored today"), never a stale, cached, or padded decision (D24/§23.2).
+- `FR23_Hypotheses_RequireParentEvidence` — `POST /api/v1/analysis/hypotheses` with no cited parent evidence ⇒ 422; an accepted proposal lands as an **unlocked** draft `journal_entries` row; only the operator's lock registers it (rule 30/D82); the fork budget decrements and renders beside the deflated-Sharpe trials count.
+- Mocked model provider for all of the above in CI; the AI-seat live smoke test reuses the same `[Trait("Category","LiveSmoke")]` gate.
 
 ## 7. Strategy acceptance (Phase 6/8)
 Inventory = STRATEGY_CATALOG_v1.9 §13 verbatim, plus per-strategy sections (§5–§8). Every strategy PR ships: its acceptance tests, F-LEAK, F-DET, its population hookup test, and its trials_registry row test.
