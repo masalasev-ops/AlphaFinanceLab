@@ -38,7 +38,7 @@ Forward paper trading removes *backtest* overfitting but not *selection* overfit
 
 Additional wiring:
 - A head-to-head gap **inside the pair's NW-MDE ⇒ verdict `TooEarly`** (not a status — a gate outcome; the common case per DESIGN_IMPROVEMENTS_v1.9 §6).
-- **Auto-retire:** Suspect on S6 (edge decay) at 4 consecutive evaluations ⇒ the strategy is retired to observation-only (its account keeps running for the record; it leaves the promotable pool). Patience value calibrated in replay — **against the v1.9.7 edge-plant survival floor (finding 113): patience is set so ≥ `Replay.EdgePlantSurvivalFloor5y` of D64 edge plants survive at 5y; a lumpy 2%/yr edge spends long stretches mid-band by design, and auto-retiring it would be the lab killing its own winners.**
+- **Auto-retire:** Suspect on S6 (edge decay) at 4 consecutive evaluations ⇒ the strategy is retired to observation-only (its account keeps running for the record; it leaves the promotable pool). Patience value calibrated in replay — **against the v1.9.7 edge-plant survival floor (finding 113): patience is set so ≥ `Replay.EdgePlantSurvivalFloor5y` of D64 edge plants survive at 5y; a lumpy 2%/yr edge spends long stretches mid-band by design, and auto-retiring it would be the lab killing its own winners.** **v1.9.23 addendum:** the two new low-turnover strategies (Betting-Against-Beta — Low-Vol's sibling — and Time-Series Momentum, both monthly cadence) spend even longer mid-band **by construction** — precisely the honest-small-winner case the survival floor protects — so the floor calibration must include a **low-turnover plant**, not only the default cadence.
 - All transitions persisted to `overfitting_status` with the triggering signal snapshot; the GUI badge links to the evidence.
 
 ---
@@ -48,7 +48,7 @@ Additional wiring:
 Defaults marked ⚙ are replay-calibrated before forward trust (v6 §0.3).
 
 ### S1 — Backtest-vs-forward degradation
-Compare the strategy's seeding-replay Sharpe/alpha (from Arena Replay's walk-forward seeding mode) with its forward values over the same horizon length. Expected: forward ≈ 50–70% of replay (decay + residual pre-launch survivorship inflates the replay side — stated on the panel; the signal therefore reads *stricter than truth*, which is the conservative direction). ⚙ Elevated: forward < 40% of replay; critical: forward ≤ 0 while replay was strongly positive, sustained one full evaluation window. Strategies without a seeding replay (e.g. randoms) skip S1.
+Compare the strategy's seeding-replay Sharpe/alpha (from Arena Replay's walk-forward seeding mode) with its forward values over the same horizon length. Expected: forward ≈ 50–70% of replay (decay + residual pre-launch survivorship inflates the replay side — stated on the panel; the signal therefore reads *stricter than truth*, which is the conservative direction). ⚙ Elevated: forward < 40% of replay; critical: forward ≤ 0 while replay was strongly positive, sustained one full evaluation window. Strategies without a seeding replay (e.g. randoms) skip S1 — **and the AI contestant skips it by the same mechanism (v1.9.23, §3½): D81 makes it forward-only and the replay engine refuses it by construction (`FX-ContestantReplayRefused`), so it has no replay side to degrade against.**
 
 ### S2 — Deflated Sharpe
 Sharpe deflated by the honest trials count (`trials_registry`, incl. forks, retrains, siblings; replay trials excluded — separate column). ⚙ Elevated: deflated Sharpe < 0 while raw Sharpe > 0.5 (the gap is pure selection); critical: the strategy's *rank among candidates* inverts under deflation (its standing is a trials artifact).
@@ -60,7 +60,7 @@ Panel shows the strategy's dot on the population's histogram plus the 5–95% ba
 **What S3 cannot do (D63):** a merely edgeless strategy pays the same costs as its turnover-matched controls and hovers at its band's **median** — S3 never flags it, and under the null it breaches `P_noise(t)` only at the false-alarm rate. Non-separation is therefore *not* a monitor status: it is surfaced by the D63 **separation state** (`IndistinguishableFromRandom` chip, MASTER §20.8), computed in the read-models from the same percentile rows S3 produces. The Suspect fixture in tests must be the **anti-predictive plant**, never the no-edge plant.
 
 ### S4 — Parameter robustness
-Local perturbation scan around the frozen parameters (±1–2 steps per axis, **including exit params** — `exitRank`, `maxHoldDays`, `exitChannel`), run in replay's seeding mode, stored in `parameter_scans`. A real edge is a plateau; a spike is noise. ⚙ Elevated: > 40% of neighbors lose > half the alpha; critical: the frozen point is a strict local maximum with cliff edges. (Scan is diagnostic; it never tunes — D17.)
+Local perturbation scan around the frozen parameters (±1–2 steps per axis, **including exit params** — `exitRank`, `maxHoldDays`, `exitChannel`), run in replay's seeding mode, stored in `parameter_scans`. A real edge is a plateau; a spike is noise. ⚙ Elevated: > 40% of neighbors lose > half the alpha; critical: the frozen point is a strict local maximum with cliff edges. (Scan is diagnostic; it never tunes — D17.) **N/A for the AI contestant (v1.9.23, §3½):** its frozen policy is prompt text, model id, pack recipe, and shortlist size (D80) — none has a ±1–2-step numeric neighbourhood to scan; the falsification role S4 plays for mechanical strategies is carried for the contestant by the twin A/B instead. Marked N/A so no implementer invents a perturbation.
 
 ### S5 — Feature & regime PSI (population stability)
 PSI of each input feature's live distribution vs its `feature_baselines` snapshot, and of the regime-label mix. ⚙ Elevated: PSI > 0.10 on a core feature; critical: > 0.25 (the world the strategy was built for has moved). Regime-mix rows display episode counts (D45).
@@ -72,13 +72,23 @@ Rolling-window (63d) net alpha trend vs the strategy's own history **and vs its 
 For strategies exposing probabilities (Kelly variants, learned blends): Brier score / reliability-curve drift vs the calibration baseline over the declared horizon. ⚙ Elevated: Brier degradation > 20%; critical: reliability slope sign-flip. Skipped for strategies without probability semantics.
 
 ### S8 — Cross-metric divergence
-Metrics that should co-move but don't: net alpha up while expectancy down (cost story changed?); Sharpe up while population percentile down (luck vs the null); **daily-alpha track and trade-level track in sharp contradiction (v6, D44)**; equity up while max-drawdown-adjusted rank collapses. ⚙ Elevated: any one divergence sustained an evaluation window; critical: two simultaneously. S8 is the tripwire for "the number you optimized got better while the thing it measured got worse."
+Metrics that should co-move but don't: net alpha up while expectancy down (cost story changed?); Sharpe up while population percentile down (luck vs the null); **daily-alpha track and trade-level track in sharp contradiction (v6, D44)**; equity up while max-drawdown-adjusted rank collapses; **the contestant-vs-twin paired difference contradicting the standalone percentile path (v1.9.23, §3½)**. ⚙ Elevated: any one divergence sustained an evaluation window; critical: two simultaneously. S8 is the tripwire for "the number you optimized got better while the thing it measured got worse."
+
+### 3½ — AI-seat handling (v1.9.23; the contestant under the eight signals)
+
+The AI pass (D79–D82) made the contestant a first-class `IModel` the monitor must score, but three signals assume machinery the seat does not have. Collected here so the treatment is stated once (cross-refs: MASTER §23.3 — the twin; D81 — forward-only; D83 — the factor series' dual role):
+
+- **S1 — skipped.** The contestant is forward-only (D81) and the replay engine refuses it by construction (`FX-ContestantReplayRefused`), so it has no seeding-replay side to degrade against. Same skip mechanism S1 already applies to strategies without a seeding replay.
+- **S4 — N/A.** S4 perturbs frozen *numeric* parameters; the contestant's frozen policy (prompt text, model id, pack recipe, shortlist size — D80) has no ±1–2-step neighbourhood. The twin A/B carries the falsification role instead.
+- **S8 — gains the twin input.** The contestant-vs-twin paired difference (M.1) is an S8 divergence input: a paired difference that contradicts the standalone percentile path is exactly the "optimized number up, measured thing down" tripwire. The twin therefore does double duty — the promotion signal *and* a monitor input.
+
+All other signals (S2 deflated Sharpe, S3 population percentile, S5 PSI, S6 edge decay, S7 calibration drift where probabilities exist) apply to the contestant unchanged — the seat is priced by the same arena as every other strategy (golden rule 32 governs what may *judge* it, not what it is judged *by*).
 
 ---
 
 ## 4. Evaluation cadence & data flow
 
-Runs at the configured cadence (default 21 days) inside the daily orchestrator's post-close sequence, and on demand (read-only) from the GUI. Inputs: `equity_curve`, `trades`, `trade_evidence`, `control_equity` (population), `factor_returns`, `feature_baselines`, `parameter_scans`, `trials_registry`, `regime_episodes`. Outputs: one `overfitting_checks` row per signal per strategy per evaluation (value, threshold snapshot, status contribution) and an `overfitting_status` transition row when the aggregate changes. Everything the badge claims is reconstructible from those rows (audit rule).
+Runs at the configured cadence (default 21 days) inside the daily orchestrator's post-close sequence, and on demand (read-only) from the GUI. Inputs: `equity_curve`, `trades`, `trade_evidence`, `control_equity` (population), `factor_returns` — **dual-role since D83 (v1.9.23): attribution diagnostic *and* residual-momentum signal input, so S5's PSI baseline and S8's cost-story reasoning must read it as a signal feed, not only a diagnostic one** — `feature_baselines`, `parameter_scans`, `trials_registry`, `regime_episodes`. Outputs: one `overfitting_checks` row per signal per strategy per evaluation (value, threshold snapshot, status contribution) and an `overfitting_status` transition row when the aggregate changes. Everything the badge claims is reconstructible from those rows (audit rule).
 
 ---
 

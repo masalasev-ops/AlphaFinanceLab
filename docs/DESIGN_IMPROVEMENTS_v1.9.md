@@ -94,7 +94,7 @@ Paired tests on `d_t` (D31) → NW-MDE gate (D48) → deflated Sharpe over hones
 ## 3. Sizing, guardrails & portfolio construction (mathematics)
 
 ### 3.1 Covariance (D42)
-**Ledoit–Wolf shrinkage** toward the constant-correlation target, estimated on 252 trading days of daily returns over the active name set (held + wish-listed across accounts). Fallback on numerical failure: EWMA (λ=0.97) single-index model. Estimator, window, and shrink intensity logged per run. Consumers: inverse-vol weights' vol inputs, the **correlation-aware heat guardrail** (cap on √(wᵀΣw), annualized, per account), and momentum's vol-targeting overlay.
+**Ledoit–Wolf shrinkage** toward the constant-correlation target, estimated on 252 trading days of daily returns over the active name set (held + wish-listed across accounts). Fallback on numerical failure: EWMA (λ=0.97) single-index model. Estimator, window, and shrink intensity logged per run. Consumers: inverse-vol weights' vol inputs, the **correlation-aware heat guardrail** (cap on √(wᵀΣw), annualized, per account), momentum's vol-targeting overlay, and **Betting-Against-Beta's beta derivation (catalog §6.7, v1.9.23)** — `cov(s, mkt)/var(mkt)` off the same shrunk solve, which requires the market proxy's return series in the estimation set.
 
 ### 3.2 Inverse-vol sizing (default)
 `w_i ∝ 1/σ_i`, normalized, then scaled so predicted portfolio vol (from Σ) ≤ the account's target (default 12% ann.); position cap and guardrails applied after. Deterministic, estimable from day one, correlation-aware at the portfolio step — everything Kelly-at-Phase-3 is not (D32).
@@ -186,12 +186,12 @@ The paired-test MDE (§1.2) as a function of track length and pairing tightness,
 | 0.40% (loose pairing) | 25.1% | 17.8% | 10.3% | ~79 |
 | 0.20% (good pairing) | 12.6% | 8.9% | 5.1% | ~20 |
 | 0.10% (tight pairing — one-component difference) | 6.3% | 4.4% | 2.6% | ~5 |
-| 0.05% (near-twin accounts, e.g. Claude A/B) | 3.1% | 2.2% | 1.3% | ~1.2 |
+| 0.05% (near-twin accounts, e.g. the AI contestant vs its no-LLM twin — MASTER §23.3) | 3.1% | 2.2% | 1.3% | ~1.2 |
 
 Three design consequences, restated once, here, so they are never re-litigated screen by screen:
 1. **`TooEarly` dominates by design.** The gate refusing to crown winners for years is the system working.
 2. **Name the fast products correctly (D63).** The population channel's fast product is the **`IndistinguishableFromRandom`** statement: an edgeless strategy pays the same costs as its turnover-matched controls and sits at its band's **median** indefinitely, so it is never *falsified* there — it is declared inseparable from luck, which arrives in months and is real knowledge. Genuine fast kills come from exactly two channels: the **trade-level expectancy track** (tests against zero — a fast strategy with negative net expectancy is dead in a few hundred trades) and **anti-predictive** S3/S6 breaches (performing worse than random). Grade the lab on the §1.2 KPIs as re-split by D63.
-3. **Comparisons should be engineered for tightness.** The table's bottom rows are where verdicts live on human timescales — which is why the Claude A/B shares everything but one sub-signal, why parameter siblings differ in one parameter, and why the allocator tilts continuously instead of waiting for significance.
+3. **Comparisons should be engineered for tightness.** The table's bottom rows are where verdicts live on human timescales — which is why the AI contestant and its no-LLM twin share everything but the LLM decision layer (MASTER §23.3), why parameter siblings differ in one parameter, and why the allocator tilts continuously instead of waiting for significance.
 
 ---
 
