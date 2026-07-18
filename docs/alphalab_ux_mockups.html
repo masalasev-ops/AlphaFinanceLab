@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AlphaLab — UX Mockups (consolidated) · v1.9.21</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0E1220; --panel:#161B2E; --panel-2:#1E2540; --panel-3:#131828;
+    --line:#2A3350; --line-soft:#222a44;
+    --ink:#E8ECF5; --ink-dim:#8A93AD; --ink-faint:#59617A;
+    --gold:#E9B44C; --gold-soft:rgba(233,180,76,.14); --gold-line:rgba(233,180,76,.45);
+    --cyan:#4CC9E0; --cyan-soft:rgba(76,201,224,.14); --cyan-line:rgba(76,201,224,.42);
+    --violet:#8B7CF6; --violet-soft:rgba(139,124,246,.16); --violet-line:rgba(139,124,246,.45);
+    --up:#3FD68C; --down:#F2555A; --amber:#E9B44C;
+    --disp:'Archivo',system-ui,sans-serif; --body:'Inter',system-ui,sans-serif; --mono:'IBM Plex Mono',ui-monospace,monospace;
+    --r:14px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:
+      radial-gradient(1200px 600px at 80% -10%, #1a2038 0%, transparent 60%),
+      radial-gradient(900px 500px at 0% 0%, #171d33 0%, transparent 55%),
+      var(--bg);
+    color:var(--ink);font-family:var(--body);line-height:1.5;-webkit-font-smoothing:antialiased}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+  a{color:inherit}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 24px}
+
+  /* showcase header */
+  .head{padding:60px 0 22px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--gold);margin:0 0 14px}
+  .head h1{font-family:var(--disp);font-weight:800;font-size:clamp(28px,5vw,50px);line-height:1.03;letter-spacing:-.02em;margin:0 0 16px;max-width:18ch}
+  .head p{color:var(--ink-dim);font-size:16.5px;max-width:64ch;margin:0}
+  .head .gold{color:var(--gold)} .head .cyan{color:var(--cyan)} .head .violet{color:var(--violet)}
+
+  /* design-system strip */
+  .ds{display:flex;flex-wrap:wrap;gap:26px;margin:32px 0 6px;padding:20px 22px;border:1px solid var(--line);border-radius:var(--r);background:linear-gradient(180deg,var(--panel),var(--panel-3))}
+  .ds h4{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);margin:0 0 10px;font-weight:500}
+  .swatches{display:flex;gap:8px}
+  .sw{width:32px;height:32px;border-radius:8px;border:1px solid rgba(255,255,255,.08)}
+  .ds .k{font-size:13px;color:var(--ink-dim)} .ds .k b{color:var(--ink);font-weight:600}
+  .tdisp{font-family:var(--disp);font-weight:700} .tmono{font-family:var(--mono)}
+
+  /* section labels */
+  .section-label{display:flex;align-items:center;gap:14px;margin:56px 0 16px;flex-wrap:wrap}
+  .section-label .n{font-family:var(--mono);font-size:12px;color:var(--gold);border:1px solid var(--gold-line);border-radius:999px;padding:3px 10px}
+  .section-label h2{font-family:var(--disp);font-weight:700;font-size:21px;margin:0;letter-spacing:-.01em}
+  .section-label .tag{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.13em}
+  .note{color:var(--ink-dim);font-size:14px;max-width:80ch;margin:0 0 16px}
+  .note code{font-family:var(--mono);font-size:12.5px;background:var(--panel-2);padding:1px 6px;border-radius:5px;color:var(--ink)}
+
+  /* device frames — fluid, no fixed widths (mobile-ready) */
+  .desktop{border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 40px 80px -40px rgba(0,0,0,.7);background:var(--panel-3)}
+  .chrome{display:flex;align-items:center;gap:8px;padding:11px 15px;background:#101424;border-bottom:1px solid var(--line)}
+  .dot{width:11px;height:11px;border-radius:50%;background:#2c3556}
+  .chrome .addr{margin-left:10px;font-family:var(--mono);font-size:12px;color:var(--ink-faint);background:#0c1020;border:1px solid var(--line-soft);border-radius:7px;padding:4px 12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .app{padding:0}
+
+  /* app bar + nav + seat strip */
+  .appbar{display:flex;align-items:center;gap:14px;padding:13px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .logo{font-family:var(--disp);font-weight:800;font-size:16px;letter-spacing:-.01em}
+  .logo span{color:var(--gold)}
+  .arena{font-family:var(--mono);font-size:11.5px;color:var(--ink-dim);border:1px solid var(--line);border-radius:999px;padding:3px 11px;background:#0f142a}
+  .navl{display:flex;gap:14px;flex-wrap:wrap;font-size:13.5px;color:var(--ink-dim)}
+  .navl b{color:var(--ink);font-weight:600;border-bottom:2px solid var(--gold);padding-bottom:2px}
+  .runinfo{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
+  .seats{display:flex;align-items:center;gap:10px;padding:9px 20px;background:#10152a;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .seats .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-faint);margin-right:2px}
+  .spill{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:12px;background:var(--panel)}
+  .spill .nm{font-weight:600} .spill .st{font-family:var(--mono);font-size:10.5px;color:var(--ink-dim)}
+  .spill .d{width:7px;height:7px;border-radius:50%}
+  .spill.r{border-color:var(--cyan-line)} .spill.r .d{background:var(--cyan)} .spill.r .nm{color:var(--cyan)}
+  .spill.c{border-color:var(--violet-line)} .spill.c .d{background:var(--violet)} .spill.c .nm{color:var(--violet)}
+  .spill.a{border-style:dashed} .spill.a .d{background:var(--ink-faint)} .spill.a .nm{color:var(--ink-faint)}
+  .seats .look{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--ink-faint)}
+  .pad{padding:20px}
+
+  /* seat marks + chips */
+  .seat{font-family:var(--mono);font-size:10.5px;letter-spacing:.03em;padding:2px 8px;border-radius:999px}
+  .seat.math{background:var(--cyan-soft);color:var(--cyan)}
+  .seat.ai{background:var(--violet-soft);color:var(--violet)}
+  .seat.ref{background:#1a2138;color:var(--ink-faint)}
+  .chip{font-family:var(--mono);font-size:10.5px;padding:2px 8px;border-radius:999px;white-space:nowrap}
+  .chip.early{background:var(--gold-soft);color:var(--gold)}
+  .chip.retired{background:rgba(242,85,90,.15);color:var(--down)}
+  .chip.ok{background:rgba(63,214,140,.14);color:var(--up)}
+  .chip.neutral{background:#1a2138;color:var(--ink-dim)}
+  .chip.ab{background:var(--violet-soft);color:var(--violet)}
+
+  /* the signature: MDE interval gauge */
+  .gauge{position:relative;display:inline-block;width:100px;height:12px;vertical-align:-1px;border-left:2px solid #39456e;border-right:2px solid #39456e}
+  .gauge::before{content:'';position:absolute;left:0;right:0;top:5px;height:2px;background:var(--line)}
+  .gauge::after{content:'';position:absolute;left:50%;top:2px;bottom:2px;width:1px;background:#39456e}
+  .gauge i{position:absolute;top:2.5px;width:7px;height:7px;border-radius:50%;transform:translateX(-50%)}
+  .gauge i.in{background:var(--ink-faint)}
+  .gauge i.out{background:var(--up)}
+  .gauge i.ai{background:var(--violet)}
+  .val{font-family:var(--mono);font-size:12.5px}
+  .val.dim{color:var(--ink-faint)} .val.dim::before{content:'~ '}
+  .val.up{color:var(--up)} .val.down{color:var(--down)}
+  .mde{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint)}
+
+  /* tables (fluid; horizontal scroll only if truly needed) */
+  .tw{width:100%;overflow-x:auto}
+  table.lb{width:100%;border-collapse:collapse;font-size:13px;min-width:0}
+  .lb th{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);font-weight:500;text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+  .lb td{padding:10px 10px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
+  .lb tr td:first-child{border-left:3px solid transparent}
+  .lb tr.math td:first-child{border-left-color:var(--cyan)}
+  .lb tr.ai td:first-child{border-left-color:var(--violet)}
+  .lb tr.ref td{color:var(--ink-faint)}
+  .lb .name{font-weight:600} .lb .sub{font-size:11.5px;color:var(--ink-faint);font-family:var(--mono)}
+
+  .foot{font-size:11.5px;color:var(--ink-faint);font-family:var(--mono);margin-top:12px}
+
+  /* cards / panels / grids (collapse on narrow) */
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+  .grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+  .panel{border:1px solid var(--line);border-radius:var(--r);background:var(--panel);padding:16px 18px}
+  .panel.deep{background:var(--panel-3)}
+  .ph{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);margin:0 0 10px}
+  .big{font-family:var(--disp);font-weight:800;font-size:28px;letter-spacing:-.01em}
+  .big small{font-family:var(--mono);font-size:12px;color:var(--ink-faint);font-weight:400;letter-spacing:0}
+
+  /* wide paired gauge */
+  .gauge-xl{position:relative;height:44px;border-left:2px solid #39456e;border-right:2px solid #39456e;margin:10px 0 4px}
+  .gauge-xl .band{position:absolute;left:20%;width:60%;top:8px;bottom:8px;background:var(--gold-soft);border-radius:4px}
+  .gauge-xl .zero{position:absolute;left:50%;top:4px;bottom:4px;width:1px;background:#39456e}
+  .gauge-xl .pt{position:absolute;top:50%;width:14px;height:14px;border-radius:50%;background:var(--violet);transform:translate(-50%,-50%);border:2px solid var(--panel-3)}
+  .axis{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10.5px;color:var(--ink-faint)}
+
+  /* trail + pack inspector */
+  .trail{display:flex;flex-direction:column}
+  .stg{display:flex;gap:12px;padding:9px 0;border-bottom:1px dashed var(--line-soft);align-items:baseline;font-size:13px;flex-wrap:wrap}
+  .stg .sn{font-family:var(--mono);font-size:11px;color:var(--cyan);min-width:56px}
+  .stg .sv{font-family:var(--mono);color:var(--ink-dim);margin-left:auto;font-size:12px}
+  .pack{border:1px solid var(--violet-line);border-radius:var(--r);background:var(--panel)}
+  .pack .ph{background:var(--violet-soft);color:var(--violet);padding:9px 14px;border-radius:var(--r) var(--r) 0 0;margin:0}
+  .layer{display:flex;gap:12px;align-items:baseline;padding:10px 14px;border-bottom:1px dashed var(--line-soft);font-size:13px;flex-wrap:wrap}
+  .layer .ln{font-family:var(--mono);font-size:11px;color:var(--violet);min-width:26px}
+  .layer .tok{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
+  .mono-block{font-family:var(--mono);font-size:11.5px;line-height:1.75;background:#0c1020;border:1px solid var(--line-soft);border-radius:8px;padding:12px 14px;color:var(--ink-dim);overflow-x:auto}
+  .mono-block b{color:var(--ink);font-weight:500}
+
+  /* research loop */
+  .budget{display:flex;align-items:center;gap:14px;font-size:13px;color:var(--ink-dim);flex-wrap:wrap}
+  .bar{flex:1;min-width:120px;height:8px;background:#0c1020;border:1px solid var(--line-soft);border-radius:999px;overflow:hidden}
+  .bar i{display:block;height:100%;width:50%;background:var(--cyan)}
+  .hyp{border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;background:var(--panel);margin-top:12px}
+  .hyp.proposed{border-color:var(--violet-line)}
+  .hyp .meta{font-family:var(--mono);font-size:11px;color:var(--ink-faint);margin-top:8px}
+  .hyp .claim{font-size:13.5px;margin-top:8px}
+  .btn{font-family:var(--body);font-size:12.5px;font-weight:600;border:1px solid #39456e;border-radius:8px;background:var(--panel-2);padding:6px 14px;color:var(--ink);cursor:default}
+  .btn.primary{background:var(--gold);color:#20180a;border-color:var(--gold)}
+
+  /* meters (risk / health) */
+  .meter{height:8px;background:#0c1020;border:1px solid var(--line-soft);border-radius:999px;overflow:hidden;margin:7px 0 3px}
+  .meter i{display:block;height:100%}
+  .meter i.g{background:var(--up)} .meter i.a{background:var(--amber)} .meter i.r{background:var(--down)}
+  .mrow{display:flex;justify-content:space-between;font-size:12.5px;color:var(--ink-dim);gap:10px}
+  .mrow b{font-family:var(--mono);color:var(--ink);font-weight:500}
+  .hz{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+  .hz i{width:13px;height:13px;border-radius:3px;background:rgba(63,214,140,.16);border:1px solid rgba(63,214,140,.4)}
+  .hz i.warn{background:var(--gold-soft);border-color:var(--gold-line)}
+  .hz i.rej{background:rgba(242,85,90,.16);border-color:rgba(242,85,90,.5)}
+  /* book / portfolio screens */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+  .kpi{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:13px 15px}
+  .kpi .l{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);margin:0 0 6px}
+  .kpi .v{font-family:var(--disp);font-weight:800;font-size:22px}
+  .kpi .s{font-family:var(--mono);font-size:11px;color:var(--ink-faint);margin-top:2px}
+  .pl-up{color:var(--up)} .pl-down{color:var(--down)}
+  .strat-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .st-tab{font-family:var(--mono);font-size:12px;padding:5px 12px;border-radius:999px;border:1px solid var(--line);color:var(--ink-dim);background:var(--panel)}
+  .st-tab.on{border-color:var(--gold-line);color:var(--gold);background:var(--gold-soft)}
+  .st-tab.agg{border-color:var(--cyan-line);color:var(--cyan);background:var(--cyan-soft)}
+  /* portfolio sidebar layout (side menu, not tabs) */
+  .book{display:grid;grid-template-columns:216px minmax(0,1fr);gap:0;align-items:stretch}
+  .rail{border-right:1px solid var(--line);padding:14px 12px;background:#10152a}
+  .rail .grp{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);margin:4px 6px 8px}
+  .rail .grp:not(:first-child){margin-top:18px}
+  .rail a{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;font-size:13px;color:var(--ink-dim);text-decoration:none;margin-bottom:2px;border-left:2px solid transparent}
+  .rail a .mk{width:6px;height:6px;border-radius:2px;background:#39456e;flex:none}
+  .rail a.on{background:var(--gold-soft);color:var(--gold);border-left-color:var(--gold)}
+  .rail a.on .mk{background:var(--gold)}
+  .rail a.math .mk{background:var(--cyan)} .rail a.ai .mk{background:var(--violet)}
+  .rail a.sub{padding-left:16px}
+  .rail .who{font-size:11px;color:var(--ink-faint);font-family:var(--mono);margin:2px 6px 10px}
+  .bookmain{padding:16px 18px;min-width:0}
+  .crumb{font-family:var(--mono);font-size:11px;color:var(--ink-faint);margin-bottom:14px}
+  .crumb b{color:var(--ink-dim);font-weight:500} .crumb .here{color:var(--gold)}
+  @media (max-width:640px){
+    .book{grid-template-columns:1fr}
+    .rail{border-right:none;border-bottom:1px solid var(--line);display:flex;gap:6px;overflow-x:auto;padding:10px}
+    .rail .grp,.rail .who{display:none}
+    .rail a{white-space:nowrap;margin-bottom:0;border-left:none}
+  }
+  .barmini{display:inline-block;width:60px;height:7px;border-radius:999px;background:#0c1020;border:1px solid var(--line-soft);vertical-align:middle;overflow:hidden}
+  .barmini i{display:block;height:100%;background:var(--cyan)}
+  .tag-buy{color:var(--up)} .tag-sell{color:var(--down)} .tag-pend{color:var(--gold)}
+  .status-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:middle}
+  .sd-fill{background:var(--up)} .sd-queue{background:var(--gold)} .sd-rej{background:var(--down)}
+
+  /* attention queue (morning) */
+  .queue{display:flex;flex-direction:column;gap:10px}
+  .qi{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--line);border-left:3px solid var(--ink-faint);border-radius:10px;padding:12px 14px;background:var(--panel)}
+  .qi.act{border-left-color:var(--down)} .qi.watch{border-left-color:var(--gold)} .qi.info{border-left-color:var(--cyan)}
+  .qi .ic{font-family:var(--mono);font-size:11px;color:var(--ink-faint);min-width:52px}
+  .qi .tx{font-size:13px} .qi .tx b{font-weight:600}
+  .qi .go{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--gold);white-space:nowrap}
+
+  /* journal / pre-registration */
+  .steps{display:flex;flex-direction:column;gap:0;counter-reset:s}
+  .step{display:flex;gap:14px;padding:12px 0;border-bottom:1px dashed var(--line-soft)}
+  .step .sc{font-family:var(--disp);font-weight:800;color:var(--cyan);font-size:16px;min-width:26px}
+  .step .sb{font-size:13px} .step .sb b{font-weight:600}
+  .locked{font-family:var(--mono);font-size:11px;color:var(--up);margin-top:6px}
+
+  /* replay banner */
+  .replaybar{display:flex;align-items:center;gap:12px;padding:11px 16px;border-radius:10px;background:repeating-linear-gradient(135deg,rgba(233,180,76,.10),rgba(233,180,76,.10) 12px,rgba(233,180,76,.04) 12px,rgba(233,180,76,.04) 24px);border:1px solid var(--gold-line);flex-wrap:wrap}
+  .replaybar .tg{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);font-weight:600}
+  .replaybar .msg{font-size:12.5px;color:var(--ink-dim)}
+
+  /* empty state */
+  .empty{text-align:center;padding:34px 20px;border:1px dashed var(--line);border-radius:var(--r);background:var(--panel-3)}
+  .empty h3{font-family:var(--disp);font-weight:700;font-size:18px;margin:0 0 8px}
+  .empty p{color:var(--ink-dim);font-size:13.5px;max-width:52ch;margin:0 auto 14px}
+  .empty .teach{font-family:var(--mono);font-size:11.5px;color:var(--ink-faint)}
+
+  /* mobile frame demo */
+  .phone{max-width:390px;margin:0 auto;border:1px solid var(--line);border-radius:26px;overflow:hidden;background:var(--panel-3);box-shadow:0 40px 80px -40px rgba(0,0,0,.7)}
+  .phone .nub{height:26px;display:flex;align-items:center;justify-content:center}
+  .phone .nub::after{content:'';width:110px;height:5px;border-radius:3px;background:#2c3556}
+  .phone .pbody{padding:14px}
+
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--ink-dim);align-items:center;margin-top:26px}
+  .colo{width:11px;height:11px;border-radius:3px;display:inline-block;vertical-align:-1px;margin-right:6px}
+  .endnote{margin:64px 0 60px;padding-top:22px;border-top:1px solid var(--line);color:var(--ink-faint);font-size:12.5px;font-family:var(--mono)}
+
+  /* narrow-viewport pass — proves the layout is mobile-ready (structure only) */
+  @media (max-width:640px){
+    .runinfo{margin-left:0;width:100%}
+    .seats .look{display:none}
+    .navl{font-size:12.5px;gap:10px}
+    .big{font-size:24px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ================= header ================= -->
+  <header class="head">
+    <p class="eyebrow">AlphaLab · consolidated UX mockups · design revision v1.9.21</p>
+    <h1>One bench, two rosters, every number accountable.</h1>
+    <p>The single current mockup set. It replaces the earlier per-topic files. Two rosters share one
+    arena, the <span class="cyan">mathematical seat</span> and the <span class="violet">AI seat</span>,
+    judged by the same rails, with a deferred advisor seat shown for completeness. The signature element
+    is the drawn MDE interval gauge: no judged number appears without the bracket saying what the data can
+    and cannot see (UX-1, rule 22). All honesty logic stays in the D58 read-models; every screen renders
+    fields verbatim. It covers both halves of the lab: the operational book (screens 04-07, the live paper trading,
+    portfolio, positions, orders and fills, cash and equity) and the judging machinery (leaderboard, verdicts,
+    attribution, the AI seats, audit, allocation, risk, data health, research, replay). Layout is fluid and
+    single-column, so a future mobile client is a styling pass, not a rebuild, and screen 18 shows the mobile frame
+    the design already anticipates.</p>
+
+    <div class="ds">
+      <div>
+        <h4>Palette</h4>
+        <div class="swatches">
+          <div class="sw" style="background:#0E1220"></div>
+          <div class="sw" style="background:#161B2E"></div>
+          <div class="sw" style="background:#E9B44C"></div>
+          <div class="sw" style="background:#4CC9E0"></div>
+          <div class="sw" style="background:#8B7CF6"></div>
+          <div class="sw" style="background:#3FD68C"></div>
+        </div>
+        <p class="k" style="margin:8px 0 0">cyan = math seat · violet = AI seat · gold = focus</p>
+      </div>
+      <div>
+        <h4>Type</h4>
+        <p class="k" style="margin:0"><b class="tdisp">Archivo</b> display</p>
+        <p class="k" style="margin:2px 0 0"><b>Inter</b> interface</p>
+        <p class="k" style="margin:2px 0 0"><b class="tmono">IBM Plex Mono</b> every number</p>
+      </div>
+      <div>
+        <h4>Signature · the MDE gauge</h4>
+        <p class="k" style="margin:0 0 6px">estimate inside its ± bracket ⇒ dimmed, tilde-prefixed</p>
+        <p class="k" style="margin:0"><span class="val dim">+1.4%</span> <span class="gauge"><i class="in" style="left:62%"></i></span> <span class="mde">±4.8</span>
+        &nbsp;·&nbsp; <span class="val up">+3.1%</span> <span class="gauge"><i class="out" style="left:88%"></i></span> <span class="mde">±2.2</span></p>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= 01 morning glance ================= -->
+  <div class="section-label"><span class="n">01</span><h2>Morning glance · an attention queue, not a status poster</h2><span class="tag">GET /api/v1/attention</span></div>
+  <p class="note">The first screen each evening. Not a dashboard of green ticks, a ranked queue of what actually
+  needs the operator: things to act on, things to watch, things merely worth knowing. If nothing needs you, it
+  says so plainly rather than inventing activity.</p>
+  <div class="desktop">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /</span></div>
+    <div class="app">
+      <div class="appbar">
+        <span class="logo">Alpha<span>Lab</span></span><span class="arena">arena · sp500</span>
+        <nav class="navl"><b>Home</b><span>Strategies</span><span>Portfolio</span><span>Allocation</span><span>AI seats</span><span>Research</span><span>Decisions</span><span>Risk</span><span>Data health</span></nav>
+        <span class="runinfo">2027-03-19 · watermark stamped · ok</span>
+      </div>
+      <div class="pad">
+        <div class="queue">
+          <div class="qi act"><span class="ic">act</span><span class="tx"><b>meanrev:rsi3 auto-retired</b> — per-trade expectancy crossed negative over 412 trades. No action required to stop it; review the post-mortem when convenient.</span><span class="go">post-mortem →</span></div>
+          <div class="qi watch"><span class="ic">watch</span><span class="tx"><b>H-16 awaiting your pre-registration</b> — the researcher seat proposed a vol-gated momentum fork citing decay finding #204. It does not run until you register it.</span><span class="go">review →</span></div>
+          <div class="qi watch"><span class="ic">watch</span><span class="tx"><b>1 data-quality reject this week</b> — one session's bar failed the robust-z gate and never entered the funnel. Nothing broke; the flag is logged.</span><span class="go">data health →</span></div>
+          <div class="qi info"><span class="ic">info</span><span class="tx"><b>momentum:v1 crossed 200 trading days</b> — still <span class="val dim">too early</span>; its separation band narrowed this month.</span><span class="go">strategy →</span></div>
+        </div>
+        <p class="foot">ranked by what needs you, not by recency · an empty queue renders "nothing needs you tonight", never filler</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 02 strategies ================= -->
+  <div class="section-label"><span class="n">02</span><h2>Strategies · two rosters, one judge</h2><span class="tag">GET /api/v1/strategies</span></div>
+  <p class="note">Seat ticks on the row edge separate the rosters without separating the competition. Every row:
+  the gauge beside its α, the percentile against its own turnover-matched population, the verdict chip, and the
+  D63 separation state. Dimmed numbers are unjudgeable by definition, so sorting never implies ranking by belief.</p>
+  <div class="desktop">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /strategies</span></div>
+    <div class="app">
+      <div class="appbar">
+        <span class="logo">Alpha<span>Lab</span></span><span class="arena">arena · sp500</span>
+        <nav class="navl"><span>Home</span><b>Strategies</b><span>Portfolio</span><span>Allocation</span><span>AI seats</span><span>Research</span><span>Decisions</span><span>Risk</span><span>Data health</span></nav>
+        <span class="runinfo">run 2027-03-19 · ok</span>
+      </div>
+      <div class="seats">
+        <span class="lbl">AI seats</span>
+        <span class="spill r"><span class="d"></span><span class="nm">Researcher</span><span class="st">active · 3/6 forks</span></span>
+        <span class="spill c"><span class="d"></span><span class="nm">Contestant</span><span class="st">1 live + 1 control</span></span>
+        <span class="spill a"><span class="d"></span><span class="nm">Advisor</span><span class="st">deferred (D79)</span></span>
+        <span class="look">every seat priced by the same arena · rule 32</span>
+      </div>
+      <div class="pad">
+        <div class="tw"><table class="lb">
+          <tr><th>strategy</th><th>fwd α · net · β-adj</th><th>vs 200 randoms</th><th>verdict</th><th>separation</th></tr>
+          <tr class="math"><td><span class="name">momentum:v1</span> <span class="seat math">math</span><div class="sub">rank buffer 40/80 · H-14 linked</div></td><td><span class="val dim">+1.4%</span> <span class="gauge"><i class="in" style="left:63%"></i></span> <span class="mde">±4.8</span></td><td>71st</td><td><span class="chip early">too early</span></td><td class="sub">emerging · 214d</td></tr>
+          <tr class="math"><td><span class="name">lowvol:v1</span> <span class="seat math">math</span><div class="sub">monthly · sector caps</div></td><td><span class="val dim">+0.6%</span> <span class="gauge"><i class="in" style="left:56%"></i></span> <span class="mde">±4.1</span></td><td>55th</td><td><span class="chip early">too early</span></td><td class="sub">indistinguishable from random · 417d</td></tr>
+          <tr class="math"><td><span class="name">meanrev:rsi3</span> <span class="seat math">math</span><div class="sub">trade-level track · D44</div></td><td><span class="val down">−$3.90/trade</span></td><td>22nd</td><td><span class="chip retired">retired</span></td><td class="sub">negative expectancy · 412 trades</td></tr>
+          <tr class="ai"><td><span class="name">llm-contestant-01</span> <span class="seat ai">contestant</span><div class="sub">model llm-a · policy v3 · memory A</div></td><td><span class="val dim">+1.1%</span> <span class="gauge"><i class="ai" style="left:64%"></i></span> <span class="mde">±2.4</span></td><td>66th</td><td><span class="chip early">too early</span></td><td class="sub"><span class="chip ab">A/B pair</span> 356d</td></tr>
+          <tr class="ai"><td><span class="name">llm-contestant-01 · control</span> <span class="seat ai">A/B control</span><div class="sub">identical mechanics · no model call</div></td><td><span class="val dim">+0.4%</span> <span class="gauge"><i class="in" style="left:55%"></i></span> <span class="mde">±2.4</span></td><td>58th</td><td><span class="chip early">too early</span></td><td class="sub"><span class="chip ab">A/B pair</span> 356d</td></tr>
+          <tr class="ref"><td><span class="name">buyhold:cw · buyhold:ew</span> <span class="seat ref">reference</span></td><td class="sub">benchmarks</td><td class="sub">n/a</td><td><span class="chip neutral">never promotable</span></td><td class="sub">population band shaded on every chart</td></tr>
+        </table></div>
+        <p class="foot">~ dimmed = gap inside its Newey–West MDE (rule 22) · percentile = rank within the strategy's own turnover-matched population (D36)</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 03 live strategy overview ================= -->
+  <div class="section-label"><span class="n">03</span><h2>Strategy overview · one strategy, in full</h2><span class="tag">GET /api/v1/strategies/momentum:v1</span></div>
+  <p class="note">Drilling into a single strategy: its verdict and band up top, the equity curve against its
+  population and both benchmarks, its factor attribution (what it really is), and its live book. The attribution
+  panel is the antidote to self-flattery, a "clever" strategy that turns out 0.9-loaded on momentum with no
+  residual is told so here.</p>
+  <div class="desktop">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /strategies/momentum:v1</span></div>
+    <div class="pad">
+      <div class="grid2">
+        <div class="panel">
+          <p class="ph">verdict &amp; band</p>
+          <span class="big">momentum:v1</span>
+          <div style="margin-top:10px"><span class="chip early">too early</span> <span class="val dim" style="margin-left:8px">+1.4%/yr</span> <span class="gauge"><i class="in" style="left:63%"></i></span> <span class="mde">±4.8 · 214d</span></div>
+          <p class="note" style="margin:12px 0 0;font-size:12.5px">emerging separation · at the current tracking error a real +2%/yr edge becomes decidable near ~2.4y</p>
+        </div>
+        <div class="panel">
+          <p class="ph">factor attribution · diagnostic only (D41)</p>
+          <div class="mrow"><span>market (β)</span><b>0.98</b></div><div class="meter"><i class="g" style="width:98%"></i></div>
+          <div class="mrow"><span>momentum load</span><b>0.71</b></div><div class="meter"><i class="a" style="width:71%"></i></div>
+          <div class="mrow"><span>size / value / quality</span><b>0.06 / −0.02 / 0.10</b></div>
+          <div class="mrow" style="margin-top:6px"><span>residual α (unexplained)</span><b class="val dim">+0.3%</b></div>
+          <p class="foot" style="margin-top:8px">most of the return is momentum exposure · attribution is never a trading input</p>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:16px">
+        <p class="ph">equity vs population band &amp; benchmarks (schematic)</p>
+        <svg viewBox="0 0 900 150" width="100%" role="img" style="display:block">
+          <title>Equity curve inside its shaded random-population band, with both benchmarks</title>
+          <rect x="0" y="34" width="900" height="74" fill="rgba(76,201,224,.06)"/>
+          <text x="10" y="26" fill="#59617A" font-family="IBM Plex Mono" font-size="11">shaded = 200-random population band (D36)</text>
+          <polyline fill="none" stroke="#4CC9E0" stroke-width="2" points="0,96 120,90 240,84 360,88 480,72 600,66 720,60 900,52"/>
+          <polyline fill="none" stroke="#59617A" stroke-width="1.5" stroke-dasharray="5 5" points="0,100 240,94 480,88 720,82 900,78"/>
+          <polyline fill="none" stroke="#8A93AD" stroke-width="1.5" stroke-dasharray="2 4" points="0,102 240,98 480,92 720,88 900,84"/>
+        </svg>
+        <p class="foot">cyan = strategy · dashed = cap-weight benchmark · dotted = equal-weight benchmark · the strategy sits at the top of its band, not yet outside it</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 04 portfolio book ================= -->
+  <div class="section-label"><span class="n">04</span><h2>Portfolio · the live book, across every strategy</h2><span class="tag">GET /api/v1/portfolio</span></div>
+  <p class="note">The screen you open to see the paper trading actually happening. A left menu lists your strategies
+  and, under a chosen one, its book views (overview, positions, orders, cash) — no stacked tabs, no one-giant-page.
+  The roster view sums every strategy; pick a single strategy in the menu to drill into its book. This is the
+  operational ledger (Phase-2 tables: positions, trades, cash_events, equity_curve), separate from the statistical
+  judging on the strategy pages.</p>
+  <div class="desktop">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /portfolio</span></div>
+    <div class="app">
+      <div class="appbar">
+        <span class="logo">Alpha<span>Lab</span></span><span class="arena">arena · sp500</span>
+        <nav class="navl"><span>Home</span><span>Strategies</span><b>Portfolio</b><span>Allocation</span><span>AI seats</span><span>Research</span><span>Decisions</span><span>Risk</span><span>Data health</span></nav>
+        <span class="runinfo">as of close 2027-03-19</span>
+      </div>
+      <div class="book">
+      <div class="rail">
+        <div class="grp">strategy</div>
+        <a href="#" class=" on"><span class="mk"></span>Roster (all)</a>
+        <a href="#" class="math "><span class="mk"></span>momentum:v1</a>
+        <a href="#" class="ai "><span class="mk"></span>llm-contestant-01</a>
+        <a href="#" class="ai "><span class="mk"></span>· control</a>
+        <a href="#" class="math "><span class="mk"></span>lowvol:v1</a>
+        <div class="grp">book views</div>
+        <div class="who">llm-contestant-01</div>
+        <a href="#" class="sub on"><span class="mk"></span>Overview</a>
+        <a href="#" class="sub "><span class="mk"></span>Positions</a>
+        <a href="#" class="sub "><span class="mk"></span>Orders &amp; fills</a>
+        <a href="#" class="sub "><span class="mk"></span>Cash &amp; equity</a>
+      </div>
+      <div class="bookmain">
+        <div class="crumb"><span class="here">Roster (all)</span> · every strategy summed</div>
+        <div class="kpis">
+          <div class="kpi"><p class="l">total equity</p><p class="v">$1,043,180</p><p class="s pl-up">+4.3% since inception</p></div>
+          <div class="kpi"><p class="l">cash</p><p class="v">$96,410</p><p class="s">9.2% of equity</p></div>
+          <div class="kpi"><p class="l">invested</p><p class="v">$946,770</p><p class="s">42 open positions</p></div>
+          <div class="kpi"><p class="l">today</p><p class="v pl-up">+$3,910</p><p class="s pl-up">+0.38%</p></div>
+          <div class="kpi"><p class="l">unrealized</p><p class="v pl-up">+$41,180</p><p class="s">realized +$1,990 YTD</p></div>
+        </div>
+        <div class="tw"><table class="lb">
+          <tr><th>strategy</th><th>book value</th><th>cash</th><th>positions</th><th>today</th><th>unrealized</th></tr>
+          <tr class="math"><td><span class="name">momentum:v1</span> <span class="seat math">math</span></td><td class="val">$268,900</td><td class="val">$17,400</td><td class="val">14</td><td class="val up">+$1,240</td><td class="val up">+$12,900</td></tr>
+          <tr class="ai"><td><span class="name">llm-contestant-01</span> <span class="seat ai">AI</span></td><td class="val">$261,010</td><td class="val">$32,900</td><td class="val">9</td><td class="val up">+$1,510</td><td class="val up">+$11,010</td></tr>
+          <tr class="ai"><td><span class="name">llm-contestant-01 · ctrl</span> <span class="seat ai">A/B</span></td><td class="val">$258,300</td><td class="val">$26,400</td><td class="val">11</td><td class="val up">+$980</td><td class="val up">+$8,300</td></tr>
+          <tr class="math"><td><span class="name">lowvol:v1</span> <span class="seat math">math</span></td><td class="val">$254,970</td><td class="val">$19,710</td><td class="val">8</td><td class="val up">+$180</td><td class="val up">+$8,970</td></tr>
+        </table></div>
+        <p class="foot">click a strategy in the menu to open its book · every strategy trades its own isolated paper account (D30) · paper trading only, not investment advice</p>
+      </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 05 positions blotter ================= -->
+  <div class="section-label"><span class="n">05</span><h2>Positions · what a strategy holds right now</h2><span class="tag">GET /api/v1/portfolio/llm-contestant-01/positions</span></div>
+  <p class="note">You reach this by picking a strategy in the left menu, then Positions. The open book for that one
+  strategy: each holding with entry, current mark, unrealized P&amp;L, weight against the 5% cap, and the exit rule
+  watching it. Marks are the last visible close at the watermark (a frozen name is pinned at last print, not cost
+  basis — the Phase-2 review fix).</p>
+  <div class="desktop">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /portfolio/llm-contestant-01/positions</span></div>
+    <div class="book">
+      <div class="rail">
+        <div class="grp">strategy</div>
+        <a href="#" class=" "><span class="mk"></span>Roster (all)</a>
+        <a href="#" class="math "><span class="mk"></span>momentum:v1</a>
+        <a href="#" class="ai on"><span class="mk"></span>llm-contestant-01</a>
+        <a href="#" class="ai "><span class="mk"></span>· control</a>
+        <a href="#" class="math "><span class="mk"></span>lowvol:v1</a>
+        <div class="grp">book views</div>
+        <div class="who">llm-contestant-01</div>
+        <a href="#" class="sub "><span class="mk"></span>Overview</a>
+        <a href="#" class="sub on"><span class="mk"></span>Positions</a>
+        <a href="#" class="sub "><span class="mk"></span>Orders &amp; fills</a>
+        <a href="#" class="sub "><span class="mk"></span>Cash &amp; equity</a>
+      </div>
+      <div class="bookmain">
+        <div class="crumb"><b>Portfolio</b> › <b>llm-contestant-01</b> › <span class="here">Positions</span></div>
+        <div class="tw"><table class="lb">
+          <tr><th>symbol</th><th>entry</th><th>shares</th><th>entry px</th><th>mark</th><th>mkt value</th><th>unrealized</th><th>wt / cap</th><th>exit watch</th></tr>
+          <tr><td><span class="name">NVDA</span></td><td class="sub">01-12</td><td class="val">210</td><td class="val">$118.40</td><td class="val">$141.90</td><td class="val">$29,799</td><td class="val up">+$4,935 (+19.9%)</td><td><span class="barmini"><i style="width:96%"></i></span> <span class="val">4.8%</span></td><td class="sub">trail 15% · armed</td></tr>
+          <tr><td><span class="name">LLY</span></td><td class="sub">02-03</td><td class="val">34</td><td class="val">$742.10</td><td class="val">$801.30</td><td class="val">$27,244</td><td class="val up">+$2,013 (+8.0%)</td><td><span class="barmini"><i style="width:88%"></i></span> <span class="val">4.4%</span></td><td class="sub">rank exit if &lt; 40</td></tr>
+          <tr><td><span class="name">AVGO</span></td><td class="sub">02-19</td><td class="val">160</td><td class="val">$151.20</td><td class="val">$158.70</td><td class="val">$25,392</td><td class="val up">+$1,200 (+5.0%)</td><td><span class="barmini"><i style="width:82%"></i></span> <span class="val">4.1%</span></td><td class="sub">trail 15% · armed</td></tr>
+          <tr><td><span class="name">JPM</span></td><td class="sub">02-26</td><td class="val">120</td><td class="val">$188.00</td><td class="val">$184.10</td><td class="val">$22,092</td><td class="val down">−$468 (−2.1%)</td><td><span class="barmini"><i style="width:70%"></i></span> <span class="val">3.5%</span></td><td class="sub">rank exit if &lt; 40</td></tr>
+          <tr><td><span class="name">V</span></td><td class="sub">03-05</td><td class="val">85</td><td class="val">$262.40</td><td class="val">$268.90</td><td class="val">$22,857</td><td class="val up">+$553 (+2.5%)</td><td><span class="barmini"><i style="width:72%"></i></span> <span class="val">3.6%</span></td><td class="sub">trail 15% · armed</td></tr>
+        </table></div>
+        <p class="foot">mark = last visible close ≤ watermark (frozen names pinned at last print, §13.6) · unrealized = (mark − entry) × shares · 9 positions, 4 more below</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 06 orders + fills ================= -->
+  <div class="section-label"><span class="n">06</span><h2>Orders &amp; fills · decided today, filling tomorrow</h2><span class="tag">GET /api/v1/portfolio/llm-contestant-01/orders</span></div>
+  <p class="note">Same strategy, the Orders view in the menu. Closes are decided at session T and opens fill at T+1
+  (D30's realism), so this shows what's queued for the next session alongside what filled today, each fill carrying
+  its D43 cost breakdown. Capacity rejections — names the 2% participation cap couldn't fill — are shown, not
+  hidden.</p>
+  <div class="desktop">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /portfolio/llm-contestant-01/orders</span></div>
+    <div class="book">
+      <div class="rail">
+        <div class="grp">strategy</div>
+        <a href="#" class=" "><span class="mk"></span>Roster (all)</a>
+        <a href="#" class="math "><span class="mk"></span>momentum:v1</a>
+        <a href="#" class="ai on"><span class="mk"></span>llm-contestant-01</a>
+        <a href="#" class="ai "><span class="mk"></span>· control</a>
+        <a href="#" class="math "><span class="mk"></span>lowvol:v1</a>
+        <div class="grp">book views</div>
+        <div class="who">llm-contestant-01</div>
+        <a href="#" class="sub "><span class="mk"></span>Overview</a>
+        <a href="#" class="sub "><span class="mk"></span>Positions</a>
+        <a href="#" class="sub on"><span class="mk"></span>Orders &amp; fills</a>
+        <a href="#" class="sub "><span class="mk"></span>Cash &amp; equity</a>
+      </div>
+      <div class="bookmain">
+        <div class="crumb"><b>Portfolio</b> › <b>llm-contestant-01</b> › <span class="here">Orders &amp; fills</span></div>
+        <div class="grid2">
+          <div>
+            <p class="ph">queued · fills at 2027-03-20 open</p>
+            <div class="tw"><table class="lb">
+              <tr><th>side</th><th>symbol</th><th>shares</th><th>est. notional</th><th>status</th></tr>
+              <tr><td><span class="tag-buy">buy</span></td><td class="name">ASML</td><td class="val">42</td><td class="val">$21,800</td><td class="sub"><span class="status-dot sd-queue"></span>queued</td></tr>
+              <tr><td><span class="tag-buy">buy</span></td><td class="name">COST</td><td class="val">28</td><td class="val">$20,400</td><td class="sub"><span class="status-dot sd-queue"></span>queued</td></tr>
+              <tr><td><span class="tag-sell">sell</span></td><td class="name">JPM</td><td class="val">120</td><td class="val">$22,090</td><td class="sub"><span class="status-dot sd-queue"></span>close · rank exit</td></tr>
+            </table></div>
+            <p class="foot" style="margin-top:8px">decided at close T, executed at T+1 open (D30) · a queued close whose fill is later rejected is re-planned, not dropped</p>
+          </div>
+          <div>
+            <p class="ph">filled today · 2027-03-19</p>
+            <div class="tw"><table class="lb">
+              <tr><th>side</th><th>symbol</th><th>shares</th><th>fill px</th><th>cost paid</th></tr>
+              <tr><td><span class="tag-buy">buy</span></td><td class="name">V</td><td class="val">85</td><td class="val">$268.90</td><td class="sub">½-spread $34 · impact $61</td></tr>
+              <tr><td><span class="tag-sell">sell</span></td><td class="name">WMT</td><td class="val">140</td><td class="val">$96.10</td><td class="sub">½-spread $27 · impact $44</td></tr>
+            </table></div>
+            <p class="ph" style="margin-top:16px">capacity rejections</p>
+            <div class="mrow"><span><span class="status-dot sd-rej"></span>SMCI · wanted 3.1%</span><b class="val">cap filled 1.9%</b></div>
+            <p class="foot" style="margin-top:8px">2% ADV participation cap (D43) · the unfilled remainder is logged, never silently assumed filled</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 07 cash + equity ledger ================= -->
+  <div class="section-label"><span class="n">07</span><h2>Cash &amp; equity · the running ledger</h2><span class="tag">GET /api/v1/portfolio/llm-contestant-01/ledger</span></div>
+  <p class="note">The last book view for a strategy. The equity curve as an operational balance (distinct from the
+  equity-vs-population chart on the strategy page), and the cash ledger — every buy, sell, dividend, and fee that
+  moved the balance. Money is exact decimal (D69), never floating point.</p>
+  <div class="desktop">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /portfolio/llm-contestant-01/ledger</span></div>
+    <div class="book">
+      <div class="rail">
+        <div class="grp">strategy</div>
+        <a href="#" class=" "><span class="mk"></span>Roster (all)</a>
+        <a href="#" class="math "><span class="mk"></span>momentum:v1</a>
+        <a href="#" class="ai on"><span class="mk"></span>llm-contestant-01</a>
+        <a href="#" class="ai "><span class="mk"></span>· control</a>
+        <a href="#" class="math "><span class="mk"></span>lowvol:v1</a>
+        <div class="grp">book views</div>
+        <div class="who">llm-contestant-01</div>
+        <a href="#" class="sub "><span class="mk"></span>Overview</a>
+        <a href="#" class="sub "><span class="mk"></span>Positions</a>
+        <a href="#" class="sub "><span class="mk"></span>Orders &amp; fills</a>
+        <a href="#" class="sub on"><span class="mk"></span>Cash &amp; equity</a>
+      </div>
+      <div class="bookmain">
+        <div class="crumb"><b>Portfolio</b> › <b>llm-contestant-01</b> › <span class="here">Cash &amp; equity</span></div>
+        <div class="panel" style="margin-bottom:16px">
+          <p class="ph">equity curve · operational balance (equity_curve table)</p>
+          <svg viewBox="0 0 900 120" width="100%" role="img" style="display:block">
+            <title>Running paper-account equity balance since inception</title>
+            <line x1="0" y1="98" x2="900" y2="98" stroke="#2A3350" stroke-width="1"/>
+            <polyline fill="none" stroke="#4CC9E0" stroke-width="2" points="0,94 90,90 180,95 270,84 360,88 450,74 540,80 630,66 720,60 810,64 900,52"/>
+            <circle cx="900" cy="52" r="3.5" fill="#4CC9E0"/>
+            <text x="8" y="18" fill="#59617A" font-family="IBM Plex Mono" font-size="11">$250,000 start → $261,010 now · +4.4%</text>
+          </svg>
+        </div>
+        <div class="grid2">
+          <div class="panel">
+            <p class="ph">cash ledger · recent (cash_events)</p>
+            <div class="mrow" style="margin-bottom:5px"><span>03-19 · sell WMT</span><b class="val up">+$13,427</b></div>
+            <div class="mrow" style="margin-bottom:5px"><span>03-19 · buy V</span><b class="val down">−$22,857</b></div>
+            <div class="mrow" style="margin-bottom:5px"><span>03-18 · dividend LLY</span><b class="val up">+$41</b></div>
+            <div class="mrow" style="margin-bottom:5px"><span>03-17 · buy V (fees)</span><b class="val down">−$95</b></div>
+            <div class="mrow"><span>03-16 · sell MRK</span><b class="val up">+$18,220</b></div>
+          </div>
+          <div class="panel">
+            <p class="ph">balance summary</p>
+            <div class="mrow"><span>starting cash</span><b>$250,000</b></div>
+            <div class="mrow"><span>+ realized P&amp;L</span><b class="val up">+$1,010</b></div>
+            <div class="mrow"><span>+ dividends</span><b class="val up">+$1,240</b></div>
+            <div class="mrow"><span>− fees &amp; costs</span><b class="val down">−$2,880</b></div>
+            <div class="mrow"><span>− net invested</span><b>−$216,470</b></div>
+            <div class="mrow" style="margin-top:6px;padding-top:8px;border-top:1px solid var(--line-soft)"><span>current cash</span><b>$32,900</b></div>
+            <p class="foot" style="margin-top:8px">exact decimal money (D69) · reconstructs from cash_events (NFR-2)</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ================= 04 AI seats overview ================= -->
+  <div class="section-label"><span class="n">08</span><h2>AI seats · what each one decides, in the open</h2><span class="tag">GET /api/v1/ai/seats</span></div>
+  <p class="note">The three-seat architecture on one screen. Each seat states the decision it owns, the vendor-neutral
+  model behind it, its live budget, its latest decision in plain terms, and links into the full record. Nothing is
+  a black box: every AI decision opens the exact pack it read and the row the funnel consumed. Rule 32 holds.</p>
+  <div class="desktop">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /ai/seats</span></div>
+    <div class="pad">
+      <div class="panel" style="border-left:3px solid var(--cyan);margin-bottom:13px">
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap"><span class="spill r"><span class="d"></span><span class="nm">Researcher seat</span></span><span style="font-size:13px">decides which experiments run next</span><span style="margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ink-faint)">forks 3/6 · model llm-b</span></div>
+        <p style="font-size:13px;color:var(--ink-dim);margin:11px 0 10px"><span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);margin-right:8px">latest · 2027-03-18</span>Proposed <b style="color:var(--ink)">H-16</b>: vol-gate momentum when the regime label is high_vol. Cited parent evidence: decay finding #204 + 2 bear episodes. Awaiting your pre-registration.</p>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;color:var(--gold)"><span>view proposal →</span><span>skeptic review →</span><span>context pack #4,809 →</span></div>
+      </div>
+      <div class="panel" style="border-left:3px solid var(--violet);margin-bottom:13px">
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap"><span class="spill c"><span class="d"></span><span class="nm">Contestant seat</span></span><span style="font-size:13px">scores names, trades its own account</span><span style="margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ink-faint)">$0.014/day · cap $0.05 · model llm-a</span></div>
+        <p style="font-size:13px;color:var(--ink-dim);margin:11px 0 10px"><span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);margin-right:8px">latest · 2027-03-19</span>Scored 25 shortlisted names; 9 above zero. Ran against its no-model control — paired gap +1.1%/yr, still inside MDE.</p>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;color:var(--gold)"><span>decision audit →</span><span>A/B vs control →</span><span>ai_decisions #4,812 →</span><span>frozen policy v3 →</span></div>
+      </div>
+      <div class="panel deep" style="border-left:3px solid var(--ink-faint)">
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap"><span class="spill a"><span class="d"></span><span class="nm">Advisor seat</span></span><span style="font-size:13px">would advise allocation weights</span><span style="margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ink-faint)">deferred · opt-in (D79)</span></div>
+        <p style="font-size:13px;color:var(--ink-dim);margin:11px 0 10px"><span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);margin-right:8px">not yet enabled</span>When switched on, runs as a paired A/B against the D51 allocator and is never wired to applied weights until it has priced positive. Shown so the architecture is complete, not hidden.</p>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--ink-faint)">enable in settings →</div>
+      </div>
+      <p class="foot">seat = a defined decision the AI owns · model ids are vendor-neutral and swap by frozen-param fork (D81) · every decision links to its persisted pack + row (NFR-1)</p>
+    </div>
+  </div>
+
+  <!-- ================= 05 AI value ================= -->
+  <div class="section-label"><span class="n">09</span><h2>AI value · the paired question</h2><span class="tag">llm-contestant-01 vs its control</span></div>
+  <p class="note">The screen that answers "does the AI add anything?" honestly. Raw totals sit small and dim; the
+  paired daily difference carries the room. Pairing cancels everything the twins share (M.1), which is why this is
+  the fastest verdict the lab can produce.</p>
+  <div class="desktop">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /strategies/llm-contestant-01/ab</span></div>
+    <div class="pad">
+      <div class="grid2">
+        <div class="panel"><p class="ph" style="color:var(--violet)">llm-contestant-01 · contestant seat</p><span class="big">+7.9% <small>1y total</small></span><p class="note" style="margin:8px 0 0;font-size:12.5px">same signals + the persisted model read · policy v3 frozen (D17)</p></div>
+        <div class="panel"><p class="ph" style="color:var(--cyan)">llm-contestant-01 · control</p><span class="big">+7.2% <small>1y total</small></span><p class="note" style="margin:8px 0 0;font-size:12.5px">identical pre-filter, breadth, sizing, exits, costs, seed</p></div>
+      </div>
+      <div class="panel" style="margin-top:16px">
+        <p class="ph">paired daily-difference gap · β-adj · net</p>
+        <span class="big" style="font-size:23px">+1.1%/yr <small>MDE ±2.4% · 356d paired</small></span>
+        <div class="gauge-xl"><div class="band"></div><div class="zero"></div><div class="pt" style="left:63.7%"></div></div>
+        <div class="axis"><span>−4%</span><span>0</span><span>+4%</span></div>
+        <p class="note" style="margin:12px 0 0;font-size:12.5px"><span class="chip early">too early</span>&nbsp; the dot is inside the shaded MDE band: not evidence in either direction. A +2%/yr contribution becomes decidable near ~2.6y; a zero contribution earns the indistinguishable chip on the same clock. Verdicts arrive on the 21-day cadence, never shopped daily.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 06 decision audit ================= -->
+  <div class="section-label"><span class="n">10</span><h2>Decision audit · what the AI saw, exactly</h2><span class="tag">GET /api/v1/why-trade/llm-contestant-01/2027-03-19</span></div>
+  <p class="note">Why-this-trade for an AI seat. Left: the six-stage funnel trail from <code>stage_json</code>. Right:
+  the D80 context pack layer by layer with its token spend, and the persisted <code>ai_decisions</code> row the
+  funnel consumed. Re-runs replay the row, zero API calls.</p>
+  <div class="desktop">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /why-trade/llm-contestant-01/2027-03-19</span></div>
+    <div class="pad">
+      <div class="grid2">
+        <div>
+          <p class="ph">funnel trail · watermark 2027-03-19T22:00Z</p>
+          <div class="trail">
+            <div class="stg"><span class="sn">stage 1</span> eligibility · shared pool <span class="sv">498 members · 496 priced</span></div>
+            <div class="stg"><span class="sn">stage 1.5</span> local pre-filter · deterministic <span class="sv">496 → 25 shortlist</span></div>
+            <div class="stg"><span class="sn">stage 2</span> AI scoring · from the stored row <span class="sv">25 scored · 9 &gt; 0</span></div>
+            <div class="stg"><span class="sn">stage 3</span> selection · zero-score invariant <span class="sv">wish list 9</span></div>
+            <div class="stg"><span class="sn">stage 4</span> portfolio · exits by policy only <span class="sv">2 opens · 7 holds · 1 close</span></div>
+            <div class="stg"><span class="sn">stage 5</span> sizing · equal, cap 5% <span class="sv">cash 11.2% · honest</span></div>
+            <div class="stg"><span class="sn">stage 6</span> orders · close T, fill open T+1 <span class="sv">3 orders → 2027-03-20</span></div>
+          </div>
+        </div>
+        <div>
+          <div class="pack">
+            <p class="ph">context pack · sha 9f3ac2…b71 · recipe cp-1.0 · #4,812</p>
+            <div class="layer"><span class="ln">L0</span> static instructions + schema <span class="tok">1,502 tok · cached</span></div>
+            <div class="layer"><span class="ln">L1</span> lesson set · frozen with policy v3 <span class="tok">988 tok · cached</span></div>
+            <div class="layer"><span class="ln">L2</span> regime line + 25 shortlist rows + book <span class="tok">1,764 tok · fresh</span></div>
+            <div class="layer" style="border-bottom:none"><span class="ln">out</span> 25 scores + rationales <span class="tok">611 tok · $0.014</span></div>
+          </div>
+          <p class="ph" style="margin-top:16px">persisted decision · ai_decisions #4,812</p>
+          <div class="mono-block">strategy_id&nbsp;&nbsp;<b>llm-contestant-01</b> · as_of <b>2027-03-19</b><br>pack_hash&nbsp;&nbsp;&nbsp;&nbsp;<b>9f3ac2…b71</b> · prompt_v <b>3</b> · model_id <b>llm-a</b><br>output_json&nbsp;&nbsp;{ "NVDA": 0.92, "LLY": 0.81, "AVGO": 0.74, … }<br>replay&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;re-runs consume this row · 0 API calls</div>
+        </div>
+      </div>
+      <p class="foot">rule 32: nothing here feeds a metric, verdict, threshold, or population · raw series never entered the prompt (D80)</p>
+    </div>
+  </div>
+
+  <!-- ================= 07 research loop ================= -->
+  <div class="section-label"><span class="n">11</span><h2>Research loop · the generative seat</h2><span class="tag">POST /api/v1/analysis/hypotheses</span></div>
+  <p class="note">The AI proposes; the operator registers (rule 30). Every proposal cites parent evidence or the
+  endpoint refuses it, and the fork budget renders beside the deflated-Sharpe trials count so self-improvement
+  rations its own significance spend (D82).</p>
+  <div class="desktop">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /research</span></div>
+    <div class="pad">
+      <div class="panel deep"><div class="budget"><span class="ph" style="margin:0">fork budget 2027</span><div class="bar"><i></i></div><span class="val">3 of 6 used</span><span class="mde">trials n = 11 · deflated Sharpe uses all of them</span></div></div>
+      <div class="hyp proposed"><span class="chip ab">proposed · awaiting pre-registration</span><p class="claim">Momentum's rolling alpha decays into its band during high_vol regimes. A vol-gated fork (halve exposure when the PIT label is high_vol) should cut drawdown without losing net alpha. Confirm metric: paired gap vs momentum:v1 above its MDE within 378d.</p><p class="meta">H-16 · researcher seat · parent evidence: S6 decay finding #204 + regime episodes n=2 (anecdote badge acknowledged)</p><div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn primary">Pre-register and fork</button><button class="btn">Run the skeptic first</button><button class="btn">Decline · log reason</button></div></div>
+      <div class="hyp"><span class="chip ok">running</span><p class="claim">The skip-month convention adds net alpha versus plain 12-1 momentum after costs.</p><p class="meta">H-14 · locked 2026-11-02 · candidate momentum:skipmonth-v2 · window 252d · 96d elapsed</p></div>
+      <div class="hyp"><span class="chip retired">refuted · outcome recorded</span><p class="claim">The daily market-level sentiment score improves the blend. Refuted: A/B gap inside its MDE for the full window at the 48th percentile. Lesson: market-level reads carry too little information; the next proposal targets name-level reads on the shortlist.</p><p class="meta">H-11 · closed 2027-02-14 · lesson feeds the L1 set at the next policy fork (memory option A)</p></div>
+    </div>
+  </div>
+
+  <!-- ================= 08 allocation ================= -->
+  <div class="section-label"><span class="n">12</span><h2>Allocation · every weight reconstructs from what's on screen</h2><span class="tag">GET /api/v1/allocation</span></div>
+  <p class="note">Each weight shows its derivation and the clamp that bound it (UX-9): shrunk α, target, applied, and
+  the chip naming the binding clamp. The allocator's own value-add is measured here too, against static equal
+  weight, so the lab's primary improvement mechanism faces falsification like everything else.</p>
+  <div class="desktop">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /allocation</span></div>
+    <div class="pad">
+      <div class="tw"><table class="lb">
+        <tr><th>strategy</th><th>α̂ · se</th><th>shrunk α̃</th><th>target → applied</th><th>binding clamp</th></tr>
+        <tr class="math"><td><span class="name">momentum:v1</span></td><td class="val">1.4 · 2.4</td><td class="val">0.9</td><td><span class="val">31% → 28%</span></td><td><span class="chip early">too-early tilt cap</span></td></tr>
+        <tr class="ai"><td><span class="name">llm-contestant-01</span></td><td class="val">1.1 · 1.2</td><td class="val">0.8</td><td><span class="val">27% → 27%</span></td><td><span class="chip neutral">band · no move</span></td></tr>
+        <tr class="math"><td><span class="name">lowvol:v1</span></td><td class="val">0.6 · 2.1</td><td class="val">0.5</td><td><span class="val">24% → 25%</span></td><td><span class="chip neutral">floor 5% clear</span></td></tr>
+        <tr class="ai"><td><span class="name">llm-contestant-01 · ctrl</span></td><td class="val">0.4 · 1.2</td><td class="val">0.4</td><td><span class="val">18% → 20%</span></td><td><span class="chip neutral">renormalize</span></td></tr>
+      </table></div>
+      <p class="foot">weights reconstruct from allocation_log (NFR-2) · allocator value-add vs static equal weight: <span class="val dim">+0.3%/yr</span> <span class="gauge"><i class="in" style="left:58%"></i></span> <span class="mde">±1.1 · §1.2 KPI</span></p>
+    </div>
+  </div>
+
+  <!-- ================= 09 decisions ledger ================= -->
+  <div class="section-label"><span class="n">13</span><h2>Decisions · every choice, replayable</h2><span class="tag">GET /api/v1/decisions</span></div>
+  <p class="note">The append-only record of what every strategy decided and why, on a given session. One row per
+  strategy per day, each opening its full six-stage trail and, for an AI seat, the context pack it read. Nothing is
+  decided that can't be reconstructed bit-for-bit at its watermark.</p>
+  <div class="desktop">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /decisions?date=2027-03-19</span></div>
+    <div class="pad">
+      <div class="tw"><table class="lb">
+        <tr><th>strategy</th><th>seat</th><th>decision</th><th>sized / ordered</th><th>trace</th></tr>
+        <tr><td><span class="name">momentum:v1</span></td><td><span class="seat math">math</span></td><td class="sub">wish 12 → 3 opens · 1 close</td><td class="sub">equal · cap 5% · cash 6.1%</td><td style="font-family:var(--mono);font-size:11px;color:var(--gold)">stage trail → &nbsp; ledger →</td></tr>
+        <tr><td><span class="name">llm-contestant-01</span></td><td><span class="seat ai">AI</span></td><td class="sub">25 scored · 9 &gt; 0 · 2 opens</td><td class="sub">equal · cap 5% · cash 11.2%</td><td style="font-family:var(--mono);font-size:11px;color:var(--gold)">stage trail → &nbsp; pack #4,812 → &nbsp; ai_decisions →</td></tr>
+        <tr><td><span class="name">llm-contestant-01 · ctrl</span></td><td><span class="seat ai">A/B</span></td><td class="sub">25 scored (no model) · 3 opens</td><td class="sub">equal · cap 5% · cash 9.0%</td><td style="font-family:var(--mono);font-size:11px;color:var(--gold)">stage trail →</td></tr>
+        <tr><td><span class="name">lowvol:v1</span></td><td><span class="seat math">math</span></td><td class="sub">monthly hold · no rebalance</td><td class="sub">—</td><td style="font-family:var(--mono);font-size:11px;color:var(--gold)">stage trail →</td></tr>
+      </table></div>
+      <p class="foot">append-only (never update/delete) · every row reconstructs at watermark 2027-03-19T22:00Z · AI rows link the exact pack + persisted output (D80/D81)</p>
+    </div>
+  </div>
+
+  <!-- ================= 10 risk ================= -->
+  <div class="section-label"><span class="n">14</span><h2>Risk · exposure, concentration, and the leverage guard</h2><span class="tag">GET /api/v1/risk</span></div>
+  <p class="note">Book-level guardrails across all live strategies, each against the clamp that bounds it. The cash /
+  gross-exposure meter is the one the Phase-2 review flagged, a strategy that sizes opens past available cash shows
+  red here, so the fix has a visible home rather than living silently in the ledger.</p>
+  <div class="desktop">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /risk</span></div>
+    <div class="pad">
+      <div class="grid2">
+        <div class="panel">
+          <p class="ph">gross exposure &amp; cash · per strategy</p>
+          <div class="mrow"><span>momentum:v1</span><b>93.9% invested · cash 6.1%</b></div><div class="meter"><i class="g" style="width:93.9%"></i></div>
+          <div class="mrow"><span>llm-contestant-01</span><b>88.8% invested · cash 11.2%</b></div><div class="meter"><i class="g" style="width:88.8%"></i></div>
+          <div class="mrow"><span>rankbuffer:mom (Ph6)</span><b style="color:var(--down)">104.2% · cash −4.2%</b></div><div class="meter"><i class="r" style="width:100%"></i></div>
+          <p class="foot" style="margin-top:8px">negative cash trips the leverage guard — opens constrained to available cash + planned sell proceeds (Phase-2 review fix)</p>
+        </div>
+        <div class="panel">
+          <p class="ph">concentration &amp; correlation heat</p>
+          <div class="mrow"><span>largest single position</span><b>4.8% / cap 5.0%</b></div><div class="meter"><i class="a" style="width:96%"></i></div>
+          <div class="mrow"><span>top-5 names</span><b>21.6%</b></div><div class="meter"><i class="g" style="width:43%"></i></div>
+          <div class="mrow"><span>sector max (tech)</span><b>28% / cap 35%</b></div><div class="meter"><i class="g" style="width:80%"></i></div>
+          <div class="mrow"><span>correlation-aware heat (LW cov)</span><b>within guardrail</b></div><div class="meter"><i class="g" style="width:52%"></i></div>
+        </div>
+      </div>
+      <p class="foot">every clamp names itself (UX-9) · covariance via Ledoit–Wolf on 252d (D42) · guardrails identical for math and AI seats</p>
+    </div>
+  </div>
+
+  <!-- ================= 11 data health ================= -->
+  <div class="section-label"><span class="n">15</span><h2>Data health · what the lab knows it doesn't trust</h2><span class="tag">GET /api/v1/data-health</span></div>
+  <p class="note">The point-in-time honesty of the store, surfaced. Quality flags (D77) are shown, not swallowed:
+  warns and rejects render as a per-day heat row, the watermark and provider cross-checks report their state, and
+  any frozen position or missing bar is named.</p>
+  <div class="desktop">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /data-health</span></div>
+    <div class="pad">
+      <div class="grid2">
+        <div class="panel">
+          <p class="ph">quality flags · last 30 sessions</p>
+          <div class="hz"><i></i><i></i><i></i><i class="warn"></i><i></i><i></i><i></i><i></i><i class="warn"></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="rej"></i><i></i><i></i><i></i><i></i><i></i><i class="warn"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <p class="foot" style="margin-top:8px"><span style="color:var(--amber)">3 warn</span> · <span style="color:var(--down)">1 reject</span> · 26 clean · rejects never enter the funnel (D77)</p>
+          <div class="mrow" style="margin-top:12px"><span>watermark</span><b>2027-03-19T22:00Z</b></div>
+          <div class="mrow"><span>bars this session</span><b>498 / 498 expected</b></div>
+          <div class="mrow"><span>frozen positions</span><b>0 held frozen</b></div>
+        </div>
+        <div class="panel">
+          <p class="ph">provider cross-checks &amp; feeds</p>
+          <div class="mrow"><span>membership OEF ↔ Wikipedia</span><b style="color:var(--up)">agree · 498</b></div>
+          <div class="mrow"><span>corporate actions applied</span><b>2 div · 0 split · 0 merger</b></div>
+          <div class="mrow"><span>regime proxy (GSPC.INDX)</span><b style="color:var(--up)">live · not fallback</b></div>
+          <div class="mrow"><span>French factors (attribution)</span><b>current · 2d lag ok</b></div>
+          <div class="mrow"><span>API headroom today</span><b>99.2% · 812 / 100k</b></div>
+          <div class="mrow"><span>last off-machine backup</span><b>3d ago</b></div>
+          <p class="foot" style="margin-top:8px">every feed has a named source, a cross-check, and a fail-closed rule (§13) · divergence freezes, never guesses</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 12 journal / pre-registration ================= -->
+  <div class="section-label"><span class="n">16</span><h2>Analysis &amp; journal · pre-registration is the path of least resistance</h2><span class="tag">GET /api/v1/journal</span></div>
+  <p class="note">The research journal (D52). Registering a hypothesis before it runs is made the easy default, and a
+  locked hypothesis can only be closed by the outcome path, never quietly edited. This is the seam the researcher
+  seat feeds into and the loop closes through.</p>
+  <div class="desktop">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /journal</span></div>
+    <div class="pad">
+      <div class="grid2">
+        <div class="panel">
+          <p class="ph">register a hypothesis</p>
+          <div class="steps">
+            <div class="step"><span class="sc">1</span><span class="sb"><b>Claim &amp; parent evidence</b> — one falsifiable sentence, plus the outcome id / finding it grows from (required).</span></div>
+            <div class="step"><span class="sc">2</span><span class="sb"><b>Confirm metric &amp; window</b> — the exact test and the days it needs, declared up front.</span></div>
+            <div class="step"><span class="sc">3</span><span class="sb"><b>Lock</b> — the row becomes immutable; only the outcome path may close it.</span><div class="locked">once locked, edits are refused (D52 guard)</div></span></div>
+          </div>
+        </div>
+        <div class="panel">
+          <p class="ph">journal · recent outcomes</p>
+          <div class="mrow" style="margin-bottom:6px"><span><span class="chip ok">confirmed</span> H-07 skip-month expectancy</span><b class="val up">+</b></div>
+          <div class="mrow" style="margin-bottom:6px"><span><span class="chip retired">refuted</span> H-11 market sentiment lifts blend</span><b class="val down">–</b></div>
+          <div class="mrow" style="margin-bottom:6px"><span><span class="chip early">running</span> H-14 skip-month net alpha</span><b class="val dim">96d</b></div>
+          <div class="mrow"><span><span class="chip ab">proposed</span> H-16 vol-gated momentum</span><b class="mde">by researcher</b></div>
+          <p class="foot" style="margin-top:10px">every closed row carries a lesson line that feeds the next proposal (memory A) · pre-registered count is a §1.2 KPI</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 13 replay ================= -->
+  <div class="section-label"><span class="n">17</span><h2>Arena replay · operable, and impossible to mistake for forward</h2><span class="tag">GET /api/v1/replay</span></div>
+  <p class="note">Replay runs the full pipeline on a simulated clock to validate the machinery and calibrate
+  thresholds. It is quarantined everywhere: a permanent banner, a separate trials column, and no path by which a
+  replay result can become promotion evidence, including for an AI seat, whose replay is refused by construction.</p>
+  <div class="desktop">
+    <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /replay</span></div>
+    <div class="pad">
+      <div class="replaybar"><span class="tg">replay · not forward evidence</span><span class="msg">simulated clock 2011-01-03 → 2026-01-02 · results never admissible for promotion (D37) · AI seats refused (D81)</span></div>
+      <div class="grid3" style="margin-top:16px">
+        <div class="panel"><p class="ph">machinery check</p><span class="big" style="font-size:22px">4.6%</span><p class="foot" style="margin-top:6px">randoms promoted over 15y ≤ chance (target ≤5%) · pass</p></div>
+        <div class="panel"><p class="ph">edge-plant survival</p><span class="big" style="font-size:22px">0.92</span><p class="foot" style="margin-top:6px">5y floor 0.90 · on failure recalibrate S6, never the plant (FR-19)</p></div>
+        <div class="panel"><p class="ph">allocator vs equal weight</p><span class="big" style="font-size:22px">+</span><p class="foot" style="margin-top:6px">overweights edge plants, sheds anti-plants faster (D82 KPI)</p></div>
+      </div>
+      <p class="foot">replay trials are counted in a separate registry column · the forward leaderboard cannot show a replay row</p>
+    </div>
+  </div>
+
+  <!-- ================= 14 empty state + mobile ================= -->
+  <div class="section-label"><span class="n">18</span><h2>Day one &amp; on the go · the empty state teaches, the frame travels</h2><span class="tag">first run · mobile</span></div>
+  <p class="note">Before any real strategy exists, the empty state is an instruction, not a void. Alongside it, the same
+  single-column layout rendered at phone width, proof the design already anticipates a mobile client without a
+  rebuild: the frames are fluid, the grids collapse, nothing is pinned to a desktop pixel measurement.</p>
+  <div class="grid2">
+    <div class="desktop">
+      <div class="chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="addr">localhost:5210 · /strategies (first run)</span></div>
+      <div class="pad">
+        <div class="empty">
+          <h3>No strategies yet — and that's the right starting point.</h3>
+          <p>The arena is armed: 200 random controls per cadence family are seeded and the benchmarks are tracking. Add your first strategy and it will be judged against them from day one.</p>
+          <p class="teach">next: register a hypothesis, or add a strategy to the roster →</p>
+        </div>
+      </div>
+    </div>
+    <div class="phone">
+      <div class="nub"></div>
+      <div class="pbody">
+        <div class="appbar" style="padding:8px 4px"><span class="logo" style="font-size:14px">Alpha<span>Lab</span></span><span class="arena">sp500</span></div>
+        <div class="seats" style="padding:8px 4px;background:transparent;border:none"><span class="spill c" style="font-size:11px"><span class="d"></span><span class="nm">Contestant</span></span><span class="spill r" style="font-size:11px"><span class="d"></span><span class="nm">Researcher</span></span></div>
+        <div class="panel" style="padding:12px">
+          <p class="ph" style="margin-bottom:8px">momentum:v1</p>
+          <div><span class="chip early">too early</span> <span class="val dim" style="display:block;margin-top:8px">+1.4%/yr</span> <span class="gauge" style="width:100%;margin-top:6px"><i class="in" style="left:63%"></i></span> <span class="mde">±4.8 · 214d</span></div>
+        </div>
+        <div class="panel" style="padding:12px;margin-top:10px">
+          <p class="ph" style="margin-bottom:8px">llm-contestant-01 vs control</p>
+          <span class="val" style="font-size:14px">+1.1%/yr gap</span>
+          <div class="gauge-xl" style="height:32px;margin-top:8px"><div class="band"></div><div class="zero"></div><div class="pt" style="left:63.7%"></div></div>
+          <p class="foot" style="margin-top:4px">inside MDE · too early</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><span class="colo" style="background:#4CC9E0"></span>math seat</span>
+    <span><span class="colo" style="background:#8B7CF6"></span>AI seat</span>
+    <span><span class="colo" style="background:#E9B44C"></span>too early / focus</span>
+    <span><span class="colo" style="background:#F2555A"></span>retired / breach</span>
+    <span><span class="colo" style="background:#1a2138;border:1px solid #2A3350"></span>reference · never promotable</span>
+  </div>
+
+  <p class="endnote">static design mockups · v1.9.21 · eighteen screens · single consolidated file (replaces the four v1 topic mockups and the v2 light file) · dark system, fluid + single-column so a mobile client is a styling pass not a rebuild · every honesty rule shown (dimming, tildes, percentiles, separation chips, clamp attribution, replay quarantine) is resolved server-side in the D58 read-models; no client computes a threshold · research/paper-trading only · not investment advice</p>
+
+</div>
+</body>
+</html>
