@@ -524,7 +524,7 @@ PK, snapshot-gated). File names retain the v1.9 label.*
 
 ## v1.9.21 — the AI-role pass (decisions D79–D82; golden rule 32; findings 170–173)
 
-*Resolves the operator's stated objective: a self-improving system where all decision inputs live in the local store and are passed to an AI that makes the decision, improving over time from the same stored data. AI is given three defined seats and the arena prices each one. Merged into `MASTER_DESIGN_v1.9.md` §2 (D79–D82), §1.2 (two KPIs), §7/§8/§14/§17, golden rule 32, and the full spec in the new §23. The honesty rails stay LLM-free; rule 24 extends to every prompt/model/pack-recipe change. Two new tables, one CHECK extension. UI overhaul in `alphalab_v2_ux_mockups.html`. No change to the Phase 0–2 as-built ledger/funnel/data code; this is a design pass that scopes Phase 5–6.*
+*Resolves the operator's stated objective: a self-improving system where all decision inputs live in the local store and are passed to an AI that makes the decision, improving over time from the same stored data. AI is given three defined seats and the arena prices each one. Merged into `MASTER_DESIGN_v1.9.md` §2 (D79–D82), §1.2 (two KPIs), §7/§8/§14/§17, golden rule 32, and the full spec in the new §23. The honesty rails stay LLM-free; rule 24 extends to every prompt/model/pack-recipe change. Two new tables, one CHECK extension. UI overhaul consolidated into `alphalab_ux_mockups.html` (the single mockup file; the earlier per-topic and v2 files were removed). No change to the Phase 0–2 as-built ledger/funnel/data code; this is a design pass that scopes Phase 5–6.*
 
 | # | Finding | Resolution | Where |
 |---|---------|-----------|-------|

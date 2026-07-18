@@ -56,7 +56,7 @@ That's it — you can complete steps 1–3 today and have a running (empty) app 
 
 ## What the four HTML files are
 
-Static **pictures** of the finished screens — open them in a browser to see the intended look. You never run or edit them. When a phase prompt says "per `lab_honesty_ux_mockups.html`", Claude Code reads that file and reproduces its layout in the real UI. The enforceable rules they illustrate live in `docs/UX_GUIDELINES_v1.9.md` (UX-1…UX-13) and are enforced in the read-models.
+Static **pictures** of the finished screens — open them in a browser to see the intended look. You never run or edit them. When a phase prompt says "per `alphalab_ux_mockups.html`", Claude Code reads that file and reproduces its layout in the real UI. The enforceable rules they illustrate live in `docs/UX_GUIDELINES_v1.9.md` (UX-1…UX-13) and are enforced in the read-models.
 
 ## Which document answers which question
 

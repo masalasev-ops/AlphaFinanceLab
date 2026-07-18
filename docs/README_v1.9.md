@@ -35,9 +35,9 @@
 | `CHANGELOG_v1.9.md` | Review-finding → decision → doc-section traceability across all design passes — including the *why* behind every v1.9.7–v1.9.11 change (review prose itself is not retained; findings are folded into the docs) |
 
 ## 2. The four HTML mockups — what they are and how they're used
-`paper_trading_ui_mockups.html`, `decision_and_strategies_mockups.html`, `lab_honesty_ux_mockups.html`, `allocation_journal_ops_ux_mockups.html`
+`alphalab_ux_mockups.html` (one consolidated file — every screen)
 
-These are **static visual references, not code to run or deploy**. Open any of them in a browser to *see* what each screen should look like. Their job in the build: when a phase prompt says "per `lab_honesty_ux_mockups.html`", Claude Code opens that file from `docs/`, reads its HTML/CSS, and reproduces the layout, palette, and components in the real Blazor pages. You never edit them; the enforceable rules they illustrate live in `UX_GUIDELINES_v1.9.md`, which the phase prompts cite. In short: **mockups = the picture, UX_GUIDELINES = the rules, the phase prompt = the instruction to build it.**
+These are **static visual references, not code to run or deploy**. Open any of them in a browser to *see* what each screen should look like. Their job in the build: when a phase prompt says "per `alphalab_ux_mockups.html`", Claude Code opens that file from `docs/`, reads its HTML/CSS, and reproduces the layout, palette, and components in the real Blazor pages. You never edit them; the enforceable rules they illustrate live in `UX_GUIDELINES_v1.9.md`, which the phase prompts cite. In short: **mockups = the picture, UX_GUIDELINES = the rules, the phase prompt = the instruction to build it.**
 
 ## 3. How to drive Claude Code with this package (step by step)
 

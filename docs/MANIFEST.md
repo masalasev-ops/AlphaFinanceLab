@@ -45,10 +45,7 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `docs/UX_GUIDELINES_v1.9.md` — the UX honesty rules (UX-1…UX-13, incl. the arena no-merge rule).
 
 **UI mockups (reference for the Phase 3 screens)**
-- `docs/paper_trading_ui_mockups.html`
-- `docs/decision_and_strategies_mockups.html`
-- `docs/allocation_journal_ops_ux_mockups.html`
-- `docs/lab_honesty_ux_mockups.html`
+- `docs/alphalab_ux_mockups.html` (the single consolidated UX mockup — every screen; supersedes the earlier per-topic mockup files)
 
 **Revision history**
 - `docs/CHANGELOG_v1.9.md` — every consistency finding and decision, v1.9.1 through v1.9.16.
