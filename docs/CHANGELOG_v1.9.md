@@ -666,3 +666,13 @@ Proposal **P12** opened in `PROGRESS.md` (the cash-shortfall allocation policy: 
 | # | Finding | Resolution | Where |
 |---|---------|-----------|-------|
 | 213 | **The C2 "simplicity" guideline (added v1.9.30) was the weakest of the four** — its architecture-protecting content already duplicates the D-numbered Hard rules (D57/D58/D59/D71), so it added little beyond a mild anti-gold-plating nudge while carrying the most friction risk (a "prefer the simplest implementation" line that could prompt second-guessing a mandated design choice during Phase-3 coding) | C2 removed; C1/C3/C4 retained with unchanged labels. The architecture remains protected by the Hard rules; no behavioral protection is lost | `CLAUDE.md`; `docs/CHANGELOG_v1.9.md` |
+
+---
+
+## v1.9.32 — CW-proxy ingestion recorded as a build step (spec catches up to code)
+
+*Docs-only; additive; no D-number; no code/schema/test change; tests stay 551; `ci.ps1` green. Records the already-shipped cap-weight benchmark proxy ingestion (`1c9ea1b`) as a named Phase-1 build step (prompt item (i)), parallel to the regime proxy's item (h) — closing the asymmetry that let the write path go unbuilt through Phase 2 when the step existed only in PROGRESS as an assumed operator action.*
+
+| # | Finding | Resolution | Where |
+|---|---------|-----------|-------|
+| 214 | **The cap-weight benchmark proxy ingestion shipped in `1c9ea1b` (`CapWeightProxyIngestion` + `BackfillCapWeightProxyStep`, 539→551 tests) but was never a named step in `BUILD_AND_PROMPTS`** — it existed only in PROGRESS as an assumed operator action, the gap that let the write path go unbuilt through Phase 2 (the CW account would have silently held cash into Phase 3). The regime proxy, its exact precedent, was a named Phase-1 build step; the CW proxy was not | Added Phase-1 prompt item (i) parallel to the regime-proxy item (h) — `CapWeightProxyIngestion` writes the versioned `Benchmark.CapWeightProxySecurityId` row, `BackfillCapWeightProxyStep` ingests `OEF.US` bars+divs+splits through the member path after the regime step, config-driven symbol via `CapWeightProxy.SymbolFor`, identity by CurrentSymbol+Exchange. Phase-1 DoD row updated to require the proxy ingested and the CW account holding the proxy. No D-number — additive; the code already shipped, this makes the spec honest about it being a built step | `docs/BUILD_AND_PROMPTS_v1.9.md` (Phase-1 prompt item (i), Phase-1 DoD row) |
