@@ -646,3 +646,13 @@ Proposal **P12** opened in `PROGRESS.md` (the cash-shortfall allocation policy: 
 |---|---------|-----------|-------|
 | 210 | **Finding 191 (P9): frozen/unpriced positions valued at cost basis in code vs §13.6's "freeze valuation at last print" — a silent doc-vs-code conflict the Phase-3 `equity_curve` read-models would inherit** | D86: §13.6 amended to cost-basis for the unmapped-halt freeze (code already conformed; rationale: a frozen name has no reliable price, a stale last print misstates it). Terminal delisting untouched (real final print → last print, correct). `FX-Unmapped` expectation names cost-basis; D-range banners → D86; the freeze-mechanism mentions (D39 summary, rules 9/§16) and the delist/haircut case deliberately left as-is | MASTER §13.6 (line 422), §2 (D86), §0 provenance, line-5 banner; TEST_PLAN `FX-Unmapped`; MANIFEST banners |
 | 211 | **Finding 196 (P11): a rejected/clipped T+1 fill is logged then dropped — a one-day capacity rejection could become a silent permanent underweight, and population fills hit the same cap (shaping the Phase-4 null bands)** | Policy stated and blessed (no D-number — documents shipped behaviour): drop-and-let-the-next-decision-re-open; a bounded re-plan is rejected as a second decision authority (cf. D84). `RecordCapacityRejection` is the visible record; the Risk screen surfaces "unfilled by capacity". §13.6 gains the policy note | MASTER §13.6 (fills note) |
+
+---
+
+## v1.9.30 — CLAUDE.md coding-conduct guidelines
+
+*Docs-only; additive; no D-number; no code/schema/test change; tests stay 539; `ci.ps1` green. Adds a "Coding conduct" section (C1–C4) to `CLAUDE.md`, sitting between the Hard rules and the Workflow section — behavioral "how to work" guidance kept deliberately separate from the D-numbered Hard rules (project invariants).*
+
+| # | Finding | Resolution | Where |
+|---|---------|-----------|-------|
+| 212 | **`CLAUDE.md` carried project invariants (the D-numbered Hard rules) but no general "how to work" guidance; common LLM coding pitfalls (assuming instead of asking, over-engineering, non-surgical diffs, weak success criteria) had no stated guard for the Phase-3+ implementation work** | Added a "Coding conduct" section (C1–C4) adapted from the Karpathy `CLAUDE.md`, kept SEPARATE from the Hard rules (judgment, not invariants) and reworded so C2 defers to the design docs — it explicitly protects the mandated abstractions (D57/D58/D59/D71, reserved tokens) rather than licensing their removal, and C3 carves out the intended multi-file reconciliation passes. No D-number, additive | `CLAUDE.md`; `docs/CHANGELOG_v1.9.md` |

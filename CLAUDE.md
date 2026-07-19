@@ -126,6 +126,32 @@ money as strings/minor-units (never floats).
     versioned: a change INSERTs (key, version+1); never UPDATE or DELETE a config row
     (finding 108); the current value is MAX(version) per key.
 
+## Coding conduct (behavioral guidelines — judgment, not invariants)
+
+*Adapted from the Karpathy-derived CLAUDE.md (github.com/multica-ai/andrej-karpathy-skills). These bias toward caution over speed and are about HOW to work, distinct from the "Hard rules" above (which are project invariants and D-numbered). Where a guideline here and a Hard rule or a design decision conflict, the Hard rule / decision wins.*
+
+**C1. Think before coding.** Don't assume, don't hide confusion, surface tradeoffs.
+- State assumptions explicitly; if uncertain, ask before implementing.
+- If multiple interpretations exist, present them — don't pick one silently.
+- If a simpler approach exists (that still satisfies the design docs), say so; push back when warranted.
+- If something is unclear, stop, name what's confusing, and ask. For any doc-vs-code question, read the literal doc text (SCHEMA/CONFIG/INTEGRATIONS/MASTER are the named sources of truth) before resolving — never resolve from memory or a partial grep.
+
+**C2. Simplicity within the design, not against it.** Prefer the simplest implementation that satisfies the design docs and their decisions — but this project is deliberately not minimal, and that is by design.
+- Do NOT add features, abstractions, configurability, or error handling beyond what an FR, a decision (D-number), or the phase prompt calls for.
+- Do NOT strip or "simplify away" an abstraction the design mandates: the Api boundary (D57), the read-model layer (D58), arena namespacing (D71), the sole-writer split (D59), and the reserved semantic tokens are intentional and D-numbered — they are not over-engineering, and removing them is a Hard-rule violation, not a cleanup.
+- The test is not "fewest lines" but "nothing beyond what the docs require, and nothing the docs require left out." If unsure whether something is mandated, ask or cite the D-number.
+
+**C3. Surgical changes.** Touch only what the task requires; clean up only your own mess.
+- Don't "improve" adjacent code, comments, or formatting; match existing style even if you'd do it differently.
+- Remove imports/variables/functions YOUR change orphaned; do NOT delete pre-existing dead code unless asked (mention it instead).
+- Every changed line should trace to the request. **Exception (intended, not a violation):** a reconciliation / consistency pass that deliberately sweeps every occurrence of a rule across the docs so the corpus doesn't self-contradict — that is a stated multi-file task, and "touch only what you must" means "make no UNREQUESTED change," not "edit only one place."
+
+**C4. Goal-driven execution.** Define success criteria; loop until verified.
+- Turn a task into a verifiable goal: "add validation" → "write tests for the invalid inputs, then make them pass"; "fix the bug" → "write a test that reproduces it, then make it pass." This is already the project's DoD-and-green-tests discipline — keep it.
+- For a multi-step task, state a brief plan with a verify check per step, then run it. For a docs pass, the verify step is the grep/diff checklist the pass prompt carries; run it before opening the PR.
+
+*Working if: fewer unrequested diffs, fewer rewrites from overcomplication or from stripping mandated structure, and clarifying questions arriving before implementation rather than after a mistake.*
+
 ## Workflow
 - Plan Mode for anything multi-file; wait for plan approval before writing code.
 - Strict milestone scope: implement ONLY the current phase's FRs. If a change outside
