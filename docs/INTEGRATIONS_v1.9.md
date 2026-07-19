@@ -32,7 +32,7 @@
   | `/eod-bulk-last-day` (Bulk — the Phase-2 daily delta) | **100** |
 
   The 304 count is accurate because the backfill uses only cost-1 endpoints. **⚠Phase-2 item:** when `/eod-bulk-last-day` (100/req) and `/news` (5/req) come online, `api_usage_log` recording MUST weight by endpoint cost — a flat per-call count would badly under-report consumption against the 100k cap and could pass a headroom check that should have failed.
-- **Second, independent limit: 1,000 requests/minute**, surfaced per-response via **`X-RateLimit-Limit` / `X-RateLimit-Remaining`** headers (distinct from the daily cap). The single-threaded 304-call backfill was nowhere near it, but a wider (S&P 500) universe or a burst could approach it — see §9 (honoring the header is a Phase-2 item; not yet enforced).
+- **Second, independent limit: 1,000 requests/minute**, surfaced per-response via **`X-RateLimit-Limit` / `X-RateLimit-Remaining`** headers (distinct from the daily cap). The single-threaded 304-call backfill was nowhere near it, but a wider (S&P 500) universe or a burst could approach it — see §9 (honoring the header is a Phase-2 item; not yet enforced). **At the D87 S&P 1500 target (~4,500 cost-1 calls, contingent) the minute limit becomes binding and `/eod-bulk-last-day` (100/req, above) stops being optional for the daily delta — both are (D87 note) Phase-4 prerequisites.**
 - **GMT-midnight reset quirk:** the daily counter resets at 00:00 GMT but **still reads the prior day's value until the first post-midnight request is made** — don't misread a stale pre-first-call counter as the day's remaining headroom.
 - Rate-limit posture: the shared resilient client does retry-with-backoff (3 attempts, jitter) + circuit-break, and sets a descriptive User-Agent (§9).
 
@@ -51,7 +51,15 @@
   VERIFIED 2026-07-13 (returns the real CSV; count 101 in-band). `portfolioId=239723` = OEF (iShares S&P 100 ETF). Same `get-fund-document?...&component=holdings` endpoint and identical CSV shape as §2.
 - **DROP `asOfDate` for the daily fetch** (same freeze trap as §2 — omit it and BlackRock returns the latest holdings).
 - Free, no auth, official, ~1-day lag. Parse tickers; map through `ticker_history`; equity holdings only. **Same header-shape assertion as §2** (fail loud on drift — one C-4 fixture covers both feeds). Cross-check: the Wikipedia S&P 100 table (§7). Divergence ⇒ fail closed; count sanity 99–103 (`Universe.Bootstrap.CountSanity`).
-- Retires when the universe widens to the S&P 500 after Phase 4 sign-off (D70) — the provider stays behind the same `IIndexMembershipProvider` seam.
+- Retires when the universe widens after Phase 4 sign-off (D70; target amended to the S&P 1500 by **D87**, contingent — else S&P 500) — the provider stays behind the same `IIndexMembershipProvider` seam.
+
+## 2c. S&P 1500 widening feeds (D87 — UNVERIFIED placeholders, a Phase-4 prerequisite)
+The post-Phase-4 widening target is the **S&P Composite 1500** by **D87**, **contingent** on a verified-depth historical S&P 400/600 as-of-membership source (else the target falls back to the S&P 500). The feeds below are **not yet verified or wired** — recorded so the widening is never sourced silently (Golden Rule 25). None is a launch dependency.
+
+- **iShares IJH holdings CSV (S&P 400 MidCap) — live membership, UNVERIFIED:** the same BlackRock `get-fund-document?...&component=holdings` pattern as §2, at IJH's portfolioId (**TBD**); before use it must be VERIFIED with a count-sanity band and the C-4 header-shape fixture exactly like §2.
+- **iShares IJR holdings CSV (S&P 600 SmallCap) — live membership, UNVERIFIED:** same pattern at IJR's portfolioId (**TBD**), same discipline.
+- **Independent 400/600 cross-checks — UNVERIFIED:** Wikipedia S&P 400 / S&P 600 constituent tables (the §7 pattern) or another independent feed, for the FR-4 divergence gate.
+- **Historical S&P 400/600 as-of membership (the DEPTH gate) — UNVERIFIED, the go/no-go condition:** the fja05680 community CSV (§8) is **S&P 500 only**; the 400/600 sources located so far (EODHD Marketplace "Historical Constituents" ~12y; N-PORT-derived ~2019+) may not reach the full replay window. If no source of sufficient **depth + accuracy** is confirmed at Phase-4 sign-off, the target **stays the S&P 500**. If EODHD is the only source, this couples the widening to the **Fundamentals tier** (currently OFF per D49 / §1) — making *membership*, not Phase 8, the fundamentals trigger.
 
 ## 3. Ken French Data Library (factors + RF — D41)
 - 5 factors + RF (daily): `https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_5_Factors_2x3_daily_CSV.zip`  (Mkt-RF, SMB, HML, RMW, CMA, RF)

@@ -14,7 +14,7 @@ envelope, 202+job_id for long-running commands, read-models stamped run_id+water
 money as strings/minor-units (never floats).
 
 ## Documentation map (read the phase's diet per docs/README_v1.9.md §3 — not everything)
-- docs/MASTER_DESIGN_v1.9.md — decisions D1–D86, architecture, golden rules, math appendix, UI boundary (§21–22)
+- docs/MASTER_DESIGN_v1.9.md — decisions D1–D87, architecture, golden rules, math appendix, UI boundary (§21–22)
 - docs/ARENA_ARCHITECTURE_v1.9.3.md — multi-arena isolation (D71): one universe per arena, arena-namespaced storage, arena-scoped calibration, the no-merge frontend rule
 - docs/STRATEGY_CATALOG_v1.9.md — IModel contracts + per-strategy acceptance criteria
 - docs/DESIGN_IMPROVEMENTS_v1.9.md — metrics math, costs/sizing, LLM economics, Arena Replay
@@ -31,7 +31,7 @@ money as strings/minor-units (never floats).
 - docs/UX_GUIDELINES_v1.9.md — interface rules UX-1..UX-14 as build specs
 - docs/SETUP_v1.9.md — prerequisites, D49 launch tier, secrets, day-zero checklist
 - docs/DESIGN_IMPROVEMENTS_EXPLAINED.md — plain-language "why" companion to DESIGN_IMPROVEMENTS (section numbers match the spec)
-- docs/CHANGELOG_v1.9.md — every consistency finding + decision (D1–D86), the provenance trace
+- docs/CHANGELOG_v1.9.md — every consistency finding + decision (D1–D87), the provenance trace
 - Navigation (not part of any phase diet): START_HERE.md (entry point), docs/README_v1.9.md (file map + build workflow), docs/MANIFEST.md (package manifest + revision state)
 - Mockups (visual direction for the GUI): docs/alphalab_ux_mockups.html — the single consolidated UX mockup (every screen)
 
@@ -107,9 +107,9 @@ money as strings/minor-units (never floats).
     archived in the calibration report (MASTER §20.9).
 22. Universe (D65/D70): forward operation runs the S&P 100 slice through Phase 4 sign-off,
     sourced from the OEF holdings CSV + Wikipedia S&P 100 cross-check (fail closed, count
-    sanity 99–103), then widens to the S&P 500 by config flip + backfill delta. Arena Replay
+    sanity 99–103), then widens to the S&P 500 by config flip + backfill delta — target amended to the S&P 1500 by D87, contingent on a verified-depth 400/600 historical-membership source; else S&P 500. Arena Replay
     NEVER runs on the slice — replay/calibration always use S&P 500 as-of membership
-    (community CSV at launch, D49) with every historical member's bars backfilled for the
+    (community CSV at launch, D49; extending to the S&P 1500's 400/600 as-of membership only if D87's condition holds) with every historical member's bars backfilled for the
     replay window as a Phase 4 prerequisite. (This is the sp500 arena's instance of the
     per-arena rule in rule 23.)
 23. Arenas are isolated (D71; ARENA_ARCHITECTURE_v1.9.3.md): one universe per arena; each

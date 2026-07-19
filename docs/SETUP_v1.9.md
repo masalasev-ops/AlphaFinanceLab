@@ -12,7 +12,7 @@
 | Historical membership (replay/catch-up as-of) | Free community CSV (github.com/fja05680/sp500), caveat logged in the Phase-4 calibration report | Yes (S&P 500 historical snapshots) |
 | Sector / industry | **Sector column of the same IVV holdings CSV** (GICS-based, refreshed with the daily membership pull) | Optional |
 | News | EODHD News API (on-plan) | — |
-| S&P 100 slice (forward universe through Phase 4 — D65/D70) | **iShares OEF holdings CSV primary + Wikipedia S&P 100 cross-check** (count sanity 99–103); replay never uses the slice | n/a — retires when the universe widens to the S&P 500 after Phase 4 sign-off |
+| S&P 100 slice (forward universe through Phase 4 — D65/D70) | **iShares OEF holdings CSV primary + Wikipedia S&P 100 cross-check** (count sanity 99–103); replay never uses the slice | n/a — retires when the universe widens after Phase 4 sign-off (target amended to the S&P 1500 by D87, contingent; else S&P 500) |
 | Fundamentals | **Phase 8 entry condition becomes: upgrade to a fundamentals-bearing tier for one trial month → run the §7.0 PIT protocol → keep paying only on a pass** | n/a |
 
 Everything runs Phases 0–7 completely on this tier; Phase 8 is the only blocked phase and was already contingent. Consequences are patched into INTEGRATIONS_v1.9 §1–2 and MASTER §2 (D49).
