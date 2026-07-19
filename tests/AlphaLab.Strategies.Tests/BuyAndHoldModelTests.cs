@@ -141,6 +141,7 @@ public class BuyAndHoldModelTests
                     IndexMembers = [new SecurityId(proxy)], // the CW account's universe is the single proxy
                     Held = held,
                     Equity = equity,
+                    Cash = cash, // D84: the account's real cash on hand (full at inception, ~0 once invested)
                     FillOn = start.AddDays(t + 1),
                     SessionsSinceInception = t - inception,
                 }, guardrails, sizing);

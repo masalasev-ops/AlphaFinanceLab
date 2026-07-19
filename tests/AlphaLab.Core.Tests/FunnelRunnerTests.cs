@@ -48,11 +48,15 @@ public class FunnelRunnerTests
     };
 
     private static FunnelInputs Inputs(
-        IEnumerable<long> members, IReadOnlyList<Position> held, decimal equity = 100_000m, int sessions = 5) => new()
+        IEnumerable<long> members, IReadOnlyList<Position> held, decimal equity = 100_000m, int sessions = 5,
+        decimal? cash = null) => new()
     {
         IndexMembers = members.Select(S).ToList(),
         Held = held,
         Equity = equity,
+        // Default to all-cash (cash == equity) so the pre-D84 tests are unaffected; the D84 tests pass a
+        // real cash figure below equity to exercise the constraint.
+        Cash = cash ?? equity,
         FillOn = FillOn,
         SessionsSinceInception = sessions,
     };
@@ -228,6 +232,89 @@ public class FunnelRunnerTests
     {
         var ex = Assert.Throws<InvalidOperationException>(() => DecisionSnapshot.FromJson("""{"strategy_id":"x"}"""));
         Assert.Contains("snapshot_version", ex.Message);
+    }
+
+    // ============================ D84 cash constraint (finding 190) ============================
+
+    /// <summary>
+    /// D84 / finding 190. An OpensOnly book that is mostly invested (held worth ~$90k, only $10k cash)
+    /// sizes a NEW open against the $10k CASH, not the $100k equity — and never sells the held name to
+    /// fund it (rule 7). The held position is untouched; the open is scaled to fit the cash.
+    /// </summary>
+    [Fact]
+    public async Task D84_OpensAreSizedToCash_HeldPositionUntouched_NoForcedSell()
+    {
+        // Held: security 1 (900 sh @ $100 = $90k). Cash $10k (equity $100k). Wish list picks a NEW name.
+        var model = new FakeModel(
+            new Dictionary<SecurityId, double> { [S(2)] = 0.9 }, new ExitPolicy.Never());
+        var inputs = Inputs(members: [1, 2], held: [Pos(1, 900, 90_000m)], equity: 100_000m, cash: 10_000m);
+
+        var outcome = await Run(model, inputs);
+
+        // The held name is held and NEVER sold — cash frees up only via the ExitPolicy (rule 7).
+        Assert.Contains(S(1), outcome.Snapshot.Stage4.Holds);
+        Assert.DoesNotContain(outcome.Orders, o => o.Side == TradeSide.Sell);
+
+        // The open is sized to the $10k cash (= 100 sh @ $100), NOT the $100k equity (pre-fix: 1,000 sh).
+        var open = Assert.Single(outcome.Orders, o => o.SecurityId == S(2));
+        Assert.Equal(TradeSide.Buy, open.Side);
+        Assert.Equal(100.0, open.Shares, 6);
+        Assert.Equal(10_000m, outcome.Snapshot.Stage5Targets.Single(t => t.Id == S(2)).TargetNotional);
+    }
+
+    /// <summary>
+    /// D84 / finding 190. THE RATCHET. An OpensOnly book that keeps opening new names day after day
+    /// (the accumulation §13.6 warns about) never spends past its cash: each day's opens are scaled to
+    /// the cash then on hand, so cash decreases toward zero and STOPS — it never ratchets negative the
+    /// way sizing-against-equity did. Fills are simulated at the target notional (no overnight gap in
+    /// this fixture; costs are the separate bounded residual, finding 196).
+    /// </summary>
+    [Fact]
+    public async Task D84_AnAccumulatingOpensOnlyBook_NeverRatchetsPastItsCash()
+    {
+        const decimal starting = 100_000m;
+        const double price = 100.0;
+        var sizing = new SizingOptions { PositionCapPct = 0.25 }; // ≤25% per name ⇒ ~4 opens exhaust cash
+        var cash = starting;
+        var book = new Dictionary<SecurityId, Position>();
+
+        // Eight sessions, one fresh eligible name entering each day. Never policy ⇒ pure accumulation.
+        for (var day = 1; day <= 8; day++)
+        {
+            var members = Enumerable.Range(1, day).Select(i => (long)i).ToList();
+            var model = new FakeModel(members.ToDictionary(S, _ => 0.9), new ExitPolicy.Never());
+            var held = book.Values.OrderBy(p => p.SecurityId.Value).ToList();
+            var equity = cash + held.Sum(p => (decimal)p.Shares * (decimal)price);
+
+            var view = new FunnelFeatureView
+            {
+                AsOf = AsOf,
+                Priced = members.Select(S).ToHashSet(),
+                RawCloses = members.ToDictionary(S, _ => price),
+            };
+            var inputs = Inputs(members, held, equity: equity, cash: cash);
+            var outcome = await FunnelRunner.RunAsync(model, view, inputs, new GuardrailsOptions(), sizing);
+
+            foreach (var order in outcome.Orders)
+            {
+                Assert.Equal(TradeSide.Buy, order.Side); // Never never sells (rule 7)
+                var notional = (decimal)order.Shares * (decimal)price;
+                cash -= notional;                        // the T+1 fill spends the target notional
+                book[order.SecurityId] = new Position
+                {
+                    AccountId = 1, SecurityId = order.SecurityId,
+                    Shares = order.Shares, CostBasis = notional, OpenedOn = "2026-01-02",
+                };
+            }
+
+            // THE INVARIANT: cash never ratchets negative. Pre-fix (sizing against equity) it would go
+            // negative the first day the intended opens exceed cash and compound from there.
+            Assert.True(cash >= 0m, $"day {day}: cash went negative ({cash}) — the book ratcheted past its cash.");
+        }
+
+        // ~4 opens at 25% each exhaust the cash; the remaining days open nothing (the cash floor held).
+        Assert.Equal(4, book.Count);
+        Assert.Equal(0m, cash);
     }
 
     // ============================ contract guards ============================

@@ -215,4 +215,35 @@ public class DailyPipelineTests
         Assert.Empty(db2.EquityCurve.Where(e => e.AccountId == mystery).ToList()); // skipped before recording anything
         Assert.Equal(3, db2.EquityCurve.Count(e => e.AsOf == h.Run1));             // the three dummies still ran
     }
+
+    // ---- D84 / finding 190: end to end, the pipeline sizes new opens against CASH (not equity), so an
+    //      account never takes on STRUCTURAL leverage — it never spends the value of a held position (the
+    //      pre-fix "size against equity" bug). The only way cash dips below zero is the unavoidable trading
+    //      COSTS on the fills — a bounded residual deferred to finding 196 — never a fraction of the held
+    //      book. (The discriminating over-spend scenario is proven at the funnel level,
+    //      FunnelRunnerTests.D84_AnAccumulatingOpensOnlyBook_NeverRatchetsPastItsCash.) ----
+    [Fact]
+    public async Task RunDay_AcrossSessions_CashNeverBelowTradingCosts_NoStructuralLeverage()
+    {
+        using var h = new PipelineHarness();
+        h.Market.AddDividend(PipelineHarness.MemberASymbol, new DividendEvent(h.Run3, 1.50m, 1.50m));
+
+        await h.RunAsync(h.Run1); // decide opens
+        await h.RunAsync(h.Run2); // fill — the accounts invest their cash
+        await h.RunAsync(h.Run3); // dividend credits cash; an equity point is recorded each day
+
+        using var db = h.Open();
+        foreach (var account in db.Accounts.ToList())
+        {
+            var costs = db.Trades.Where(t => t.AccountId == account.AccountId).ToList()
+                .Sum(t => t.Commission + t.SpreadCost + t.ImpactCost);
+            var curve = db.EquityCurve.Where(e => e.AccountId == account.AccountId).OrderBy(e => e.AsOf).ToList();
+            var latestCash = curve[^1].Cash;
+
+            // The invariant: cash never drops below −(cumulative trading costs). A pre-fix overspend
+            // (sizing against equity) would drive it far below that, by a fraction of the held book.
+            Assert.True(latestCash >= -costs - 0.01m,
+                $"account {account.AccountId}: cash {latestCash} is below −(trading costs {costs}) — structural leverage, not the cost residual.");
+        }
+    }
 }

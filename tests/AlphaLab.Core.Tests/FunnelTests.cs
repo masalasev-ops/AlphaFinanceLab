@@ -247,7 +247,7 @@ public class FunnelTests
     {
         var options = new SizingOptions { PositionCapPct = 1.0 };
 
-        var result = Sizing.Size([S(1), S(2), S(3), S(4)], 100_000m, SizingMode.Equal, options);
+        var result = Sizing.Size([S(1), S(2), S(3), S(4)], 100_000m, 100_000m, SizingMode.Equal, options);
 
         Assert.All(result.Targets, t => Assert.Equal(25_000m, t.TargetNotional));
         Assert.Equal(0m, result.UninvestedCash);
@@ -261,7 +261,7 @@ public class FunnelTests
         // 4 names would be 25% each; the 5% cap clamps every one to $5,000 => $20,000 invested.
         var options = new SizingOptions { PositionCapPct = 0.05 };
 
-        var result = Sizing.Size([S(1), S(2), S(3), S(4)], 100_000m, SizingMode.Equal, options);
+        var result = Sizing.Size([S(1), S(2), S(3), S(4)], 100_000m, 100_000m, SizingMode.Equal, options);
 
         Assert.All(result.Targets, t => Assert.Equal(5_000m, t.TargetNotional));
         Assert.Equal(80_000m, result.UninvestedCash);
@@ -273,7 +273,7 @@ public class FunnelTests
         // 40 names at 2.5% each are all under the 5% cap.
         var targets = Enumerable.Range(1, 40).Select(i => S(i)).ToList();
 
-        var result = Sizing.Size(targets, 100_000m, SizingMode.Equal, new SizingOptions { PositionCapPct = 0.05 });
+        var result = Sizing.Size(targets, 100_000m, 100_000m, SizingMode.Equal, new SizingOptions { PositionCapPct = 0.05 });
 
         Assert.All(result.Targets, t => Assert.Equal(2_500m, t.TargetNotional));
         Assert.Equal(0m, result.UninvestedCash);
@@ -288,7 +288,7 @@ public class FunnelTests
     public void FR11_AnUnbuiltSizingMode_IsRefused_NeverSilentlyEqualWeighted(SizingMode mode)
     {
         var ex = Assert.Throws<NotSupportedException>(
-            () => Sizing.Size([S(1), S(2)], 100_000m, mode, new SizingOptions { Mode = mode }));
+            () => Sizing.Size([S(1), S(2)], 100_000m, 100_000m, mode, new SizingOptions { Mode = mode }));
 
         Assert.Contains(mode.ToString(), ex.Message);
         Assert.Contains("Phase 6", ex.Message);
@@ -297,7 +297,7 @@ public class FunnelTests
     [Fact]
     public void FR11_AnEmptyWishList_IsAllCash_NotAnError()
     {
-        var result = Sizing.Size([], 100_000m, SizingMode.Equal, new SizingOptions());
+        var result = Sizing.Size([], 100_000m, 100_000m, SizingMode.Equal, new SizingOptions());
 
         Assert.Empty(result.Targets);
         Assert.Equal(100_000m, result.UninvestedCash);
@@ -308,7 +308,7 @@ public class FunnelTests
     [Fact]
     public void FR11_NonPositiveEquity_SizesNothing_AndSaysWhyPerName()
     {
-        var result = Sizing.Size([S(1), S(2)], 0m, SizingMode.Equal, new SizingOptions());
+        var result = Sizing.Size([S(1), S(2)], 0m, 0m, SizingMode.Equal, new SizingOptions());
 
         Assert.Empty(result.Targets);
         Assert.Equal(2, result.Excluded.Count);
@@ -321,14 +321,71 @@ public class FunnelTests
     public void FR11_APositionCapOfZero_Throws_RatherThanHoldingCashForever()
     {
         Assert.Throws<ArgumentOutOfRangeException>(
-            () => Sizing.Size([S(1)], 100_000m, SizingMode.Equal, new SizingOptions { PositionCapPct = 0.0 }));
+            () => Sizing.Size([S(1)], 100_000m, 100_000m, SizingMode.Equal, new SizingOptions { PositionCapPct = 0.0 }));
     }
 
     [Fact]
     public void FR11_TargetsAreOrderedBySecurityId_Deterministically()
     {
-        var result = Sizing.Size([S(9), S(2), S(5)], 90_000m, SizingMode.Equal, new SizingOptions { PositionCapPct = 1.0 });
+        var result = Sizing.Size([S(9), S(2), S(5)], 90_000m, 90_000m, SizingMode.Equal, new SizingOptions { PositionCapPct = 1.0 });
 
         Assert.Equal([S(2), S(5), S(9)], result.Targets.Select(t => t.Id));
+    }
+
+    // ---- D84 cash constraint (finding 190): new opens are sized against AVAILABLE CASH and scaled to
+    //      fit, never total equity — so an account can never spend cash it does not hold. ----
+
+    /// <summary>D84 / finding 190. An account with $10k cash whose wish list would (against $100k equity)
+    /// spend $100k opens for EXACTLY $10k — every target scaled proportionally — never a cent more.</summary>
+    [Fact]
+    public void D84_OpensExceedingCash_SpendExactlyAvailableCash_NeverNegative()
+    {
+        // Against equity each of the 2 names would be 50k (=100k total); the cash ceiling scales both to
+        // 5k so the total is exactly the 10k cash. Cap lifted so ONLY the cash constraint is at work.
+        var result = Sizing.Size([S(1), S(2)], equity: 100_000m, availableCash: 10_000m,
+            SizingMode.Equal, new SizingOptions { PositionCapPct = 1.0 });
+
+        Assert.All(result.Targets, t => Assert.Equal(5_000m, t.TargetNotional));
+        Assert.Equal(10_000m, result.Targets.Sum(t => t.TargetNotional)); // spends exactly the cash
+        Assert.Equal(0m, result.UninvestedCash);                          // no cash left after opening
+    }
+
+    /// <summary>D84. On a near-zero (or drifted-negative) cash day nothing is opened — the correct sparse
+    /// outcome, and NOT a forced sell of a held name (rule 7). Every wish-list name carries a reason.</summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-2_500)]
+    public void D84_NoCashAvailable_OpensNothing_WithAReasonPerName(double cash)
+    {
+        var result = Sizing.Size([S(1), S(2), S(3)], equity: 100_000m, availableCash: (decimal)cash,
+            SizingMode.Equal, new SizingOptions { PositionCapPct = 1.0 });
+
+        Assert.Empty(result.Targets);
+        Assert.Equal(3, result.Excluded.Count);
+        Assert.All(result.Excluded, e => Assert.Contains("no cash available", e.Reason));
+    }
+
+    /// <summary>D84. The cash ceiling binds IN ADDITION to the per-name cap: the 5% cap sets each intended
+    /// target to $5k (=$20k for 4 names), then $12k cash scales them to $3k each.</summary>
+    [Fact]
+    public void D84_CashConstraint_BindsInAdditionToPositionCap()
+    {
+        var result = Sizing.Size([S(1), S(2), S(3), S(4)], equity: 100_000m, availableCash: 12_000m,
+            SizingMode.Equal, new SizingOptions { PositionCapPct = 0.05 });
+
+        Assert.All(result.Targets, t => Assert.Equal(3_000m, t.TargetNotional)); // 5k capped, ×0.6 for cash
+        Assert.Equal(12_000m, result.Targets.Sum(t => t.TargetNotional));
+    }
+
+    /// <summary>D84. When cash comfortably covers the capped book the ceiling does NOT bind — the pre-D84
+    /// "cap and hold cash" behaviour is unchanged, and UninvestedCash reflects the spendable cash.</summary>
+    [Fact]
+    public void D84_CashAboveTheCappedBook_DoesNotBind_AndUninvestedCashIsHonest()
+    {
+        var result = Sizing.Size([S(1), S(2), S(3), S(4)], equity: 100_000m, availableCash: 30_000m,
+            SizingMode.Equal, new SizingOptions { PositionCapPct = 0.05 });
+
+        Assert.All(result.Targets, t => Assert.Equal(5_000m, t.TargetNotional)); // 5% cap, cash not binding
+        Assert.Equal(10_000m, result.UninvestedCash);                            // 30k spendable − 20k deployed
     }
 }

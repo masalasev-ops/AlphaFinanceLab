@@ -326,6 +326,7 @@ Record the protocol's results in `PROGRESS.md`; a pass names the source in the d
 ## 9. Score → probability → sizing (calibration, horizons, Kelly)
 
 - **Default sizer: inverse-volatility under a portfolio vol target**, covariance from **Ledoit–Wolf (D42)**. Equal-weight acceptable for dummies. Heat guardrail caps predicted portfolio vol, never summed notional.
+- **New opens are sized against available cash, never total equity (D84):** the day's opens scale to fit the cash on hand, so an account never spends cash it does not hold and no held position is sold to fund an open (rule 7 — only the `ExitPolicy` closes). A whole-book rebalance re-weights against equity (it self-funds). `Sizing.PositionCapPct` still binds per name. Resolves finding 190.
 - **Kelly variant (Phase 6+, opt-in per strategy):** calibrated `p` (isotonic/Platt over the declared horizon; **overlapping-label caution** — block bootstrap / non-overlapping windows for confidence); `b` from realized trades with a shrinkage prior toward 1.0 and a 30-trade minimum; `f* = (p·b − q)/b` clamped (cap 0.25); shrink-to-zero on unknown/failing calibration. A Kelly-sized strategy is a separate candidate vs its inverse-vol twin.
 
 ### 9.1 The trade-level evidence track (v6, D44)
