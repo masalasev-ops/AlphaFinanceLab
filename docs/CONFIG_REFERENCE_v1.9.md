@@ -246,7 +246,7 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
       "Model": "llm-b",                            // may differ from the contestant's; a frozen param
       "MonthlyBudgetUsd": 5.0                       // on exhaustion the researcher job simply queues
     }
-  },                                               // NOTE: per-strategy frozen params (prompt hash, model id, shortlist size, memory option + rule R) live in strategies.config_json, NOT here (key rule 1)
+  },                                               // NOTE: per-strategy frozen params (prompt hash, model id, shortlist size, memory option + rule R, the no-LLM twin's scoring rule — D85) live in strategies.config_json, NOT here (key rule 1). The twin's scoring rule is a FIXED FORM (equal-weight z-score blend of the pack features), not a tunable key; its feature set follows Ai.PackRecipeVersion, so a recipe change forks like any frozen-policy change.
 
   "Research": {                                    // D82 — the trials budget that rations self-improvement's deflated-Sharpe spend (S2)
     "ForkBudgetPerYear": 6,                        // fork cadence; surfaced beside the trials count in the research UI
