@@ -29,6 +29,12 @@ public sealed record BackfillOptions
     /// <summary>Regime proxy source (CONFIG Regime.ProxySource).</summary>
     public string RegimeProxySource { get; init; } = Providers.RegimeProxySource.EodhdGspc;
 
+    /// <summary>The cap-weight benchmark ETF proxy to ingest (STRATEGY_CATALOG §5.1). Resolved by the CLI
+    /// composition root from <c>CapWeightProxy.SymbolFor(Universe.Bootstrap.MembershipPrimary)</c> — Data
+    /// cannot reference AlphaLab.Strategies, so the bare symbol + config key arrive as strings. Null ⇒ the
+    /// step is a no-op (the CW account holds cash, a logged readiness gap — never a guessed symbol).</summary>
+    public CapWeightProxyTarget? CapWeightProxy { get; init; }
+
     /// <summary>EODHD daily-call plan limit for the ≥50% headroom check (null = unknown/unlimited).</summary>
     public int? ApiPlanLimit { get; init; }
 
@@ -60,8 +66,9 @@ public sealed record BackfillOptions
     public string PlanSummary()
     {
         var (cf, ct) = CalendarYears;
+        var cw = CapWeightProxy is { } t ? $"{t.Symbol}.{t.Exchange}" : "(none)";
         return $"universe={Universe} as_of={AsOf} bars {From}..{AsOf} calendar {cf}..{ct} " +
-               $"proxy={RegimeProxySource} count-band=[{CountBand[0]},{CountBand[1]}]";
+               $"proxy={RegimeProxySource} cw-proxy={cw} count-band=[{CountBand[0]},{CountBand[1]}]";
     }
 }
 
@@ -134,9 +141,10 @@ public static class BackfillArgs
 
 /// <summary>
 /// Bootstrap backfill orchestrator (FR-1..6/30/38, decision #1): ties the 1.1–1.9 providers + ingestion
-/// services into one run — seed the trading calendar, backfill the regime proxy, refresh + reconcile
-/// membership (with sectors), seed historical membership, then backfill each current member's bars +
-/// corporate actions. Writes go through the same AlphaLab.Data services the Phase-2 Worker reuses (D59:
+/// services into one run — seed the trading calendar, backfill the regime proxy, ingest the cap-weight
+/// benchmark ETF proxy (STRATEGY_CATALOG §5.1), refresh + reconcile membership (with sectors), seed
+/// historical membership, then backfill each current member's bars + corporate actions. Writes go through
+/// the same AlphaLab.Data services the Phase-2 Worker reuses (D59:
 /// the CLI is the Phase-1 bootstrap writer). Providers are injected so the whole run is exercised offline
 /// against byte-real fixtures; the live sp100 run against EODHD/BlackRock is the operator's (decision #1).
 /// Raw payloads are archived by the providers' own <c>IRawCache</c>; this runner counts API calls per
@@ -179,6 +187,26 @@ public sealed class BackfillRunner(
         Count(o.RegimeProxySource, EodhdEndpointCost.Eod); // GSPC.INDX daily = an /eod-family call (cost 1)
         var written = new RegimeProxyIngestion(db).IngestProxyBars(id, bars, o.ObservedAt);
         Log($"[regime] proxy security_id={id}; {bars.Count} bars fetched, {written} written.");
+    }
+
+    /// <summary>Resolve the cap-weight benchmark ETF proxy's identity, write its
+    /// <c>Benchmark.CapWeightProxySecurityId</c> config row, and backfill its bars + dividends + splits
+    /// (STRATEGY_CATALOG §5.1). The proxy is a real ETF, so — unlike the bars-only regime proxy — it goes
+    /// through the ordinary <see cref="BackfillSecurityStep"/> member path (total return needs the dividends).
+    /// A null <see cref="BackfillOptions.CapWeightProxy"/> is a logged no-op: the CW account holds cash until
+    /// the row exists (a readiness gap, rule 10), never a guessed symbol.</summary>
+    public async Task BackfillCapWeightProxyStep(BackfillOptions o, CancellationToken ct = default)
+    {
+        if (o.CapWeightProxy is not { } target)
+        {
+            Log("[benchmark] no cap-weight proxy configured — skipped (CW account holds cash until ingested).");
+            return;
+        }
+
+        var id = new CapWeightProxyIngestion(db)
+            .ResolveProxySecurityId(target.Symbol, target.Exchange, target.ConfigKey, o.AsOf, target.Source);
+        await BackfillSecurityStep(id, target.Symbol, o, ct).ConfigureAwait(false);
+        Log($"[benchmark] cap-weight proxy {target.Symbol}.{target.Exchange} security_id={id}; '{target.ConfigKey}' resolved.");
     }
 
     public async Task<MembershipReconcileResult> RefreshMembershipStep(BackfillOptions o, CancellationToken ct = default)
@@ -280,8 +308,8 @@ public sealed class BackfillRunner(
 
     private static bool IsEodhd(string source) => source.StartsWith("eodhd", StringComparison.Ordinal);
 
-    /// <summary>The forward-universe bootstrap sequence (D70 slice = OEF+Wikipedia + GSPC proxy + member
-    /// bars). It does NOT seed the fja05680 historical S&amp;P 500 roster — that is a Phase-4 REPLAY prerequisite
+    /// <summary>The forward-universe bootstrap sequence (D70 slice = OEF+Wikipedia + GSPC proxy + cap-weight
+    /// ETF proxy + member bars). It does NOT seed the fja05680 historical S&amp;P 500 roster — that is a Phase-4 REPLAY prerequisite
     /// (<see cref="SeedHistoricalMembershipStep"/>), seeded separately; co-mingling it here would make a
     /// re-run's forward reconcile mass-evict the historical members (the reconciler is universe-blind, D70/D71).
     /// Idempotent + re-run safe. In <see cref="BackfillOptions.DryRun"/> it logs the plan and makes no network
@@ -301,6 +329,7 @@ public sealed class BackfillRunner(
         {
             SeedCalendarStep(o);
             await BackfillRegimeProxyStep(o, ct).ConfigureAwait(false);
+            await BackfillCapWeightProxyStep(o, ct).ConfigureAwait(false);
             await RefreshMembershipStep(o, ct).ConfigureAwait(false);
 
             var members = new IndexMembershipReadService(db).MembersAsOf(o.AsOf);

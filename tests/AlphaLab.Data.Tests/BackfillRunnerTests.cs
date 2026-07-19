@@ -49,6 +49,16 @@ public class BackfillRunnerTests
         .Route("portfolioId=239723", () => Fixtures.Holdings("OEF_holdings.csv"))
         .Route("S%26P_100", () => Fixtures.Wikipedia("sp100_components.html"));
 
+    // The cap-weight ETF proxy rides the ordinary member fetch path (bare ticker + .US suffix), so its
+    // OEF.US eod/div/splits are served by the byte-real AAPL payloads (the wire shapes are symbol-agnostic).
+    private static FixtureHttpClient CwClient() => FullClient()
+        .Route("/eod/OEF.US", () => Fixtures.Eodhd("eod_AAPL.json"))
+        .Route("/div/OEF.US", () => Fixtures.Eodhd("div_AAPL.json"))
+        .Route("/splits/OEF.US", () => Fixtures.Eodhd("splits_AAPL.json"));
+
+    private const string CwConfigKey = "Benchmark.CapWeightProxySecurityId"; // == AlphaLab.Strategies.CapWeightProxy.ProxySecurityIdConfigKey
+    private static CapWeightProxyTarget CwTarget() => new("OEF", "US", CwConfigKey, "oef_csv");
+
     private static readonly EodhdOptions Eodhd = new() { ApiToken = "test-token" };
 
     private static IRegimeProxyProvider Gspc(IResilientHttpClient http) => new EodhdGspcRegimeProxyProvider(http, Eodhd);
@@ -102,6 +112,51 @@ public class BackfillRunnerTests
             Assert.Equal(62, db.Bars.Count(b => b.SecurityId == proxy.SecurityId));
             Assert.Single(db.Config.Where(c => c.Key == RegimeProxyIngestion.ProxyConfigKey).ToList());
             Assert.Equal(1, runner.ApiCalls["eodhd_gspc"]);
+        }
+        finally { TestDb.Delete(path); }
+    }
+
+    // The CW proxy is a real ETF: identity resolved + config row written + bars/divs/splits ingested via the
+    // member path (total return needs the dividends). STRATEGY_CATALOG §5.1 / D26/D27.
+    [Fact]
+    public async Task BackfillCapWeightProxyStep_ResolvesConfigAndIngestsBarsDivsSplits()
+    {
+        var path = TestDb.CreateMigrated();
+        try
+        {
+            using var db = TestDb.Open(path);
+            var runner = Runner(db, CwClient());
+
+            await runner.BackfillCapWeightProxyStep(new BackfillOptions { AsOf = AsOf, CapWeightProxy = CwTarget() });
+
+            var proxy = db.Securities.Single(s => s.CurrentSymbol == "OEF");
+            Assert.Equal("US", proxy.Exchange); // BARE ticker — its forward fetch URL is OEF.US, not OEF.US.US
+            var cfg = Assert.Single(db.Config.Where(c => c.Key == CwConfigKey).ToList());
+            Assert.Equal(proxy.SecurityId.ToString(), cfg.ValueJson);
+            Assert.True(db.Bars.Count(b => b.SecurityId == proxy.SecurityId) > 0);
+            Assert.True(db.CorporateActions.Any(c => c.SecurityId == proxy.SecurityId && c.Type == "dividend"));
+            Assert.True(db.CorporateActions.Any(c => c.SecurityId == proxy.SecurityId && c.Type == "split"));
+            Assert.Equal(3, runner.ApiCalls["eodhd"]); // eod + div + splits, on the shared EODHD plan
+        }
+        finally { TestDb.Delete(path); }
+    }
+
+    // No target configured ⇒ a logged no-op: no security, no config row, no spend (the CW account holds
+    // cash, a readiness gap — never a guessed symbol). This is why existing RunAsync tests stay green.
+    [Fact]
+    public async Task BackfillCapWeightProxyStep_NullTarget_IsNoOp()
+    {
+        var path = TestDb.CreateMigrated();
+        try
+        {
+            using var db = TestDb.Open(path);
+            var runner = Runner(db, CwClient());
+
+            await runner.BackfillCapWeightProxyStep(new BackfillOptions { AsOf = AsOf }); // CapWeightProxy == null
+
+            Assert.Empty(db.Securities.ToList());
+            Assert.Empty(db.Config.Where(c => c.Key == CwConfigKey).ToList());
+            Assert.False(runner.ApiCalls.ContainsKey("eodhd"));
         }
         finally { TestDb.Delete(path); }
     }
@@ -281,6 +336,28 @@ public class BackfillRunnerTests
             Assert.Equal(1, db.ApiUsageLog.Find(AsOf, "eodhd_gspc")!.Calls); // proxy fetched before the abort
             Assert.Equal(1, db.ApiUsageLog.Find(AsOf, "oef_csv")!.Calls);    // primary fetched before the abort
             Assert.Null(db.ApiUsageLog.Find(AsOf, "wikipedia_sp100"));       // cross threw before its count
+        }
+        finally { TestDb.Delete(path); }
+    }
+
+    // End-to-end: a full run with a CW target ingests the proxy AND writes its config row, without ever
+    // adding OEF to the index roster (the ETF is not a constituent — no double backfill, no phantom member).
+    [Fact]
+    public async Task RunAsync_WithCapWeightProxy_IngestsProxyAndConfig_NotAsMember()
+    {
+        var path = TestDb.CreateMigrated();
+        try
+        {
+            using var db = TestDb.Open(path);
+            var http = CwClient();
+            var o = new BackfillOptions { AsOf = AsOf, CalendarYearsEitherSide = 1, CapWeightProxy = CwTarget() };
+
+            await Runner(db, http, primary: Oef(http), cross: Oef(http)).RunAsync(o);
+
+            var proxy = db.Securities.Single(s => s.CurrentSymbol == "OEF");
+            Assert.Single(db.Config.Where(c => c.Key == CwConfigKey).ToList());
+            Assert.True(db.Bars.Count(b => b.SecurityId == proxy.SecurityId) > 0);
+            Assert.False(db.IndexMembership.Any(m => m.SecurityId == proxy.SecurityId)); // never a roster member
         }
         finally { TestDb.Delete(path); }
     }

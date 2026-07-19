@@ -3,6 +3,7 @@ using AlphaLab.Data;
 using AlphaLab.Data.Http;
 using AlphaLab.Data.Providers;
 using AlphaLab.Data.Services;
+using AlphaLab.Strategies;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -33,6 +34,25 @@ catch (ArgumentException ex)
 {
     Console.Error.WriteLine($"argument error: {ex.Message}");
     Console.Error.WriteLine(Usage);
+    return 2;
+}
+
+// Bridge the layer AlphaLab.Data cannot cross: resolve the cap-weight benchmark ETF proxy (STRATEGY_CATALOG
+// §5.1) from the membership source and hand its bare ticker + exchange + config key to the Data-side
+// ingestion as strings. Config-driven (never hardcoded): oef_csv ⇒ OEF.US on the D70 slice, ivv_csv ⇒ IVV.US
+// at the widen. Fail closed on an unknown source rather than run a backfill with a guessed benchmark.
+var membershipPrimary = config["Universe:Bootstrap:MembershipPrimary"] ?? CapWeightProxy.OefSource;
+try
+{
+    options = options with
+    {
+        CapWeightProxy = CapWeightProxyTarget.FromEodhdSymbol(
+            CapWeightProxy.SymbolFor(membershipPrimary), CapWeightProxy.ProxySecurityIdConfigKey, membershipPrimary)
+    };
+}
+catch (Exception ex) when (ex is NotSupportedException or ArgumentException)
+{
+    Console.Error.WriteLine($"cap-weight proxy config error: {ex.Message}");
     return 2;
 }
 

@@ -18,6 +18,10 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\AlphaLab.Core\AlphaLab.Core.csproj" />
     <ProjectReference Include="..\..\src\AlphaLab.Data\AlphaLab.Data.csproj" />
+    <!-- The composition root bridges the layer AlphaLab.Data cannot cross: it reads the cap-weight proxy's
+         symbol + config key off AlphaLab.Strategies.CapWeightProxy (STRATEGY_CATALOG §5.1) and hands them to
+         the Data-side ingestion as strings. tools/ is outside the src reference-graph guard. -->
+    <ProjectReference Include="..\..\src\AlphaLab.Strategies\AlphaLab.Strategies.csproj" />
   </ItemGroup>
 
   <ItemGroup>
