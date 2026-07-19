@@ -1,6 +1,6 @@
 # AlphaLab — Complete Design Package (revision v1.9)
 
-This is the **full, self-contained** design package. Design revision v1.9. Build status is live, not pre-implementation: Phase 0 and Phase 1 have shipped and Phase 2 (funnel + ledger) is merged. The full pass-by-pass history (v4/v5/v6 through the v1.9.25 funnel-cash-constraint pass, every CHANGELOG finding and decision D1-D84) lives in `docs/CHANGELOG_v1.9.md`; current phase, test count, and the open-item list live in `PROGRESS.md`. Consult those two rather than any count or status quoted inline, which may lag. Every file here is current; nothing external is required.
+This is the **full, self-contained** design package. Design revision v1.9. Build status is live, not pre-implementation: Phase 0 and Phase 1 have shipped and Phase 2 (funnel + ledger) is merged. The full pass-by-pass history (v4/v5/v6 through the v1.9.26 twin-scorer pass, every CHANGELOG finding and decision D1-D85) lives in `docs/CHANGELOG_v1.9.md`; current phase, test count, and the open-item list live in `PROGRESS.md`. Consult those two rather than any count or status quoted inline, which may lag. Every file here is current; nothing external is required.
 
 Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to drive the build).
 
@@ -13,7 +13,7 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `CLAUDE.md` (repo root) — hard rules, solution layout, commands (the constitution the build obeys).
 
 **The design**
-- `docs/MASTER_DESIGN_v1.9.md` — the comprehensive document: decisions D1–D83,
+- `docs/MASTER_DESIGN_v1.9.md` — the comprehensive document: decisions D1–D85,
   architecture, golden rules, math appendix, UI boundary.
 - `docs/ARENA_ARCHITECTURE_v1.9.3.md` — how AlphaLab supports multiple isolated universes
   ("arenas"); decision D71. Additive, no schema change; the S&P 500 build is unaffected.
@@ -170,6 +170,13 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   never total equity; tests 528 → 539.** `Sizing.Size` gains an `availableCash` ceiling; `FunnelRunner`
   passes cash for opens / equity for a whole-book rebalance; `DailyPipeline` threads the account's cash and
   moves the sell-leg basis math to decimal `BasisMath` (finding 195, D69). Proposal **P12** opened.
+- v1.9.26 twin-scorer pass (decision **D85**; proposal **P13**; finding 207) — merged. **Docs only; tests stay 539;
+  no code/schema/config change.** Fixes the Stage-2 scorer D81 left open: the no-LLM twin scores by a **frozen
+  equal-weight z-score blend of the same pack features the contestant sees** (MASTER §2/§23.3), a `config_json`
+  frozen param with ordered degenerate-day handling (drop zero-variance features → equal-score fallback + flag if
+  none survive or <2 names → never NaN), not replay-admissible on its own. STRATEGY_CATALOG §9, CONFIG_REFERENCE
+  (Ai NOTE), TEST_PLAN §6 (`D85_*` fixtures + extended `FX-TwinPairing`) updated; the rejected foils
+  (pure equal-scoring; a tuned rule — p-hacking) recorded as **P13**; ORIENTATION.md already named the blend.
 - The mockups were consolidated into the single `alphalab_ux_mockups.html` in the v1.9.21/v1.9.22 passes
   (the earlier per-topic and v2 files are gone; the consolidated file gained the UX-14 paired-comparison block
   and the slate-grey replay tokens in v1.9.22). SCHEMA received its first post-v1.9.1 edit in v1.9.7
