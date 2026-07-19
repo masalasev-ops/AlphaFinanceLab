@@ -635,3 +635,14 @@ Proposal **P12** opened in `PROGRESS.md` (the cash-shortfall allocation policy: 
 | # | Finding | Resolution | Where |
 |---|---------|-----------|-------|
 | 209 | v1.9.27 added `UX_DESIGN_SYSTEM_v1.9.md` and wired it into UX_GUIDELINES/MANIFEST/CHANGELOG, but `BUILD_AND_PROMPTS_v1.9.md`'s UI prompts (FR-24, Phase 3, Phase 7) still cited only the tokens + the mockup — a future screen build would not automatically pick up the component catalogue | FR-24 and the Phase-3 and Phase-7 UI prompts now cite `UX_DESIGN_SYSTEM_v1.9.md` (component anatomy) alongside `UX_GUIDELINES_v1.9.md` (tokens) and the mockup (look). Checkpoint 0.7g (shell chrome) is intentionally unchanged. No palette change, no D-number — additive | `docs/BUILD_AND_PROMPTS_v1.9.md` (FR-24, Phase 3, Phase 7) |
+
+---
+
+## v1.9.29 — frozen-position valuation (D86) + rejected-fill policy (the two before-Phase-3 findings)
+
+*Docs-only; additive; no code/schema/test change; tests stay 539; `ci.ps1` green. Resolves the two Phase-2-review findings that carried a "before Phase 3" deadline: finding 191 (frozen/unpriced valuation) gets decision **D86** — it changes a stated fail-closed semantic; finding 196 (rejected T+1 fills) blesses shipped behaviour with no D-number. The terminal-delist valuation, `BankruptcyHaircutPct`, and `FX-Delist` are deliberately untouched — that case correctly stays last-print.*
+
+| # | Finding | Resolution | Where |
+|---|---------|-----------|-------|
+| 210 | **Finding 191 (P9): frozen/unpriced positions valued at cost basis in code vs §13.6's "freeze valuation at last print" — a silent doc-vs-code conflict the Phase-3 `equity_curve` read-models would inherit** | D86: §13.6 amended to cost-basis for the unmapped-halt freeze (code already conformed; rationale: a frozen name has no reliable price, a stale last print misstates it). Terminal delisting untouched (real final print → last print, correct). `FX-Unmapped` expectation names cost-basis; D-range banners → D86; the freeze-mechanism mentions (D39 summary, rules 9/§16) and the delist/haircut case deliberately left as-is | MASTER §13.6 (line 422), §2 (D86), §0 provenance, line-5 banner; TEST_PLAN `FX-Unmapped`; MANIFEST banners |
+| 211 | **Finding 196 (P11): a rejected/clipped T+1 fill is logged then dropped — a one-day capacity rejection could become a silent permanent underweight, and population fills hit the same cap (shaping the Phase-4 null bands)** | Policy stated and blessed (no D-number — documents shipped behaviour): drop-and-let-the-next-decision-re-open; a bounded re-plan is rejected as a second decision authority (cf. D84). `RecordCapacityRejection` is the visible record; the Risk screen surfaces "unfilled by capacity". §13.6 gains the policy note | MASTER §13.6 (fills note) |

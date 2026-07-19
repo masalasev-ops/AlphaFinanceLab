@@ -1,6 +1,6 @@
 # AlphaLab — v1.9 Documentation Package (README)
 
-*Design revision v1.9. Build status is live, not pre-implementation: Phase 0 and Phase 1 have shipped and Phase 2 (funnel + ledger) is merged. The full pass-by-pass history (v4/v5/v6 through the v1.9.26 reconciliation pass, every CHANGELOG finding and decision D1-D85) lives in `docs/CHANGELOG_v1.9.md`; current phase, test count, and the open-item list live in `PROGRESS.md`. Consult those two rather than any count or status quoted inline, which may lag.*
+*Design revision v1.9. Build status is live, not pre-implementation: Phase 0 and Phase 1 have shipped and Phase 2 (funnel + ledger) is merged. The full pass-by-pass history (v4/v5/v6 through the v1.9.26 reconciliation pass, every CHANGELOG finding and decision D1-D86) lives in `docs/CHANGELOG_v1.9.md`; current phase, test count, and the open-item list live in `PROGRESS.md`. Consult those two rather than any count or status quoted inline, which may lag.*
 
 *This package is sufficient for building the entire system through Claude Code, solo, with no undocumented decisions. The gap-closure pass (decisions D50–D56) is already merged into every document — there is no separate addendum to reconcile.*
 
@@ -10,7 +10,7 @@
 | Doc | Role |
 |---|---|
 | `ARENA_ARCHITECTURE_v1.9.3.md` | **How AlphaLab supports multiple isolated universes ("arenas").** Defines D71: one universe per arena, separate DB + process per arena, arena-scoped calibration, an arena-switcher frontend that never merges leaderboards, and a step-by-step "add an arena" checklist. Additive; no schema change; the S&P 500 build is unaffected. |
-| `MASTER_DESIGN_v1.9.md` | **The comprehensive document.** Decisions D1–D85, architecture, the daily funnel, data sourcing, golden rules, the plain-language math appendix (§19), the gap-closure specs (§20), the **UI-boundary specs (§21 `AlphaLab.Api`, §22 honesty read-models)** that make the front end swappable, and the AI-seat spec (§23) |
+| `MASTER_DESIGN_v1.9.md` | **The comprehensive document.** Decisions D1–D86, architecture, the daily funnel, data sourcing, golden rules, the plain-language math appendix (§19), the gap-closure specs (§20), the **UI-boundary specs (§21 `AlphaLab.Api`, §22 honesty read-models)** that make the front end swappable, and the AI-seat spec (§23) |
 | `STRATEGY_CATALOG_v1.9.md` | Every strategy's exact spec, the `IModel` contract, acceptance criteria |
 | `DESIGN_IMPROVEMENTS_v1.9.md` | Metrics/evaluation math in full, factor research, sizing/costs, LLM economics, Arena Replay, the power-reality tables |
 | `DESIGN_IMPROVEMENTS_EXPLAINED.md` | The plain-language "why" companion to `DESIGN_IMPROVEMENTS_v1.9.md` (onboarding; section numbers match the spec) |
