@@ -625,3 +625,13 @@ Proposal **P12** opened in `PROGRESS.md` (the cash-shortfall allocation policy: 
 | # | Finding | Resolution | Where |
 |---|---------|-----------|-------|
 | 208 | **The visual token set (UX_GUIDELINES) and the honesty rules (UX-1…UX-14) existed, but nothing connected them into component anatomy** — a builder had the palette and the rules but no spec for "given a `verdict_chip` field, exactly what element renders it, in which tokens." A Phase-3+ screen build would approximate the mockup rather than match it, per screen, unenforceably | New `docs/UX_DESIGN_SYSTEM_v1.9.md`: 16 components each bound to a real read-model field (D58), referencing UX_GUIDELINES' tokens and UX-1…UX-14 (restating neither), putting no honesty logic in any component. UX_GUIDELINES gains a one-line pointer under its token table; MANIFEST lists the new doc. The doc landed in `609b162`; this row records it and completes the skipped wiring | `docs/UX_DESIGN_SYSTEM_v1.9.md`; `docs/UX_GUIDELINES_v1.9.md` (pointer); `docs/MANIFEST.md` |
+
+---
+
+## v1.9.28 — BUILD prompts cite the component catalogue
+
+*Docs-only; additive; no D-number; tests stay 539; `ci.ps1` green. Completes v1.9.27 (finding 208): the BUILD UI prompts (FR-24, Phase 3, Phase 7) now cite the component catalogue alongside the tokens and the mockup, so a Phase-3/7 screen build picks it up; checkpoint 0.7g (shell chrome) is intentionally unchanged.*
+
+| # | Finding | Resolution | Where |
+|---|---------|-----------|-------|
+| 209 | v1.9.27 added `UX_DESIGN_SYSTEM_v1.9.md` and wired it into UX_GUIDELINES/MANIFEST/CHANGELOG, but `BUILD_AND_PROMPTS_v1.9.md`'s UI prompts (FR-24, Phase 3, Phase 7) still cited only the tokens + the mockup — a future screen build would not automatically pick up the component catalogue | FR-24 and the Phase-3 and Phase-7 UI prompts now cite `UX_DESIGN_SYSTEM_v1.9.md` (component anatomy) alongside `UX_GUIDELINES_v1.9.md` (tokens) and the mockup (look). Checkpoint 0.7g (shell chrome) is intentionally unchanged. No palette change, no D-number — additive | `docs/BUILD_AND_PROMPTS_v1.9.md` (FR-24, Phase 3, Phase 7) |
