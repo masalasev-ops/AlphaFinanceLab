@@ -34,7 +34,7 @@
 | `FX-MergerMixed` | $10 cash + 0.5 shares | both legs, one action |
 | `FX-Spinoff` | 1:5 spin-off, ratio in feed; sibling fixture with ratio missing | new position with basis allocation; missing-ratio → first-print allocation path |
 | `FX-Delist` | terminal delist, last print day 62; bankruptcy variant | force-exit at last print; haircut config applied |
-| `FX-Unmapped` | bars stop, no action in feed | position frozen + flagged + alert; valuation pinned (fail closed) |
+| `FX-Unmapped` | bars stop, no action in feed | position frozen + flagged + alert; valuation pinned at cost basis (fail closed, D86) |
 | `FX-ZeroScore` | day where only 2 names score > 0, N=40 | Stage-3 invariant: 2 positions + cash, no padding |
 | `FX-ExitOnly` | name falls off wish list but ExitPolicy says hold | no implicit sell |
 | `FX-Outage5d` | 5 missed trading days incl. a dividend, a membership drop, a bar correction | FR-7: ordered recovery, one txn/day, idempotent re-run is a no-op, catchup_log complete |
