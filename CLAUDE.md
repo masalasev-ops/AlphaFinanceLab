@@ -136,11 +136,6 @@ money as strings/minor-units (never floats).
 - If a simpler approach exists (that still satisfies the design docs), say so; push back when warranted.
 - If something is unclear, stop, name what's confusing, and ask. For any doc-vs-code question, read the literal doc text (SCHEMA/CONFIG/INTEGRATIONS/MASTER are the named sources of truth) before resolving — never resolve from memory or a partial grep.
 
-**C2. Simplicity within the design, not against it.** Prefer the simplest implementation that satisfies the design docs and their decisions — but this project is deliberately not minimal, and that is by design.
-- Do NOT add features, abstractions, configurability, or error handling beyond what an FR, a decision (D-number), or the phase prompt calls for.
-- Do NOT strip or "simplify away" an abstraction the design mandates: the Api boundary (D57), the read-model layer (D58), arena namespacing (D71), the sole-writer split (D59), and the reserved semantic tokens are intentional and D-numbered — they are not over-engineering, and removing them is a Hard-rule violation, not a cleanup.
-- The test is not "fewest lines" but "nothing beyond what the docs require, and nothing the docs require left out." If unsure whether something is mandated, ask or cite the D-number.
-
 **C3. Surgical changes.** Touch only what the task requires; clean up only your own mess.
 - Don't "improve" adjacent code, comments, or formatting; match existing style even if you'd do it differently.
 - Remove imports/variables/functions YOUR change orphaned; do NOT delete pre-existing dead code unless asked (mention it instead).

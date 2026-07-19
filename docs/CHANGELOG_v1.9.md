@@ -656,3 +656,13 @@ Proposal **P12** opened in `PROGRESS.md` (the cash-shortfall allocation policy: 
 | # | Finding | Resolution | Where |
 |---|---------|-----------|-------|
 | 212 | **`CLAUDE.md` carried project invariants (the D-numbered Hard rules) but no general "how to work" guidance; common LLM coding pitfalls (assuming instead of asking, over-engineering, non-surgical diffs, weak success criteria) had no stated guard for the Phase-3+ implementation work** | Added a "Coding conduct" section (C1–C4) adapted from the Karpathy `CLAUDE.md`, kept SEPARATE from the Hard rules (judgment, not invariants) and reworded so C2 defers to the design docs — it explicitly protects the mandated abstractions (D57/D58/D59/D71, reserved tokens) rather than licensing their removal, and C3 carves out the intended multi-file reconciliation passes. No D-number, additive | `CLAUDE.md`; `docs/CHANGELOG_v1.9.md` |
+
+---
+
+## v1.9.31 — trim CLAUDE.md coding conduct (remove C2)
+
+*Docs-only; additive; no D-number; no code/schema/test change; tests stay 539; `ci.ps1` green. Removes the C2 "simplicity" guideline from the "Coding conduct" section added in v1.9.30 (finding 212); C1/C3/C4 keep their labels (mnemonics, not a sequential list — the gap is intentional and avoids touching any reference).*
+
+| # | Finding | Resolution | Where |
+|---|---------|-----------|-------|
+| 213 | **The C2 "simplicity" guideline (added v1.9.30) was the weakest of the four** — its architecture-protecting content already duplicates the D-numbered Hard rules (D57/D58/D59/D71), so it added little beyond a mild anti-gold-plating nudge while carrying the most friction risk (a "prefer the simplest implementation" line that could prompt second-guessing a mandated design choice during Phase-3 coding) | C2 removed; C1/C3/C4 retained with unchanged labels. The architecture remains protected by the Hard rules; no behavioral protection is lost | `CLAUDE.md`; `docs/CHANGELOG_v1.9.md` |
