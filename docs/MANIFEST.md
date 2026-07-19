@@ -43,6 +43,7 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `docs/DESIGN_IMPROVEMENTS_v1.9.md` — the honest-metrics rationale and power tables.
 - `docs/DESIGN_IMPROVEMENTS_EXPLAINED.md` — the plain-language "why" companion to the above (onboarding; section numbers match the spec).
 - `docs/UX_GUIDELINES_v1.9.md` — the UX honesty rules (UX-1…UX-14, incl. the arena no-merge rule and the paired-comparison screen).
+- `docs/UX_DESIGN_SYSTEM_v1.9.md` — the component catalogue: each honesty read-model field → its Blazor component, element, and token treatment. The visual-assembly layer under UX_GUIDELINES' tokens and UX-1…UX-14.
 
 **UI mockups (reference for the Phase 3 screens)**
 - `docs/alphalab_ux_mockups.html` (the single consolidated UX mockup — every screen; supersedes the earlier per-topic mockup files)

@@ -79,6 +79,9 @@ The v5 screens were shaped like a leaderboard; the system's own statistics (MAST
 **Where:** Strategies + Live + strategy cards (Phase 3 read-model; rendered wherever the UI workstream lands per D65); test `UX12_SeparationChip_RendersWhenTrackExceedsMinAndStateNone`. *(Note: this rule is specified in text only — the consolidated `alphalab_ux_mockups.html` does depict the separation chip on the Strategies screen; follow this rule's text.)*
 
 ## Visual system — design tokens (v5 direction) *(client-side; not a read-model rule)*
+
+Component anatomy — the exact element, size, and token treatment that renders each honesty read-model field (verdict_chip, MetricCell, separation_state, population_percentile, …) — lives in UX_DESIGN_SYSTEM_v1.9.md. That doc references these tokens; it never redefines them. This table remains authoritative for colour, type, and their meaning.
+
 *Consolidated from the mockup set (now the single `alphalab_ux_mockups.html`) so the palette is one named reference, not scattered across rules. The mockups are the authoritative visual source; this table restates their tokens. Unlike UX-1…UX-14, this is a **client rendering** concern, not a read-model rule — but three tokens are **semantic honesty encodings**, and reserving them matters from day one (see below).*
 
 | Token | Value | Role |
