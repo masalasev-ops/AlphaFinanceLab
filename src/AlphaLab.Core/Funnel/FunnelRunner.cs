@@ -16,6 +16,11 @@ public sealed record FunnelInputs
 
     public required decimal Equity { get; init; }
 
+    /// <summary>The account's available CASH — post corporate actions, post the day's T+1 fills — the
+    /// only money a new open can spend (D84). New opens are sized against this, never total equity; a
+    /// whole-book rebalance re-weights against equity instead. Computed once by the pipeline.</summary>
+    public required decimal Cash { get; init; }
+
     /// <summary>The next trading session — where these orders will fill. From the calendar (D54);
     /// never asOf+1 calendar day, which would fabricate a session on a Friday.</summary>
     public required DateOnly FillOn { get; init; }
@@ -115,7 +120,15 @@ public static class FunnelRunner
         // candidates differ on, exactly like the SelectionRule. SizingOptions supplies only the
         // system knob the mode is applied under (PositionCapPct; and the D42/Kelly params Phase 6
         // reads). So the mode comes from the model, the cap from config.
-        var sized = Sizing.Size(plan.ToSize, inputs.Equity, model.Config.Sizing, sizing);
+        //
+        // D84 CASH CONSTRAINT: the spendable budget depends on what Stage 4 decided to size. New opens
+        // (OpensOnly) can only spend the account's CASH — there are no trims to fund them, and selling a
+        // held name to fund a buy is forbidden (rule 7). A whole-book rebalance (ScheduledRebalance/D68)
+        // re-weights the entire book, so its trims self-fund and the budget is EQUITY (targets sum ≤
+        // equity and held + cash = equity, so cash stays ≥ 0). Sizing scales the opens to fit, so an
+        // account never spends cash it does not hold.
+        var spendable = plan.Scope == RebalanceScope.WholeBook ? inputs.Equity : inputs.Cash;
+        var sized = Sizing.Size(plan.ToSize, inputs.Equity, spendable, model.Config.Sizing, sizing);
         notes.AddRange(StageNote.From(5, sized.Excluded));
 
         // ---- Stage 6: orders (shared) — decide at close T, fill at open T+1 ----

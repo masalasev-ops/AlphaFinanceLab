@@ -14,11 +14,15 @@ public sealed record TargetPosition(SecurityId Id, decimal TargetNotional);
 /// </summary>
 public sealed record SizingResult(
     decimal Equity,
+    decimal SpendableCash,
     IReadOnlyList<TargetPosition> Targets,
     IReadOnlyList<FunnelNote> Excluded)
 {
-    /// <summary>Equity not allocated to any target — cash. A legitimate position, not a shortfall.</summary>
-    public decimal UninvestedCash => Equity - Targets.Sum(t => t.TargetNotional);
+    /// <summary>The spendable budget NOT deployed to any target — the cash left after sizing. A
+    /// legitimate position, not a shortfall. <see cref="SpendableCash"/> is the account's available
+    /// cash on an opens-only day (D84) and its equity on a whole-book rebalance (the book re-weights
+    /// against itself), so this figure is honest in both cases.</summary>
+    public decimal UninvestedCash => SpendableCash - Targets.Sum(t => t.TargetNotional);
 }
 
 /// <summary>
@@ -31,26 +35,38 @@ public sealed record SizingResult(
 /// using: the run would look healthy, the numbers would be wrong, and nothing downstream could
 /// detect it. Rule 10 says fail closed; this is what that means for a config value.
 ///
-/// SAFETY in Phase 2 is exactly one guardrail — Sizing.PositionCapPct. The rest of the exposure
-/// system (heat, regime halts, cooldown, the drawdown breaker) is FR-17 in Phase 7 and is not
-/// applied here. PROGRESS records that line so a guardrail that is merely unbuilt is never
-/// mistaken for one that is broken.
+/// SAFETY in Phase 2 is two structural constraints: Sizing.PositionCapPct (the per-name cap) and the
+/// D84 CASH CONSTRAINT — new opens are sized against AVAILABLE CASH, never total equity, and scaled to
+/// fit, so an account can only spend cash it holds (cash can never go negative) and no held position is
+/// ever sold to fund a new open (rule 7). The rest of the exposure system (heat, regime halts, cooldown,
+/// the drawdown breaker) is FR-17 in Phase 7 and is not applied here. PROGRESS records that line so a
+/// guardrail that is merely unbuilt is never mistaken for one that is broken.
 /// </summary>
 public static class Sizing
 {
     /// <summary>
-    /// Size <paramref name="targets"/> against <paramref name="equity"/>.
+    /// Size <paramref name="targets"/> to equal weight under two structural constraints.
     ///
-    /// Equal weight: each name gets equity / n, then each is clamped to
+    /// PER-NAME CAP: each name gets equity / n, then each is clamped to
     /// <see cref="SizingOptions.PositionCapPct"/> of equity. THE CLAMP LEAVES CASH — it does not
     /// redistribute the excess across the other names, because redistributing would push those names
     /// back over the same cap; the cap would then bind on the redistribution, and so on. "Cap and
     /// hold cash" is the only fixed point that respects the cap, and holding cash because the book is
     /// concentrated is the honest outcome.
+    ///
+    /// CASH CONSTRAINT (D84): the total sized notional can never exceed <paramref name="availableCash"/>,
+    /// the budget the caller may deploy. When the capped equal-weight total would exceed it, every target
+    /// is scaled DOWN proportionally so the total equals available cash (the account opens smaller); when
+    /// there is no cash to deploy, nothing is opened (a sparse day, not a failure). The caller passes the
+    /// account's CASH for new opens and its EQUITY for a whole-book rebalance (which re-weights the book
+    /// against itself) — see <see cref="FunnelRunner"/>. This binds IN ADDITION to the per-name cap: a
+    /// target is min(equal share, cap), then scaled to fit cash. No held position is ever sold to fund a
+    /// new open (rule 7); cash frees up only as exits fire on their own schedule.
     /// </summary>
     public static SizingResult Size(
         IReadOnlyList<SecurityId> targets,
         decimal equity,
+        decimal availableCash,
         SizingMode mode,
         SizingOptions options)
     {
@@ -89,16 +105,40 @@ public static class Sizing
             {
                 excluded.Add(new FunnelNote(id, $"account equity is {equity} — not positive, so nothing can be sized."));
             }
-            return new SizingResult(equity, [], excluded);
+            return new SizingResult(equity, availableCash, [], excluded);
         }
 
-        if (distinct.Count == 0) return new SizingResult(equity, [], excluded);
+        if (distinct.Count == 0) return new SizingResult(equity, availableCash, [], excluded);
+
+        // CASH CONSTRAINT (D84): with no cash to deploy, open nothing. A near-zero-cash day is the
+        // correct sparse outcome — the account waits for an exit to free cash rather than spending money
+        // it does not have (implicit leverage) or selling a held name to fund a buy (rule 7 — only the
+        // ExitPolicy closes).
+        if (availableCash <= 0m)
+        {
+            foreach (var id in distinct)
+            {
+                excluded.Add(new FunnelNote(id,
+                    $"no cash available to open ({availableCash}); the open is deferred until an exit or corporate " +
+                    "action frees cash (D84). Held positions are untouched (rule 7)."));
+            }
+            return new SizingResult(equity, availableCash, [], excluded);
+        }
 
         var equalShare = equity / distinct.Count;
         var cap = equity * (decimal)options.PositionCapPct;
         var perName = Math.Min(equalShare, cap);
 
+        // Bind the cash constraint on top of the per-name cap: if the capped equal-weight book would
+        // spend more than the account holds, scale every target down proportionally so the total is
+        // exactly available cash (equal weights ⇒ this equals perName = availableCash / n).
+        var totalIntended = perName * distinct.Count;
+        if (totalIntended > availableCash)
+        {
+            perName *= availableCash / totalIntended;
+        }
+
         var sized = distinct.Select(id => new TargetPosition(id, perName)).ToList();
-        return new SizingResult(equity, sized, excluded);
+        return new SizingResult(equity, availableCash, sized, excluded);
     }
 }

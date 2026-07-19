@@ -306,6 +306,7 @@ public sealed class DailyPipeline(
                 IndexMembers = universe,
                 Held = held,
                 Equity = equity,
+                Cash = cash, // D84: new opens are sized against cash on hand, never total equity.
                 FillOn = fillOn.Value,
                 SessionsSinceInception = SessionsSinceInception(account.AccountId, asOfDate),
             };
@@ -362,6 +363,7 @@ public sealed class DailyPipeline(
     }
 
     // Post a funnel fill to the book: raw-price basis (D30), proportional basis reduction on a sell.
+    // All basis money math is decimal via BasisMath (D69, finding 195) — never a double ratio.
     private void PostFill(long accountId, Trade trade)
     {
         ledger.RecordTrade(trade);
@@ -374,7 +376,7 @@ public sealed class DailyPipeline(
                 AccountId = accountId,
                 SecurityId = trade.SecurityId,
                 Shares = (existing?.Shares ?? 0) + trade.Shares,
-                CostBasis = (existing?.CostBasis ?? 0m) + trade.RawFillPrice * (decimal)trade.Shares,
+                CostBasis = BasisMath.AddBuy(existing?.CostBasis ?? 0m, trade.RawFillPrice, trade.Shares),
                 OpenedOn = existing?.OpenedOn ?? trade.FilledOn,
             });
             return;
@@ -397,7 +399,7 @@ public sealed class DailyPipeline(
             ledger.UpsertPosition(existing with
             {
                 Shares = newShares,
-                CostBasis = existing.CostBasis * (decimal)(newShares / existing.Shares),
+                CostBasis = BasisMath.ReduceForSale(existing.CostBasis, newShares, existing.Shares),
             });
         }
     }
