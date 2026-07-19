@@ -33,7 +33,7 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
   },
   "Universe": {
     "Index": "GSPC.INDX",            // S&P 500 (D20) — the membership machinery always tracks this index
-    "MembershipCountSanity": [495, 510],          // D35 fail-closed band
+    "MembershipCountSanity": [495, 510],          // D35 fail-closed band (S&P 500); the S&P 1500 target (D87, contingent) needs ~[1490,1520] — a Phase-4 prerequisite, not set here
     "MembershipPrimary": "ivv_csv",               // D49 launch: ivv_csv; post-upgrade: eodhd
     "MembershipCrossCheck": "wikipedia",          // D49 launch: wikipedia; post-upgrade: ivv_csv
     "SectorSource": "ivv_csv",                    // D49 launch; post-upgrade: eodhd
@@ -275,7 +275,7 @@ The backfill CLI is a **separate runnable** with its own `appsettings.json`; it 
 }
 ```
 
-The slice is selected by the CLI's **`--universe`** argument (default `sp100`), not by a config key; `--universe sp500` is **rejected at parse** until the D70 widening is wired (findings 149/151 — an open MASTER §2 / CONFIG proposal, see PROGRESS). `Eodhd:BaseUrl` is also stated in INTEGRATIONS §1.
+The slice is selected by the CLI's **`--universe`** argument (default `sp100`), not by a config key; `--universe sp500` is **rejected at parse** until the D70 widening *mechanism* is wired (findings 149/151 — still an open proposal, see PROGRESS). The widening **target** is the S&P 1500 by **D87** (contingent on a verified-depth 400/600 historical-membership source; else S&P 500); the sp1500 `--universe` arm and its count-sanity band (~[1490,1520], **pending D87 verification**) are Phase-4 prerequisites, not defined yet. `Eodhd:BaseUrl` is also stated in INTEGRATIONS §1.
 
 ## AlphaLab.Web `wwwroot/appsettings.json` (non-secret, browser-served — D71/FR-37)
 

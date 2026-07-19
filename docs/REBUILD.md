@@ -174,13 +174,13 @@ actually wired. `--universe sp500` used to be *accepted* (it set the count band 
 fail-close ~300 API calls later with `count sanity breach: primary=101, crosscheck=101, band=[495,510]` —
 a data-shaped error for an unwired-code cause. As of v1.9.11 it is **rejected at parse** with the real
 reason and exits before spending anything (P1R-10). An `ISharesHoldingsOptions.Ivv()` preset exists but is
-unused: wiring it is the S&P 500 widening — a recorded proposal (an open proposal in PROGRESS), not a flag you flip today.
+unused: wiring it is the S&P 500 widening *mechanism* — a recorded proposal (open in PROGRESS), not a flag you flip today. The widening **target** is now the S&P 1500 by **D87** (contingent on a verified-depth 400/600 history; else S&P 500), and the mid/small-cap feeds it needs are Phase-4 prerequisites.
 
 **The arena id is the lab's name, and `sp500` is correct — leave it.** `tools/Backfill/appsettings.json`
-sets `Arena.Id = "sp500"` / `DisplayName = "S&P 500"`, and that is *right*: per D70 this arena **is** the
-S&P 500 lab. It currently holds the 100-name launch slice and **widens in place** to the full 500 after
-Phase-4 sign-off — the folder does not get renamed then, so renaming it to `sp100` now would strand the
-store and have to be undone later. `Arena.Id` is not a per-clone knob; change it **only** to stand up a
+sets `Arena.Id = "sp500"` / `DisplayName = "S&P 500"`, and that is *right* for now: per D70 this arena **is** the
+S&P 500 lab (destination target amended to the S&P 1500 by **D87**, contingent). It currently holds the 100-name launch slice and **widens in place** after
+Phase-4 sign-off — renaming it to `sp100` now would strand the
+store and have to be undone later. (The eventual `sp500`→`sp1500` rename is a **deferred Phase-4 step**, D87-note item 10 — not done today.) `Arena.Id` is not a per-clone knob; change it **only** to stand up a
 *separate* arena alongside this one (D71 — its own DB file, Worker+Api pair, snapshot/backup dirs). If you
 do, set the **same** new id in all three backend appsettings (Worker, Api, Backfill) — a half-applied edit
 splits the store across two folders with no error. The DB path, snapshots, and backups all namespace under
