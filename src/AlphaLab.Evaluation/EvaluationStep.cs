@@ -1,4 +1,6 @@
+using System.Text.Json;
 using AlphaLab.Core.Config;
+using AlphaLab.Core.Json;
 using AlphaLab.Data;
 using AlphaLab.Data.Entities;
 using AlphaLab.Evaluation.Gate;
@@ -47,7 +49,7 @@ public sealed class EvaluationStep(AlphaLabDbContext db, GateOptions gate)
 
         var promotable = db.Strategies
             .Where(s => s.Status == "candidate" || s.Status == "live")
-            .Select(s => new { s.StrategyId, s.HoldingHorizonDays })
+            .Select(s => new { s.StrategyId, s.HoldingHorizonDays, s.Status })
             .ToList();
 
         var results = new List<PairEvaluation>();
@@ -85,6 +87,24 @@ public sealed class EvaluationStep(AlphaLabDbContext db, GateOptions gate)
                 Verdict = PromotionGate.ToToken(verdict),
                 RunKind = runKind,
             });
+
+            // Promotion (D31): a candidate that earns Promoted goes live and the event is logged. The gate
+            // only ever PROMOTES here — a Refused verdict is not a kill (D63 reserves fast-kills for the
+            // anti-predictive S3/S6 breaches + the trade track); demotion/retire is the monitor's (3.6).
+            if (verdict == PromotionVerdict.Promoted && strat.Status == "candidate")
+            {
+                db.Strategies.First(s => s.StrategyId == strat.StrategyId).Status = "live";
+                db.GoLiveLog.Add(new GoLiveLogRow
+                {
+                    AsOf = asOf,
+                    Promoted = strat.StrategyId,
+                    Verdict = PromotionGate.ToToken(verdict),
+                    EvidenceJson = JsonSerializer.Serialize(
+                        new { strategy = strat.StrategyId, benchmark = benchmarkStrategyId, observed_gap_ann = gap, mde_ann = mde.MdeAnn, t_days = mde.TDays, sigma_lr = mde.SigmaLr },
+                        AlphaLabJson.Options),
+                    RunKind = runKind,
+                });
+            }
 
             results.Add(new PairEvaluation(
                 strat.StrategyId, benchmarkStrategyId, mde.TDays, mde.SigmaLr, mde.NwLag, mde.MdeAnn, gap, verdict));

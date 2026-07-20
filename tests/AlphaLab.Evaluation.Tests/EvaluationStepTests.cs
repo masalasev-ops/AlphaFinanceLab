@@ -152,6 +152,63 @@ public class EvaluationStepTests
     }
 
     [Fact]
+    public void FX_PairedWin_Promoted_TransitionsCandidateToLive_AndLogsTheEvent()
+    {
+        using var arena = new EvalArena();
+        var dates = EvalArena.Dates(100, new DateOnly(2026, 1, 5));
+        arena.SeedStrategy("buyhold:cw", "baseline", dates, Enumerable.Repeat(0.0, 99).ToArray());
+        arena.SeedStrategy("cand:edge", "candidate", dates, Enumerable.Repeat(0.001, 99).ToArray());
+
+        using var db = arena.Open();
+        new EvaluationStep(db, new GateOptions()).Run(dates[^1]);
+
+        Assert.Equal("live", db.Strategies.Single(s => s.StrategyId == "cand:edge").Status);
+        var ev = Assert.Single(db.GoLiveLog.ToList());
+        Assert.Equal("cand:edge", ev.Promoted);
+        Assert.Null(ev.Demoted);
+        Assert.Equal("Promoted", ev.Verdict);
+        Assert.Contains("observed_gap_ann", ev.EvidenceJson);
+        Assert.Equal("live", ev.RunKind);
+    }
+
+    [Fact]
+    public void Run_TooEarly_LeavesStatusCandidate_AndLogsNoGoLiveEvent()
+    {
+        using var arena = new EvalArena();
+        var dates = EvalArena.Dates(30, new DateOnly(2026, 1, 5));   // short track ⇒ TooEarly
+        arena.SeedStrategy("buyhold:cw", "baseline", dates, Enumerable.Repeat(0.0, 29).ToArray());
+        arena.SeedStrategy("cand:edge", "candidate", dates, Enumerable.Repeat(0.002, 29).ToArray());
+
+        using var db = arena.Open();
+        new EvaluationStep(db, new GateOptions()).Run(dates[^1]);
+
+        Assert.Equal("candidate", db.Strategies.Single(s => s.StrategyId == "cand:edge").Status);
+        Assert.Empty(db.GoLiveLog.ToList());
+    }
+
+    [Fact]
+    public void Promotions_AcrossANoEdgePopulation_AreAtMostChance()
+    {
+        // The core acceptance property (§5.2 "gate sanity"): run the gate over a population of no-edge
+        // candidates (independent noise vs a noisy benchmark). Because the MDE = 2.8·σ_LR·252/√T is exactly
+        // the confidence/power threshold, the gate promotes only when the gap exceeds ~2.8 standard errors
+        // — i.e. at the false-positive rate. Promotions must be ≤ chance.
+        using var arena = new EvalArena();
+        var dates = EvalArena.Dates(120, new DateOnly(2026, 1, 5));
+        arena.SeedStrategy("buyhold:cw", "baseline", dates, EvalArena.Noise(119, 0.01, seed: 7));
+
+        const int n = 40;
+        for (var i = 0; i < n; i++)
+            arena.SeedStrategy($"rand:{i}", "candidate", dates, EvalArena.Noise(119, 0.01, seed: 1000 + i));
+
+        using var db = arena.Open();
+        var results = new EvaluationStep(db, new GateOptions()).Run(dates[^1]);
+
+        var promoted = results.Count(r => r.Verdict == PromotionVerdict.Promoted);
+        Assert.True(promoted <= 2, $"{promoted}/{n} no-edge candidates promoted — must be ≤ chance");
+    }
+
+    [Fact]
     public void Run_ExcludesBaselinesAndOnlyScoresPromotableStrategies()
     {
         using var arena = new EvalArena();
