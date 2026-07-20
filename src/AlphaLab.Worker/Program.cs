@@ -50,11 +50,15 @@ var dataQualityOptions = builder.Configuration.GetSection(DataQualityOptions.Sec
 var calendarOptions = builder.Configuration.GetSection(CalendarOptions.SectionName).Get<CalendarOptions>() ?? new CalendarOptions();
 var corporateActionsOptions = builder.Configuration.GetSection(CorporateActionsOptions.SectionName).Get<CorporateActionsOptions>() ?? new CorporateActionsOptions();
 var costsOptions = builder.Configuration.GetSection(CostsOptions.SectionName).Get<CostsOptions>() ?? new CostsOptions();
+// Phase 3 (D36): the random control populations compute inside the daily Stage-2 write (checkpoint 3.3).
+// The Worker is their consuming phase, so it owns the bind (finding F).
+var populationsOptions = builder.Configuration.GetSection(PopulationsOptions.SectionName).Get<PopulationsOptions>() ?? new PopulationsOptions();
 
 builder.Services.AddSingleton(dataQualityOptions);
 builder.Services.AddSingleton(calendarOptions);
 builder.Services.AddSingleton(corporateActionsOptions);
 builder.Services.AddSingleton(costsOptions);
+builder.Services.AddSingleton(populationsOptions);
 builder.Services.AddAlphaLabMembership(regimeOptions);
 
 // EODHD provider (finding D — the Worker needs its OWN Eodhd section; CONFIG previously scoped it to

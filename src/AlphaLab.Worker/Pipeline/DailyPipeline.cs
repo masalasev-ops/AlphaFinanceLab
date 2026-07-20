@@ -7,6 +7,7 @@ using AlphaLab.Data;
 using AlphaLab.Data.Entities;
 using AlphaLab.Data.Providers;
 using AlphaLab.Data.Services;
+using AlphaLab.Evaluation.Populations;
 using AlphaLab.Strategies;
 using Microsoft.Extensions.Logging;
 
@@ -59,6 +60,7 @@ public sealed class DailyPipeline(
     IIndexMembershipRead membership,
     IDataQualityFlagStore flagStore,
     CostsOptions costs,
+    PopulationsOptions populations,
     ArenaOptions arena,
     WorkerOptions worker,
     TimeProvider clock,
@@ -139,6 +141,12 @@ public sealed class DailyPipeline(
                 {
                     await RunAccountDayAsync(account, asOfDate, asOf, watermark, features, broker, ct).ConfigureAwait(false);
                 }
+
+                // The random control populations (D36) are part of the forward day: one compact equity
+                // row per member, computed against the SAME feature view + cost model as the accounts,
+                // inside this atomic transaction (run_kind='live'). Batched — one bulk insert, no
+                // per-member EF round-trip (§5.2).
+                ComputePopulations(asOfDate, asOf, features);
 
                 PersistQualityFlags(runId, staged, watermark);
 
@@ -402,6 +410,37 @@ public sealed class DailyPipeline(
                 CostBasis = BasisMath.ReduceForSale(existing.CostBasis, newShares, existing.Shares),
             });
         }
+    }
+
+    // The random control populations (D36 / STRATEGY_CATALOG §5.2). Members are lightweight ledger-only
+    // accounts: one compact control_equity scalar per member per day, bulk-inserted. Each member's day is
+    // reconstructible from its prior equity + the deterministic (familySeed, memberIndex, date) draws, so
+    // no held-set state is persisted. Populations start at the same nominal capital as the dummy accounts.
+    private void ComputePopulations(DateOnly asOfDate, string asOf, BarFeatureView features)
+    {
+        var costModel = new CostModel(costs);
+        var market = new PopulationMarket(features, membership, calendar, costModel, costs.AdvWindowDays);
+        var engine = new PopulationEngine(market);
+        var familyMap = new PopulationSeeder(db, populations).Seed(costs.ModelVersion);
+        var writer = new ControlEquityWriter(db);
+
+        var prevSession = calendar.PreviousSession(asOfDate);
+        var prevDate = prevSession is { } p ? Iso(p) : null;
+
+        var points = new List<ControlEquityWriter.Point>();
+        foreach (var (family, populationId) in familyMap)
+        {
+            var prior = writer.LatestEquity(populationId, asOf);
+            var inceptionDay = prior.Count == 0;   // all members of a family are seeded together
+            for (var m = 0; m < family.Size; m++)
+            {
+                var priorEquity = prior.TryGetValue(m, out var e) ? e : DummyRoster.DefaultStartingCash;
+                var day = engine.Step(family, m, priorEquity, inceptionDay ? null : prevDate, asOf);
+                points.Add(new ControlEquityWriter.Point(populationId, m, day.Equity));
+            }
+        }
+
+        writer.Write(asOf, points);
     }
 
     private void PersistQualityFlags(long runId, StagedDay staged, string watermark)
