@@ -17,6 +17,8 @@ public readonly record struct MemberDay(decimal Equity, double TurnoverOneWay);
 /// </summary>
 public sealed class PopulationEngine(IPopulationMarket market)
 {
+    private static readonly IReadOnlySet<long> EmptyHeld = new HashSet<long>();
+
     /// <summary>The member's equal-weight held set on <paramref name="date"/> — top-N by the deterministic
     /// score at the family's re-draw grid ordinal, tie-broken by security_id ascending (stable).</summary>
     public IReadOnlySet<long> Select(PopulationFamily family, int memberIndex, string date)
@@ -45,33 +47,27 @@ public sealed class PopulationEngine(IPopulationMarket market)
     public MemberDay Step(PopulationFamily family, int memberIndex, decimal priorEquity, string? prevDate, string date)
     {
         var heldToday = Select(family, memberIndex, date);
+        IReadOnlySet<long> heldPrev = prevDate is null ? EmptyHeld : Select(family, memberIndex, prevDate);
 
-        double grossReturn;
-        IEnumerable<long> turnover;
-        if (prevDate is null)
-        {
-            grossReturn = 0.0;
-            turnover = heldToday;                                     // initial buy
-        }
-        else
-        {
-            var heldPrev = Select(family, memberIndex, prevDate);
-            grossReturn = heldPrev.Count > 0 ? heldPrev.Average(s => market.DailyReturn(s, date)) : 0.0;
-            turnover = SymmetricDifference(heldPrev, heldToday);
-        }
+        // No prior holdings on the inception day ⇒ no return (the first held set is an initial buy).
+        var grossReturn = heldPrev.Count > 0 ? heldPrev.Average(s => market.DailyReturn(s, date)) : 0.0;
+        var turnover = SymmetricDifference(heldPrev, heldToday);      // both legs (drives cost)
 
-        var turnoverCount = 0;
+        // Cost is charged on EVERY traded name (a spread on each buy and each sell — both legs). The
+        // REPORTED turnover is one-way (the BUY leg only) so it matches the strategy comparator, which
+        // counts buy notional only (StrategyMetrics.AnnualizedTurnover) — the finding-115 match must be
+        // on a consistent scale (a two-way count here would double the population's figure).
+        var buyCount = 0;
         var costDrag = 0.0;
         var perName = family.SelectionN > 0 ? priorEquity / family.SelectionN : 0m;
         foreach (var s in turnover)
         {
-            turnoverCount++;
-            if (family.CostsOn)
-                costDrag += market.OneWayCostFraction(s, date, perName) / family.SelectionN;
+            if (!heldPrev.Contains(s)) buyCount++;                    // a buy = a newly entered name
+            if (family.CostsOn) costDrag += market.OneWayCostFraction(s, date, perName) / family.SelectionN;
         }
 
         var equity = priorEquity * (decimal)(1.0 + grossReturn - costDrag);
-        var turnoverOneWay = family.SelectionN > 0 ? (double)turnoverCount / family.SelectionN : 0.0;
+        var turnoverOneWay = family.SelectionN > 0 ? (double)buyCount / family.SelectionN : 0.0;
         return new MemberDay(equity, turnoverOneWay);
     }
 

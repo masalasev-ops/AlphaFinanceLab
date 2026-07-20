@@ -1,4 +1,5 @@
 using AlphaLab.Core.Config;
+using AlphaLab.Data.Entities;
 using AlphaLab.Evaluation;
 using AlphaLab.Evaluation.Allocator;
 using AlphaLab.Evaluation.Monitor;
@@ -35,6 +36,33 @@ public class AllocationStepTests
 
         // The benchmark never receives weight.
         Assert.DoesNotContain(outcome.Rows, r => r.StrategyId == "buyhold:cw");
+    }
+
+    [Fact]
+    public void Run_ExcludesAStrategyRetiredThisEvaluation()
+    {
+        // The gate writes a power_reports row for a strategy while it is still a candidate; if the monitor
+        // then auto-retires it in the same eval, the allocator must NOT still allocate it.
+        using var arena = new EvalArena();
+        var dates = EvalArena.Dates(90, new DateOnly(2026, 1, 5));
+        arena.SeedStrategy("cand:live", "candidate", dates, EvalArena.Noise(89, 0.01, seed: 3));
+        arena.SeedStrategy("cand:retired", "retired", dates, EvalArena.Noise(89, 0.01, seed: 4));
+
+        using var db = arena.Open();
+        foreach (var id in new[] { "cand:live", "cand:retired" })
+        {
+            db.PowerReports.Add(new PowerReportRow
+            {
+                AsOf = dates[^1], StrategyA = id, StrategyB = "buyhold:cw", TDays = 89, SigmaLr = 0.01,
+                NwLag = 21, MdeAnn = 0.5, ObservedGapAnn = 0.05, Verdict = "TooEarly", RunKind = "live",
+            });
+        }
+        db.SaveChanges();
+
+        var outcome = new AllocationStep(db, new GateOptions(), new AllocatorOptions()).Run(dates[^1]);
+
+        Assert.Contains(outcome.Rows, r => r.StrategyId == "cand:live");
+        Assert.DoesNotContain(outcome.Rows, r => r.StrategyId == "cand:retired");   // retired ⇒ never allocated
     }
 
     [Fact]

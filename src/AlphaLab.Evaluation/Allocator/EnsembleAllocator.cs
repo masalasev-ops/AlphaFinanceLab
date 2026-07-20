@@ -97,12 +97,18 @@ public static class EnsembleAllocator
                 clamps[i].Add("suspect_decay");
             }
 
-            // 4. band hysteresis — a sub-band move HOLDS the prior (no churn on noise); a supra-band move
-            // steps only to the band EDGE (prior ± band), never the full target (continuous, banded, slow).
+            // 4. band hysteresis — a sub-band move HOLDS the prior (no churn on softmax noise); a supra-band
+            // move steps only to the band EDGE (prior ± band), never the full target (continuous, banded,
+            // slow). A Suspect decay is EXEMPT from the hold: it is a deliberate de-risk, not noise, so it
+            // always applies — the band only rate-limits a large decay to the edge, never reverts a small one.
             if (inputs[i].PriorWeight is { } prior)
             {
                 var d = w - prior;
-                if (Math.Abs(d) < band) { w = prior; clamps[i].Add("band"); }
+                if (inputs[i].Suspect)
+                {
+                    if (Math.Abs(d) > band) { w = prior + Math.Sign(d) * band; clamps[i].Add("band"); }
+                }
+                else if (Math.Abs(d) < band) { w = prior; clamps[i].Add("band"); }
                 else { w = prior + Math.Sign(d) * band; clamps[i].Add("band"); }
             }
 

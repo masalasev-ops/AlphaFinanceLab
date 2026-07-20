@@ -38,12 +38,22 @@ public sealed class AllocationStep(AlphaLabDbContext db, GateOptions gate, Alloc
             .Where(o => o.AsOf == asOf && o.RunKind == runKind)
             .ToDictionary(o => o.StrategyId, o => o.Status);
 
+        // Only currently-allocable strategies receive weight. The gate wrote a power_reports row for every
+        // candidate/live strategy, but the monitor may have RETIRED one in the same evaluation (S6
+        // auto-retire) — a just-retired strategy must not still be allocated (it would escape the
+        // suspect_decay clamp and appear as an allocated, retired row in allocation_log).
+        var allocable = db.Strategies
+            .Where(s => s.Status == "candidate" || s.Status == "live")
+            .Select(s => s.StrategyId)
+            .ToHashSet();
+
         var prior = PriorWeights(asOf, runKind);
         var zsum = MdeCalculator.ZSum(gate.Confidence, gate.Power);
 
         var inputs = new List<AllocationInput>(reports.Count);
         foreach (var r in reports)
         {
+            if (!allocable.Contains(r.StrategyA)) continue;   // e.g. retired by the monitor this eval
             var alphaPct = (r.ObservedGapAnn ?? 0.0) * 100.0;
             var sePct = double.IsFinite(r.MdeAnn) ? r.MdeAnn / zsum * 100.0 : double.PositiveInfinity;
             var tooEarly = r.Verdict == "TooEarly";

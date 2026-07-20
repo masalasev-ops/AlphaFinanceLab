@@ -41,7 +41,7 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
 
         var benchAccount = db.Accounts.FirstOrDefault(a => a.StrategyId == benchmarkStrategyId && a.RunKind == runKind);
         if (benchAccount is null) return [];
-        var benchCurve = Curve(benchAccount.AccountId, runKind);
+        var benchCurve = CurveMath.Curve(db, benchAccount.AccountId, runKind);
         if (benchCurve.Count < 2) return [];
 
         var (memberAlphas, memberWindowAlphas) = matchedPopulationId is { } pid
@@ -65,10 +65,10 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
             if (strategyId == benchmarkStrategyId) continue;
             var account = db.Accounts.FirstOrDefault(a => a.StrategyId == strategyId && a.RunKind == runKind);
             if (account is null) continue;
-            var stratCurve = Curve(account.AccountId, runKind);
+            var stratCurve = CurveMath.Curve(db, account.AccountId, runKind);
             if (stratCurve.Count < 2) continue;
 
-            var (stratReturns, benchReturns) = AlignedReturns(stratCurve, benchCurve);
+            var (stratReturns, benchReturns) = CurveMath.AlignedReturns(stratCurve, benchCurve);
             if (stratReturns.Count < 2) continue;
 
             results.Add(Evaluate(asOf, strategyId, stratReturns, benchReturns, memberAlphas, memberWindowAlphas, trialsCount, runKind));
@@ -190,7 +190,7 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
         foreach (var member in members)
         {
             var curve = member.Select(e => (e.AsOf, e.Equity)).ToList();
-            var (mr, br) = AlignedReturns(curve, benchCurve);
+            var (mr, br) = CurveMath.AlignedReturns(curve, benchCurve);
             if (mr.Count < 2) continue;
             alphas.Add(SafeAlpha(mr, br).Alpha);
             if (mr.Count >= RollingWindowDays)
@@ -214,35 +214,6 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
             for (var i = 0; i < strat.Count; i++) m += strat[i] - bench[i];
             return (m / strat.Count * MetricsConstants.TradingDaysPerYear, 0.0);
         }
-    }
-
-    private List<(string AsOf, decimal Equity)> Curve(long accountId, string runKind) =>
-        db.EquityCurve
-            .Where(e => e.AccountId == accountId && e.RunKind == runKind)
-            .OrderBy(e => e.AsOf)
-            .Select(e => new { e.AsOf, e.Equity })
-            .AsEnumerable()
-            .Select(e => (e.AsOf, e.Equity))
-            .ToList();
-
-    private static (List<double> Strat, List<double> Bench) AlignedReturns(
-        IReadOnlyList<(string AsOf, decimal Equity)> strat, IReadOnlyList<(string AsOf, decimal Equity)> bench)
-    {
-        var benchByDate = new Dictionary<string, decimal>(bench.Count);
-        foreach (var (asOf, equity) in bench) benchByDate[asOf] = equity;
-
-        var common = strat.Where(s => benchByDate.ContainsKey(s.AsOf)).ToList();
-        var sr = new List<double>(Math.Max(0, common.Count - 1));
-        var br = new List<double>(Math.Max(0, common.Count - 1));
-        for (var i = 1; i < common.Count; i++)
-        {
-            var sPrev = common[i - 1].Equity;
-            var bPrev = benchByDate[common[i - 1].AsOf];
-            if (sPrev <= 0m || bPrev <= 0m) continue;
-            sr.Add((double)(common[i].Equity / sPrev) - 1.0);
-            br.Add((double)(benchByDate[common[i].AsOf] / bPrev) - 1.0);
-        }
-        return (sr, br);
     }
 
     private static List<double> Tail(IReadOnlyList<double> xs, int n)

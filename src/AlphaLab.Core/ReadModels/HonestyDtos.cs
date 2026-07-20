@@ -18,7 +18,8 @@ public sealed record MetricCell(double? Value, string Formatted, string Display,
 {
     public const string DisplayNormal = "normal";
     public const string DisplayDimmed = "dimmed";
-    public const string ReasonInsideMde = "inside_mde";
+    public const string ReasonInsideMde = "inside_mde";     // the head-to-head gap sits within the MDE (noise)
+    public const string ReasonTooEarly = "too_early";        // dimmed for insufficient track, gap NOT yet judged vs the MDE
     public const string ReasonRfPlaceholder = "rf_placeholder";
 
     public static readonly MetricCell None = new(null, "—", DisplayNormal, "", null, null);
@@ -26,9 +27,14 @@ public sealed record MetricCell(double? Value, string Formatted, string Display,
     public static MetricCell Normal(double value, string formatted, MetricMde? mde = null, string? reason = null) =>
         new(value, formatted, DisplayNormal, "", reason, mde);
 
+    /// <summary>UX-1: a not-yet-judged gap renders at reduced contrast with a tilde prefix. <paramref
+    /// name="reason"/> distinguishes an inside-the-MDE gap (noise) from a merely-too-short track.</summary>
+    public static MetricCell Dimmed(double value, string formatted, string reason, MetricMde? mde) =>
+        new(value, formatted, DisplayDimmed, "~", reason, mde);
+
     /// <summary>UX-1: a gap inside the MDE renders at reduced contrast with a tilde prefix.</summary>
     public static MetricCell DimmedInsideMde(double value, string formatted, MetricMde mde) =>
-        new(value, formatted, DisplayDimmed, "~", ReasonInsideMde, mde);
+        Dimmed(value, formatted, ReasonInsideMde, mde);
 }
 
 /// <summary>UX-4c: "97th pct of 200 matched randoms" — the S3 rank, rendered verbatim.</summary>

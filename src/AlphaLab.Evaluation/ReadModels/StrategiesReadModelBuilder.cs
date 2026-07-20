@@ -73,14 +73,22 @@ public sealed class StrategiesReadModelBuilder(AlphaLabDbContext db, VerdictsOpt
 
         var verdict = power?.Verdict ?? "TooEarly";     // no forward evidence yet ⇒ TooEarly
 
-        // α cell: the observed gap, DIMMED with a tilde when it sits inside the MDE (verdict TooEarly, UX-1).
+        // α cell (UX-1): the observed gap, DIMMED with a tilde while the verdict is TooEarly. The reason
+        // distinguishes an inside-the-MDE gap (genuine noise) from a merely-too-short track — the gate
+        // returns TooEarly for BOTH, but a short-track cell must not claim the gap is "within noise".
         MetricCell alpha;
         if (power is { ObservedGapAnn: { } gap })
         {
             var mde = new MetricMde(power.MdeAnn);
-            alpha = verdict == "TooEarly"
-                ? MetricCell.DimmedInsideMde(gap, FormatPct(gap), mde)
-                : MetricCell.Normal(gap, FormatPct(gap), mde);
+            if (verdict == "TooEarly")
+            {
+                var reason = Math.Abs(gap) < power.MdeAnn ? MetricCell.ReasonInsideMde : MetricCell.ReasonTooEarly;
+                alpha = MetricCell.Dimmed(gap, FormatPct(gap), reason, mde);
+            }
+            else
+            {
+                alpha = MetricCell.Normal(gap, FormatPct(gap), mde);
+            }
         }
         else
         {

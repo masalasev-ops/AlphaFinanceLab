@@ -25,16 +25,20 @@ public class StrategiesReadModelBuilderTests
     public void UX1_InsideMde_MetricCell_IsDimmedWithTilde()
     {
         using var arena = new EvalArena();
-        var dates = EvalArena.Dates(30, new DateOnly(2026, 1, 5));   // short track ⇒ TooEarly (inside MDE)
-        arena.SeedStrategy("buyhold:cw", "baseline", dates, Enumerable.Repeat(0.0, 29).ToArray());
-        arena.SeedStrategy("cand:x", "candidate", dates, Enumerable.Repeat(0.001, 29).ToArray());
+        // A track PAST MinTrackDays (so TooEarly comes from the MDE, not the track) with a tiny edge under
+        // loose pairing ⇒ the gap sits genuinely inside the MDE (noise).
+        var dates = EvalArena.Dates(100, new DateOnly(2026, 1, 5));
+        var bench = EvalArena.Noise(99, 0.01, seed: 1);
+        var candNoise = EvalArena.Noise(99, 0.005, seed: 2);
+        var cand = bench.Select((b, i) => b + 0.0002 + candNoise[i]).ToArray();
+        arena.SeedStrategy("buyhold:cw", "baseline", dates, bench);
+        arena.SeedStrategy("cand:x", "candidate", dates, cand);
         arena.SeedRun(dates[^1]);
 
         using var db = arena.Open();
-        new EvaluationStep(db, new GateOptions()).Run(dates[^1]);   // writes a TooEarly power_report
+        new EvaluationStep(db, new GateOptions()).Run(dates[^1]);   // writes a TooEarly (inside-MDE) power_report
 
-        var model = Builder(db).Build();
-        var row = model.Rows.Single(r => r.Id == "cand:x");
+        var row = Builder(db).Build().Rows.Single(r => r.Id == "cand:x");
 
         Assert.Equal("dimmed", row.Alpha.Display);
         Assert.Equal("~", row.Alpha.Prefix);
@@ -48,6 +52,27 @@ public class StrategiesReadModelBuilderTests
         Assert.Contains("\"prefix\":\"~\"", json);
         Assert.Contains("\"reason\":\"inside_mde\"", json);
         Assert.Contains("\"seat\":\"math\"", json);
+    }
+
+    [Fact]
+    public void UX1_ShortTrack_MetricCell_IsDimmed_WithTooEarlyReason_NotInsideMde()
+    {
+        using var arena = new EvalArena();
+        // A short track (29 < MinTrackDays 63) with a decisive constant gap that is OUTSIDE the MDE
+        // (σ_LR=0 ⇒ MDE=0): the cell is still dimmed (unproven) but the reason is 'too_early', NOT the
+        // misleading 'inside_mde' — the gap is not within noise, there simply isn't enough track yet.
+        var dates = EvalArena.Dates(30, new DateOnly(2026, 1, 5));
+        arena.SeedStrategy("buyhold:cw", "baseline", dates, Enumerable.Repeat(0.0, 29).ToArray());
+        arena.SeedStrategy("cand:x", "candidate", dates, Enumerable.Repeat(0.001, 29).ToArray());
+        arena.SeedRun(dates[^1]);
+
+        using var db = arena.Open();
+        new EvaluationStep(db, new GateOptions()).Run(dates[^1]);
+
+        var row = Builder(db).Build().Rows.Single(r => r.Id == "cand:x");
+        Assert.Equal("dimmed", row.Alpha.Display);
+        Assert.Equal("~", row.Alpha.Prefix);
+        Assert.Equal("too_early", row.Alpha.Reason);   // NOT inside_mde
     }
 
     [Fact]

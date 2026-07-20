@@ -95,6 +95,20 @@ public class EnsembleAllocatorTests
     }
 
     [Fact]
+    public void FR27_Suspect_SubBandDecay_StillApplies_NotRevertedByTheBand()
+    {
+        // A Suspect strategy near the floor (prior 0.10) decays to 0.075 — a sub-band move. The band must
+        // NOT revert this deliberate de-risk to the prior (the bug the review caught).
+        var s = EnsembleAllocator.Allocate(
+            [In("s", 5.0, 0.5, suspect: true, prior: 0.10), In("b", 5.0, 0.5, prior: 0.90)], Opts)
+            .Rows.Single(r => r.StrategyId == "s");
+
+        Assert.Contains("suspect_decay", s.ClampsBound);
+        Assert.Equal(0.10 * (1 - Opts.SuspectDecayPctPerEval / 100.0), s.Applied, 9);   // exactly prior × 0.75 = 0.075
+        Assert.True(s.Applied < 0.10, "the sub-band Suspect decay must apply, not be reverted to the prior");
+    }
+
+    [Fact]
     public void FR27_Band_SupraBandMove_StepsOnlyToTheBandEdge()
     {
         // prior 0.10, a far-higher target ⇒ move only to the band edge prior + BandPts (0.15), not the target.

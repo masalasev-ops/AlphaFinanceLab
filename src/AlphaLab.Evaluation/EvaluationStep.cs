@@ -44,7 +44,7 @@ public sealed class EvaluationStep(AlphaLabDbContext db, GateOptions gate)
 
         var benchAccount = db.Accounts.FirstOrDefault(a => a.StrategyId == benchmarkStrategyId && a.RunKind == runKind);
         if (benchAccount is null) return [];
-        var benchCurve = Curve(benchAccount.AccountId, runKind);
+        var benchCurve = CurveMath.Curve(db, benchAccount.AccountId, runKind);
         if (benchCurve.Count < 2) return [];
 
         var promotable = db.Strategies
@@ -60,10 +60,10 @@ public sealed class EvaluationStep(AlphaLabDbContext db, GateOptions gate)
             var account = db.Accounts.FirstOrDefault(a => a.StrategyId == strat.StrategyId && a.RunKind == runKind);
             if (account is null) continue;
 
-            var stratCurve = Curve(account.AccountId, runKind);
+            var stratCurve = CurveMath.Curve(db, account.AccountId, runKind);
             if (stratCurve.Count < 2) continue;
 
-            var (stratReturns, benchReturns) = AlignedReturns(stratCurve, benchCurve);
+            var (stratReturns, benchReturns) = CurveMath.AlignedReturns(stratCurve, benchCurve);
             if (stratReturns.Count < 2) continue;
 
             var d = new double[stratReturns.Count];
@@ -114,38 +114,4 @@ public sealed class EvaluationStep(AlphaLabDbContext db, GateOptions gate)
         return results;
     }
 
-    private List<(string AsOf, decimal Equity)> Curve(long accountId, string runKind) =>
-        db.EquityCurve
-            .Where(e => e.AccountId == accountId && e.RunKind == runKind)
-            .OrderBy(e => e.AsOf)
-            .Select(e => new { e.AsOf, e.Equity })
-            .AsEnumerable()
-            .Select(e => (e.AsOf, e.Equity))
-            .ToList();
-
-    // Returns between consecutive dates common to both curves (both are daily forward curves, so the
-    // common set is their overlapping range). rf cancels in the difference, so it is omitted here.
-    private static (List<double> Strat, List<double> Bench) AlignedReturns(
-        List<(string AsOf, decimal Equity)> strat, List<(string AsOf, decimal Equity)> bench)
-    {
-        var benchByDate = new Dictionary<string, decimal>(bench.Count);
-        foreach (var (asOf, equity) in bench) benchByDate[asOf] = equity;
-
-        var common = strat.Where(s => benchByDate.ContainsKey(s.AsOf)).ToList();   // strat already ordered by as_of
-        var stratRet = new List<double>(Math.Max(0, common.Count - 1));
-        var benchRet = new List<double>(Math.Max(0, common.Count - 1));
-
-        for (var i = 1; i < common.Count; i++)
-        {
-            var sPrev = common[i - 1].Equity;
-            var sNow = common[i].Equity;
-            var bPrev = benchByDate[common[i - 1].AsOf];
-            var bNow = benchByDate[common[i].AsOf];
-            if (sPrev <= 0m || bPrev <= 0m) continue;
-            stratRet.Add((double)(sNow / sPrev) - 1.0);
-            benchRet.Add((double)(bNow / bPrev) - 1.0);
-        }
-
-        return (stratRet, benchRet);
-    }
 }

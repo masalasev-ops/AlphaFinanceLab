@@ -76,7 +76,10 @@ v1.MapGet("/health", () => TypedResults.Ok(new HealthReadModel("ok", arenaId)))
 v1.MapScreenReadEndpoints();
 
 // ---- Bounded synchronous command: create / pre-register a candidate (D52/FR-28/FR-32) ----
-const int staleThresholdSeconds = 300;   // WorkerOptions.StaleRunThresholdSeconds default (D72)
+// The 409 liveness window MUST match the Worker's, so the API reads the SAME operator-tuned key
+// (Worker:StaleRunThresholdSeconds, D72) rather than a hardcoded default — a divergence would let a
+// command slip past the guard during a slow daily write (WorkerLiveness: "the API binds its own").
+var staleThresholdSeconds = app.Configuration.GetValue("Worker:StaleRunThresholdSeconds", 300);
 v1.MapPost("/candidates", async (
         CreateCandidateRequest req, AlphaLabDbContext db, IWorkerLiveness liveness,
         StrategiesReadModelBuilder strategies, TimeProvider clock, CancellationToken ct) =>
