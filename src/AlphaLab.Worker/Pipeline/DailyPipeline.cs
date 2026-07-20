@@ -7,6 +7,7 @@ using AlphaLab.Data;
 using AlphaLab.Data.Entities;
 using AlphaLab.Data.Providers;
 using AlphaLab.Data.Services;
+using AlphaLab.Evaluation;
 using AlphaLab.Evaluation.Populations;
 using AlphaLab.Strategies;
 using Microsoft.Extensions.Logging;
@@ -61,6 +62,7 @@ public sealed class DailyPipeline(
     IDataQualityFlagStore flagStore,
     CostsOptions costs,
     PopulationsOptions populations,
+    GateOptions gate,
     ArenaOptions arena,
     WorkerOptions worker,
     TimeProvider clock,
@@ -167,6 +169,10 @@ public sealed class DailyPipeline(
 
         // ---- Step 4: small txn — clear run_in_progress (success only). ----
         ClearRunInProgress();
+
+        // ---- Step 5: the 21-day evaluation (D31/D48), AFTER the daily write commits, in its own
+        // transaction — the heavier cadence work is amortized and stays out of the <60s daily budget. ----
+        RunEvaluationIfDue(asOf);
 
         // Canary for the sp500 widen + replay scale: a day whose write transaction runs long enough to
         // approach the stale threshold is worth a warning even when it succeeds (D72). 3× the heartbeat
@@ -472,6 +478,22 @@ public sealed class DailyPipeline(
         state.RunInProgress = 0;
         db.SaveChanges();
         txn.Commit();
+    }
+
+    // The 21-day evaluation cadence (D31). Session count since inception = the committed 'ok' forward runs
+    // (today's is committed by now). On a cadence day, run the evaluation step (metrics → MDE → power_reports;
+    // the gate/monitor/allocator layer on in 3.5–3.7) in its OWN transaction. Never inside the daily write.
+    private void RunEvaluationIfDue(string asOf)
+    {
+        var sessionsSinceInception = db.Runs.Count(r => r.Status == "ok" && (r.RunKind == "live" || r.RunKind == "catchup"));
+        if (!new EvaluationScheduler(gate).IsEvaluationDay(sessionsSinceInception)) return;
+
+        using var txn = db.Database.BeginTransaction();
+        var evaluations = new EvaluationStep(db, gate).Run(asOf);
+        txn.Commit();
+
+        logger.LogInformation("{AsOf}: evaluation day (session {Session}) — {Pairs} pair(s) scored.",
+            asOf, sessionsSinceInception, evaluations.Count);
     }
 
     // ---- ledger math ----
