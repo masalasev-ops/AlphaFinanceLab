@@ -12,14 +12,14 @@ namespace AlphaLab.Core.ReadModels;
 public sealed record StrategiesReadModel
 {
     public required ReadModelStamp Stamp { get; init; }
-    public IReadOnlyList<object> Rows { get; init; } = [];
+    public IReadOnlyList<StrategyRow> Rows { get; init; } = [];
     public static StrategiesReadModel NoRunYet { get; } = new() { Stamp = ReadModelStamp.NoRunYet };
 }
 
 public sealed record StrategyDetailReadModel
 {
     public required ReadModelStamp Stamp { get; init; }
-    public object? Strategy { get; init; }
+    public StrategyRow? Strategy { get; init; }
     public static StrategyDetailReadModel NoRunYet { get; } = new() { Stamp = ReadModelStamp.NoRunYet };
 }
 
@@ -33,7 +33,7 @@ public sealed record LiveReadModel
 public sealed record AllocationReadModel
 {
     public required ReadModelStamp Stamp { get; init; }
-    public IReadOnlyList<object> Rows { get; init; } = [];
+    public IReadOnlyList<AllocationRowDto> Rows { get; init; } = [];
     public static AllocationReadModel NoRunYet { get; } = new() { Stamp = ReadModelStamp.NoRunYet };
 }
 

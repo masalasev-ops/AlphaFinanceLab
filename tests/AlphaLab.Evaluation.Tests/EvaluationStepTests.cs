@@ -89,6 +89,15 @@ internal sealed class EvalArena : IDisposable
         return dates;
     }
 
+    /// <summary>Seed a committed 'ok' forward run so a read-model builder stamps rather than returning
+    /// no_run_yet.</summary>
+    public void SeedRun(string asOf, string runKind = "live")
+    {
+        using var db = Open();
+        db.Runs.Add(new RunRow { AsOf = asOf, RunKind = runKind, Watermark = asOf + "T22:00:00Z", StartedAt = asOf, Status = "ok" });
+        db.SaveChanges();
+    }
+
     /// <summary>Deterministic Gaussian shocks (Box–Muller, fixed seed) scaled to a daily sigma.</summary>
     public static double[] Noise(int n, double sigma, int seed)
     {
