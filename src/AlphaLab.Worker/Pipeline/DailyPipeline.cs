@@ -8,6 +8,7 @@ using AlphaLab.Data.Entities;
 using AlphaLab.Data.Providers;
 using AlphaLab.Data.Services;
 using AlphaLab.Evaluation;
+using AlphaLab.Evaluation.Monitor;
 using AlphaLab.Evaluation.Populations;
 using AlphaLab.Strategies;
 using Microsoft.Extensions.Logging;
@@ -490,10 +491,17 @@ public sealed class DailyPipeline(
 
         using var txn = db.Database.BeginTransaction();
         var evaluations = new EvaluationStep(db, gate).Run(asOf);
+        // The overfitting monitor (S2/S3/S6) runs in the same evaluation transaction. Phase-3: all
+        // promotable strategies are matched to the daily cost-on population (the default null).
+        var matchedPopulation = db.ControlPopulations
+            .Where(p => p.Family == "daily" && p.CostsOn)
+            .Select(p => (long?)p.PopulationId)
+            .FirstOrDefault();
+        var monitored = new OverfittingMonitor(db, gate).Run(asOf, EvaluationStep.DefaultBenchmarkStrategyId, matchedPopulation);
         txn.Commit();
 
-        logger.LogInformation("{AsOf}: evaluation day (session {Session}) — {Pairs} pair(s) scored.",
-            asOf, sessionsSinceInception, evaluations.Count);
+        logger.LogInformation("{AsOf}: evaluation day (session {Session}) — {Pairs} pair(s) scored, {Monitored} monitored.",
+            asOf, sessionsSinceInception, evaluations.Count, monitored.Count);
     }
 
     // ---- ledger math ----

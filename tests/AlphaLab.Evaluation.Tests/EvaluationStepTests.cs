@@ -54,6 +54,34 @@ internal sealed class EvalArena : IDisposable
             new() { AccountId = acct, AsOf = asOf, Equity = eq, Cash = eq, RunKind = "live" };
     }
 
+    /// <summary>Seed a control population: a control_populations row + M members' control_equity curves,
+    /// each built from <paramref name="memberReturns"/>(i) (length = dates.Count − 1). Returns population_id.</summary>
+    public long SeedPopulation(string family, bool costsOn, int seed, IReadOnlyList<string> dates,
+        Func<int, IReadOnlyList<double>> memberReturns, int m, decimal startEquity = 100_000m)
+    {
+        using var db = Open();
+        var pop = new ControlPopulationRow
+        {
+            Family = family, FamilySeed = seed, M = m, CostsOn = costsOn, MatchedParamsJson = "{}",
+        };
+        db.ControlPopulations.Add(pop);
+        db.SaveChanges();
+
+        for (var i = 0; i < m; i++)
+        {
+            var rets = memberReturns(i);
+            var equity = startEquity;
+            db.ControlEquity.Add(new ControlEquityRow { PopulationId = pop.PopulationId, MemberIndex = i, AsOf = dates[0], Equity = equity, RunKind = "live" });
+            for (var t = 1; t < dates.Count; t++)
+            {
+                equity *= (decimal)(1.0 + rets[t - 1]);
+                db.ControlEquity.Add(new ControlEquityRow { PopulationId = pop.PopulationId, MemberIndex = i, AsOf = dates[t], Equity = equity, RunKind = "live" });
+            }
+        }
+        db.SaveChanges();
+        return pop.PopulationId;
+    }
+
     public static IReadOnlyList<string> Dates(int n, DateOnly start)
     {
         var dates = new List<string>(n);
