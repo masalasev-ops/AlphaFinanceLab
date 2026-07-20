@@ -14,12 +14,12 @@ envelope, 202+job_id for long-running commands, read-models stamped run_id+water
 money as strings/minor-units (never floats).
 
 ## Documentation map (read the phase's diet per docs/README_v1.9.md §3 — not everything)
-- docs/MASTER_DESIGN_v1.9.md — decisions D1–D87, architecture, golden rules, math appendix, UI boundary (§21–22)
+- docs/MASTER_DESIGN_v1.9.md — decisions D1–D88, architecture, golden rules, math appendix, UI boundary (§21–22)
 - docs/ARENA_ARCHITECTURE_v1.9.3.md — multi-arena isolation (D71): one universe per arena, arena-namespaced storage, arena-scoped calibration, the no-merge frontend rule
 - docs/STRATEGY_CATALOG_v1.9.md — IModel contracts + per-strategy acceptance criteria
 - docs/DESIGN_IMPROVEMENTS_v1.9.md — metrics math, costs/sizing, LLM economics, Arena Replay
 - docs/OVERFITTING_MONITOR_v1.9.md — eight signals, thresholds, MDE derivation
-- docs/BUILD_AND_PROMPTS_v1.9.md — FR-1..38, phase plan, phase prompts (Phase 0 is structured as checkpoints 0.1–0.6 with the pinned versions, the no-AUTOINCREMENT migration hand-edit, the 404→D60 fallback, and the ASCII-only .ps1 rule)
+- docs/BUILD_AND_PROMPTS_v1.9.md — FR-1..39, phase plan, phase prompts (Phase 0 is structured as checkpoints 0.1–0.6 with the pinned versions, the no-AUTOINCREMENT migration hand-edit, the 404→D60 fallback, and the ASCII-only .ps1 rule)
 - docs/SCHEMA_v1.9.md — the ONLY source of truth for table shapes (never invent columns)
 - docs/CONFIG_REFERENCE_v1.9.md — the ONLY source of truth for config keys/defaults
 - docs/INTEGRATIONS_v1.9.md — the ONLY source of truth for external endpoints
@@ -28,10 +28,10 @@ money as strings/minor-units (never floats).
 - docs/DB_RELOCATION.md — ops runbook: relocating the SQLite file(s) to another directory/drive (config edit + file move; ConfigConsistencyTests guards the four connection-string edit spots + Arena:Id agreement)
 - docs/FUTURE_DB_MIGRATION.md — contingency: leaving SQLite for a server RDBMS (a different job from relocation; closed until needed)
 - docs/REBUILD.md — ops runbook: from a fresh clone to a working arena (the data bootstrap, sibling to DB_RELOCATION/FUTURE_DB_MIGRATION; --preflight live-source check, sp500-widening caveat)
-- docs/UX_GUIDELINES_v1.9.md — interface rules UX-1..UX-14 as build specs
+- docs/UX_GUIDELINES_v1.9.md — interface rules UX-1..UX-15 as build specs
 - docs/SETUP_v1.9.md — prerequisites, D49 launch tier, secrets, day-zero checklist
 - docs/DESIGN_IMPROVEMENTS_EXPLAINED.md — plain-language "why" companion to DESIGN_IMPROVEMENTS (section numbers match the spec)
-- docs/CHANGELOG_v1.9.md — every consistency finding + decision (D1–D87), the provenance trace
+- docs/CHANGELOG_v1.9.md — every consistency finding + decision (D1–D88), the provenance trace
 - Navigation (not part of any phase diet): START_HERE.md (entry point), docs/README_v1.9.md (file map + build workflow), docs/MANIFEST.md (package manifest + revision state)
 - Mockups (visual direction for the GUI): docs/alphalab_ux_mockups.html — the single consolidated UX mockup (every screen)
 

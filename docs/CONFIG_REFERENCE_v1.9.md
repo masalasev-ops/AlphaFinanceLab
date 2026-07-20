@@ -210,6 +210,11 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     "SeparationBandCentralFrac": 0.50              // 'none' = inside the 25th–75th pct region
   },
 
+  "Kpi": {                                         // D88 - cohort maturation curve (read-model; descriptive only, never a gate/monitor/allocator input)
+    "CohortBucketMonths": 6,                       // admission-vintage bucket width over strategies.created_on (default half-year cohorts)
+    "CohortMinStrategies": 3                       // below this live-member count at t the segment renders dimmed (reason 'thin_cohort')
+  },
+
   "Llm": {                                         // D24/D46
     "Tasks": {
       "news_extraction": { "Model": "claude-haiku-4-5-20251001" },
@@ -302,4 +307,4 @@ browser — it must never contain a secret (D67).
 4. **v1.8:** the Phase-4 calibration job writes the D56 `P_noise(t)` / `P_edge(t)` S3 curves as versioned config rows referencing the archived report; the flat S3 anchors (Healthy ≥ 95 / Suspect < 25 — MONITOR Appendix A) apply only before that.
 5. **v1.9.1 (D69):** ledger money properties are C# `decimal` persisted as TEXT; never bind a money value to `double`. The D60 API serialization (strings/minor units) is unchanged.
 6. Where a key also appears in OVERFITTING_MONITOR Appendix A (gate/verdicts/calibration blocks), **this file is authoritative**; the appendix mirrors values for reading convenience.
-7. **v1.9.12 binding caveat (finding 159):** some blocks documented here are the *designed* surface for a later phase and are **not yet section-bound**. `CalendarOptions`, `RegimeOptions`, and `DataQualityOptions` declare a `SectionName` (`Calendar`/`Regime`/`Data`) but are currently DI-registered as **default instances** (not `GetSection(...).Bind`), so a value placed in those sections is silently ignored until the phase that consumes them wires the bind. No value drift today — the defaults equal the documented defaults — but treat these as compile-time constants, not live knobs, at the current phase. (The `Universe.Bootstrap` binding gap is tracked separately under **D76** — finding 151.)
+7. **v1.9.12 binding caveat (finding 159):** some blocks documented here are the *designed* surface for a later phase and are **not yet section-bound**. `CalendarOptions`, `RegimeOptions`, and `DataQualityOptions` declare a `SectionName` (`Calendar`/`Regime`/`Data`) but are currently DI-registered as **default instances** (not `GetSection(...).Bind`), so a value placed in those sections is silently ignored until the phase that consumes them wires the bind. No value drift today — the defaults equal the documented defaults — but treat these as compile-time constants, not live knobs, at the current phase. (The `Universe.Bootstrap` binding gap is tracked separately under **D76** — finding 151.) The `Kpi` block (D88, v1.9.34) is likewise a designed surface: no options class exists until the Phase-3 read-model build wires it.

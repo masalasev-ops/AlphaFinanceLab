@@ -1,6 +1,6 @@
 # AlphaLab — v1.9 Documentation Package (README)
 
-*Design revision v1.9. Build status is live, not pre-implementation: Phase 0 and Phase 1 have shipped and Phase 2 (funnel + ledger) is merged. The full pass-by-pass history (v4/v5/v6 through the v1.9.26 reconciliation pass, every CHANGELOG finding and decision D1-D87) lives in `docs/CHANGELOG_v1.9.md`; current phase, test count, and the open-item list live in `PROGRESS.md`. Consult those two rather than any count or status quoted inline, which may lag.*
+*Design revision v1.9. Build status is live, not pre-implementation: Phase 0 and Phase 1 have shipped and Phase 2 (funnel + ledger) is merged. The full pass-by-pass history (v4/v5/v6 through the v1.9.26 reconciliation pass, every CHANGELOG finding and decision D1-D88) lives in `docs/CHANGELOG_v1.9.md`; current phase, test count, and the open-item list live in `PROGRESS.md`. Consult those two rather than any count or status quoted inline, which may lag.*
 
 *This package is sufficient for building the entire system through Claude Code, solo, with no undocumented decisions. The gap-closure pass (decisions D50–D56) is already merged into every document — there is no separate addendum to reconcile.*
 
@@ -10,12 +10,12 @@
 | Doc | Role |
 |---|---|
 | `ARENA_ARCHITECTURE_v1.9.3.md` | **How AlphaLab supports multiple isolated universes ("arenas").** Defines D71: one universe per arena, separate DB + process per arena, arena-scoped calibration, an arena-switcher frontend that never merges leaderboards, and a step-by-step "add an arena" checklist. Additive; no schema change; the S&P 500 build is unaffected. |
-| `MASTER_DESIGN_v1.9.md` | **The comprehensive document.** Decisions D1–D87, architecture, the daily funnel, data sourcing, golden rules, the plain-language math appendix (§19), the gap-closure specs (§20), the **UI-boundary specs (§21 `AlphaLab.Api`, §22 honesty read-models)** that make the front end swappable, and the AI-seat spec (§23) |
+| `MASTER_DESIGN_v1.9.md` | **The comprehensive document.** Decisions D1–D88, architecture, the daily funnel, data sourcing, golden rules, the plain-language math appendix (§19), the gap-closure specs (§20), the **UI-boundary specs (§21 `AlphaLab.Api`, §22 honesty read-models)** that make the front end swappable, and the AI-seat spec (§23) |
 | `STRATEGY_CATALOG_v1.9.md` | Every strategy's exact spec, the `IModel` contract, acceptance criteria |
 | `DESIGN_IMPROVEMENTS_v1.9.md` | Metrics/evaluation math in full, factor research, sizing/costs, LLM economics, Arena Replay, the power-reality tables |
 | `DESIGN_IMPROVEMENTS_EXPLAINED.md` | The plain-language "why" companion to `DESIGN_IMPROVEMENTS_v1.9.md` (onboarding; section numbers match the spec) |
 | `OVERFITTING_MONITOR_v1.9.md` | The eight anti-self-deception signals, statuses, wiring, MDE derivation |
-| `BUILD_AND_PROMPTS_v1.9.md` | FR-1…FR-38, the gated phase plan, and the **ready-to-paste Claude Code prompt for each phase** |
+| `BUILD_AND_PROMPTS_v1.9.md` | FR-1…FR-39, the gated phase plan, and the **ready-to-paste Claude Code prompt for each phase** |
 
 **Tier 2 — Build scaffolding (what stops Claude Code from improvising):**
 | Doc | Role |
@@ -27,7 +27,7 @@
 | `CONFIG_REFERENCE_v1.9.md` | Every config key, default, unit, and owning decision |
 | `INTEGRATIONS_v1.9.md` | Exact external endpoints (EODHD, IVV CSV, Ken French, FRED, Anthropic, Alpaca) with ⚠VERIFY flags |
 | `TEST_PLAN_v1.9.md` | The fixture library + FR-mapped test inventory (§8 = the canonical 39-case Phase-0 inventory a rebuild must reproduce) |
-| `UX_GUIDELINES_v1.9.md` | The thirteen interface rules (UX-1…UX-13) as build specs |
+| `UX_GUIDELINES_v1.9.md` | The fifteen interface rules (UX-1…UX-15) as build specs |
 | `RUNBOOK_v1.9.md` | Operations: daily cycle, catch-up, backups, incident playbook |
 | `DB_RELOCATION.md` | Ops runbook: moving the SQLite database file(s) to another directory/drive — a config edit + file move, guarded by `ConfigConsistencyTests`. The deployed base is a literal absolute path (`E:\AlphaLabDatabase`); the `{Arena.Id}` token stays regardless of base |
 | `FUTURE_DB_MIGRATION.md` | Contingency: what changes if SQLite is ever replaced by a server RDBMS — a different job from relocation, kept closed until needed |
