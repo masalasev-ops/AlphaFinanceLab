@@ -61,7 +61,7 @@
 ### Phase 3 — The honest arena
 - [ ] Populations (3 families + cost-free); FX-PopDeterminism, FX-PopBands green
 - [ ] FX-SyntheticEdge >95th pct; FX-SyntheticNoEdge uniform
-- [ ] Metrics service + NW-MDE; FX-MDE-AR1 green
+- [~] Metrics service + NW-MDE; **FX-MDE-AR1 green** (checkpoint 3.2 — the pure calculators in AlphaLab.Evaluation: `StrategyMetrics` (β-adj Jensen alpha via NW-HAC OLS, IR, Sharpe/Sortino, deflated Sharpe, maxDD/Calmar, expectancy/profit-factor/win-rate, turnover), `MdeCalculator` (D48), `NeweyWest` (Bartlett LRV + HAC sandwich), `Normal.InvCdf` (Acklam). RF = `MetricsConstants.RiskFreePlaceholderAnnual` (0, read in one place). Verified by an adversarial-review workflow (7 agents, 0 confirmed defects) + a defensive tightening (MDE T<2 → +∞). The **ledger-reading orchestration** that assembles these per strategy lands in the 3.4 evaluation step.)
 - [ ] Gate (Promoted/Refused/TooEarly); FX-TooEarly, FX-PairedWin green
 - [ ] Honesty read-models (D58) + AlphaLab.Api read endpoints (FR-32/33); FR33_ForwardReadModel_ContainsNoReplayRow green
 - [ ] Separation state (D63, FR-35) in the read-models; FX-SeparationChip + UX12 read-model test green
