@@ -8,6 +8,7 @@ using AlphaLab.Data.Entities;
 using AlphaLab.Data.Providers;
 using AlphaLab.Data.Services;
 using AlphaLab.Evaluation;
+using AlphaLab.Evaluation.Allocator;
 using AlphaLab.Evaluation.Monitor;
 using AlphaLab.Evaluation.Populations;
 using AlphaLab.Strategies;
@@ -64,6 +65,7 @@ public sealed class DailyPipeline(
     CostsOptions costs,
     PopulationsOptions populations,
     GateOptions gate,
+    AllocatorOptions allocator,
     ArenaOptions arena,
     WorkerOptions worker,
     TimeProvider clock,
@@ -498,10 +500,12 @@ public sealed class DailyPipeline(
             .Select(p => (long?)p.PopulationId)
             .FirstOrDefault();
         var monitored = new OverfittingMonitor(db, gate).Run(asOf, EvaluationStep.DefaultBenchmarkStrategyId, matchedPopulation);
+        // The ensemble allocator (D51) reads the gate + monitor outputs and persists allocation_log.
+        var allocation = new AllocationStep(db, gate, allocator).Run(asOf);
         txn.Commit();
 
-        logger.LogInformation("{AsOf}: evaluation day (session {Session}) — {Pairs} pair(s) scored, {Monitored} monitored.",
-            asOf, sessionsSinceInception, evaluations.Count, monitored.Count);
+        logger.LogInformation("{AsOf}: evaluation day (session {Session}) — {Pairs} pair(s) scored, {Monitored} monitored, {Allocated} allocated.",
+            asOf, sessionsSinceInception, evaluations.Count, monitored.Count, allocation.Rows.Count);
     }
 
     // ---- ledger math ----

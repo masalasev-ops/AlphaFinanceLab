@@ -43,5 +43,10 @@ public class EvaluationPipelineTests
         // A ~3-day track is far inside any MDE ⇒ TooEarly, and every report is a forward ('live') row.
         Assert.All(reports, r => Assert.Equal("TooEarly", r.Verdict));
         Assert.All(reports, r => Assert.Equal("live", r.RunKind));
+
+        // The monitor + allocator run in the same step: overfitting rows + one allocation_log row exist.
+        Assert.NotEmpty(db.OverfittingStatus.ToList());
+        Assert.Single(db.AllocationLog.ToList());
+        Assert.All(db.AllocationLog.ToList(), a => Assert.Equal("live", a.RunKind));
     }
 }
