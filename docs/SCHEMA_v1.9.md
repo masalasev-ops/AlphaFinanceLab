@@ -284,6 +284,10 @@ CREATE TABLE overfitting_checks (
   value REAL, threshold_json TEXT NOT NULL, contribution TEXT NOT NULL,
   run_kind TEXT NOT NULL DEFAULT 'live'
 );
+-- D88 (v1.9.34): the persisted S3 percentile path (signal='S3') is read per strategy by the
+-- FR-35 separation-state reconstruction and the FR-39 cohort maturation curve; covering
+-- index recorded here, EF migration lands with the Phase-3 read-model build.
+CREATE INDEX ix_overfitting_checks_path ON overfitting_checks(strategy_id, signal, as_of);
 
 CREATE TABLE overfitting_status (
   strategy_id TEXT NOT NULL, as_of TEXT NOT NULL,
@@ -494,6 +498,7 @@ CREATE TABLE worker_state (                        -- single row, seeded by Phas
 - **D52:** UPDATEs to a `locked=1` hypothesis row outside the outcome-closure code path are a bug; add a trigger or repository guard + test.
 - **D55:** the only write path to `admin_actions` (and to `source='manual'` domain rows) is the typed-confirmation admin flow.
 - **D57/D58:** no schema change — read-models are computed projections over these tables, served by `AlphaLab.Api`; the UI never queries the DB directly.
+- **D88 (v1.9.34):** no table change - the cohort maturation curve is a read-model projection over `strategies.created_on` + `parent_strategy_id` + the persisted S3 percentile rows in `overfitting_checks` (`signal='S3'`), reusing the D36 percentile verbatim. The only schema artifact is the additive covering index `ix_overfitting_checks_path` above (the S3 path was not previously queryable by `(strategy_id, as_of)` - PK is `check_id` only); its EF migration ships with the Phase-3 read-model build, per rule 14 in the same PR as this SCHEMA edit's implementation.
 - **D79-D82 (v1.9.21):** `ai_context_packs` and `ai_decisions` are append-only, off the statistical hot path, and hold the AI seats' persisted inputs/outputs. `pack_hash` links a decision to the exact pack seen; a re-run of a day consumes the stored `ai_decisions` row (0 API calls — `FX-AiDecisionIsTheRow`), which is how a nondeterministic sampler satisfies determinism (NFR-1 = f(inputs, watermark, seeds, **stored AI outputs**)). No column here feeds any metric, verdict, threshold, or population (golden rule 32). `cost_usd` is `decimal TEXT` (D69). Both integer PKs are plain rowids — no AUTOINCREMENT (rule 14).
 - **D59/D60:** the `jobs` and `worker_state` tables (full DDL above) back the API's async-command pattern and the Worker's queue; `worker_state` is a single seeded row exposing the writer's status to the API for the 409/queue decision. Neither is on the statistical hot path.
 - **D69:** ledger money columns marked `decimal TEXT` above map to C# `decimal` (EF Core's default SQLite mapping stores exact decimal strings). Never map a money property to `double`/REAL; REAL is reserved for market-data prices and derived statistics.

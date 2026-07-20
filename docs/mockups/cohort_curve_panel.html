@@ -1,0 +1,158 @@
+<!doctype html>
+<!-- Illustrative reference for UX-15 / CohortCurvePanel (D88). Synthetic data. Absorbed into
+     alphalab_ux_mockups.html by the UI workstream (D65). Static HTML+SVG only: no script, no
+     external assets, no storage. Token palette is quoted verbatim from UX_GUIDELINES_v1.9.md;
+     the three cohort line colors are validated lightness steps of the population hue --cyan
+     (adjacent-step CVD deltaE >= 13.9, normal-vision deltaE >= 17, contrast >= 3:1 on --panel;
+     lightness-monotonic, oldest = darkest). --gold, --up and --down are deliberately absent:
+     nothing here is live and a rising cohort is not a verdict. The replay watermark string is
+     the UX-8a standing text, quoted verbatim. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CohortCurvePanel - UX-15 reference (D88, sample data)</title>
+<style>
+  :root{
+    --bg:#0E1220; --panel:#161B2E; --panel2:#121729; --ink:#E8ECF5; --line:#2A3350;
+    --gold:#E9B44C; --cyan:#4CC9E0; --violet:#8B7CF6; --replay:#5A6B8C;
+    --up:#3FD68C; --down:#F2555A; --amber:#E2A23B;
+    --cohort-old:#2E7E9B; --cohort-mid:#4CC9E0; --cohort-new:#C4F3FC;
+    --ink-dim:rgba(232,236,245,0.55); --ink-mute:rgba(232,236,245,0.72);
+    --disp:Archivo,"Segoe UI",system-ui,sans-serif;
+    --body:Inter,"Segoe UI",system-ui,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+  }
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font-family:var(--body);}
+  .wrap{max-width:1020px;margin:24px auto;padding:0 16px;}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px 24px;}
+  .head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;}
+  h1{font-family:var(--disp);font-size:19px;margin:0 0 4px;}
+  .sub{font-size:12.5px;color:var(--ink-mute);margin:0;}
+  .chips{display:flex;gap:8px;align-items:center;flex-shrink:0;}
+  .chip{font-family:var(--mono);font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid var(--line);color:var(--ink-mute);white-space:nowrap;}
+  .chip.planned{border-color:var(--amber);color:var(--amber);}
+  .legend{display:flex;flex-wrap:wrap;gap:14px 22px;margin:14px 0 6px;font-size:11.5px;color:var(--ink-mute);align-items:center;}
+  .legend .it{display:inline-flex;align-items:center;gap:7px;}
+  .sw{width:16px;height:3px;border-radius:2px;display:inline-block;}
+  .sw.band{width:16px;height:10px;border-radius:2px;}
+  .sw.hatch{width:16px;height:10px;border-radius:2px;background:repeating-linear-gradient(45deg,rgba(90,107,140,0.45) 0 2px,rgba(90,107,140,0.12) 2px 6px);}
+  .tag{font-family:var(--mono);font-size:10.5px;color:var(--ink-dim);}
+  .chart{overflow-x:auto;}
+  svg{display:block;max-width:100%;height:auto;}
+  .quarantine{margin-top:14px;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
+  .foot{margin-top:14px;font-size:11.5px;color:var(--ink-dim);line-height:1.55;}
+  .foot .prov{font-family:var(--mono);font-size:10.5px;display:block;margin-top:6px;}
+  text{font-family:var(--mono);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="panel">
+    <div class="head">
+      <div>
+        <h1>Cohort maturation</h1>
+        <p class="sub">is the researcher loop learning what to test, or just recombining? Median matched-population percentile by admission cohort, compared at equal age.</p>
+      </div>
+      <div class="chips">
+        <span class="chip">arena: sp500</span>
+        <span class="chip planned">design intent &#183; not yet built</span>
+      </div>
+    </div>
+
+    <div class="legend">
+      <span class="it"><span class="sw" style="background:var(--cohort-old)"></span>H1 2026 cohort (n=6)</span>
+      <span class="it"><span class="sw" style="background:var(--cohort-mid)"></span>H2 2026 cohort (n=5)</span>
+      <span class="it"><span class="sw" style="background:var(--cohort-new)"></span>H1 2027 cohort (n=4&#8594;2)</span>
+      <span class="it"><span class="sw band" style="background:rgba(76,201,224,0.10);border:1px solid rgba(76,201,224,0.35)"></span>cohort 25th-75th pct band</span>
+      <span class="it"><span class="sw hatch"></span>replay plant cohort &#183; quarantined</span>
+      <span class="tag">sample data &#183; illustrative only</span>
+    </div>
+
+    <div class="chart">
+    <svg viewBox="0 0 940 380" role="img" aria-label="Cohort maturation curves: three forward admission cohorts, median population percentile versus track length in trading days. Later cohorts sit higher. Sample data.">
+      <!-- forward field label -->
+      <text x="46" y="14" font-size="10" fill="var(--ink-dim)">forward cohorts (run_kind = live)</text>
+
+      <!-- gridlines: percentile 0/25/50/75/100 -->
+      <g stroke="var(--line)" stroke-width="1">
+        <line x1="46" y1="20"  x2="740" y2="20"/>
+        <line x1="46" y1="95"  x2="740" y2="95"/>
+        <line x1="46" y1="245" x2="740" y2="245"/>
+        <line x1="46" y1="320" x2="740" y2="320"/>
+      </g>
+      <line x1="46" y1="170" x2="740" y2="170" stroke="var(--line)" stroke-width="1.4" stroke-dasharray="5 4"/>
+      <text x="590" y="182" font-size="9.5" fill="var(--ink-dim)">population median (50th)</text>
+      <g font-size="10" fill="var(--ink-dim)" text-anchor="end">
+        <text x="40" y="24">100</text><text x="40" y="99">75</text><text x="40" y="174">50</text>
+        <text x="40" y="249">25</text><text x="40" y="324">0</text>
+      </g>
+
+      <!-- cohort bands (25th-75th pct), 10% fills per UX-4 band convention -->
+      <polygon points="46,143 216.6,140 387.2,137 557.7,134 728.3,137 728.3,191 557.7,188 387.2,191 216.6,194 46,197" fill="rgba(46,126,155,0.10)"/>
+      <polygon points="46,146 216.6,128 387.2,119 557.7,119 557.7,167 387.2,167 216.6,176 46,188" fill="rgba(76,201,224,0.10)"/>
+      <polygon points="46,146 159.7,125 273.4,110 273.4,152 159.7,161 46,182" fill="rgba(196,243,252,0.10)"/>
+
+      <!-- retired member of H1 2026: kept in its cohort (no survivorship) -->
+      <polyline points="46,173 159.7,185 273.4,194 387.2,212 500.9,227" fill="none" stroke="var(--cohort-old)" stroke-opacity="0.55" stroke-width="1.2" stroke-dasharray="3 4"/>
+      <g stroke="var(--cohort-old)" stroke-opacity="0.8" stroke-width="1.4">
+        <line x1="496.9" y1="223" x2="504.9" y2="231"/><line x1="504.9" y1="223" x2="496.9" y2="231"/>
+      </g>
+      <text x="512" y="231" font-size="10" fill="var(--ink-dim)">retired at t=168 &#183; retained in H1 2026 (no survivorship)</text>
+
+      <!-- cohort medians (oldest = darkest step of the population hue) -->
+      <polyline points="46,170 102.9,176 159.7,164 216.6,167 273.4,173 330.3,161 387.2,164 444,170 500.9,158 557.7,161 614.6,167 671.4,164 728.3,164" fill="none" stroke="var(--cohort-old)" stroke-width="2"/>
+      <polyline points="46,167 102.9,161 159.7,155 216.6,152 273.4,146 330.3,149 387.2,143 444,146 500.9,140 557.7,143" fill="none" stroke="var(--cohort-mid)" stroke-width="2"/>
+      <polyline points="46,164 102.9,152 159.7,143 216.6,134 273.4,131" fill="none" stroke="var(--cohort-new)" stroke-width="2"/>
+      <!-- H1 2027 beyond t=84: member_count_at_t=2 < Kpi.CohortMinStrategies=3 -> display:"dimmed", reason:"thin_cohort" -->
+      <polyline points="273.4,131 330.3,128 387.2,125" fill="none" stroke="var(--cohort-new)" stroke-width="2" stroke-opacity="0.45" stroke-dasharray="2 5"/>
+      <text x="240" y="97" font-size="10" fill="var(--ink-dim)">~ thin cohort (n=2), below Kpi.CohortMinStrategies = 3</text>
+
+      <!-- direct labels (identity is never color-alone) -->
+      <text x="736" y="167" font-size="10.5" fill="var(--ink-mute)">H1 2026 &#183; 52nd pct</text>
+      <text x="500" y="130" font-size="10.5" fill="var(--ink-mute)">H2 2026 &#183; 59th pct</text>
+      <text x="395" y="126" font-size="10.5" fill="var(--ink-dim)">~ H1 2027 &#183; 65th pct</text>
+
+      <!-- cohort-to-cohort gap at equal t=189: inside its NW-MDE -> dimmed, never an improvement -->
+      <g stroke="var(--ink-dim)" stroke-width="1">
+        <line x1="565" y1="143" x2="565" y2="161"/>
+        <line x1="561" y1="143" x2="569" y2="143"/><line x1="561" y1="161" x2="569" y2="161"/>
+      </g>
+      <text x="575" y="120" font-size="10" fill="var(--ink-dim)">~ +6 pct vs H1 2026 at equal t</text>
+      <text x="575" y="132" font-size="10" fill="var(--ink-dim)">inside MDE (&#177;8) &#183; not an improvement</text>
+
+      <!-- x axis: age-aligned track length, never calendar time -->
+      <g font-size="10" fill="var(--ink-dim)" text-anchor="middle">
+        <text x="46" y="336">0</text><text x="216.6" y="336">63</text><text x="387.2" y="336">126</text>
+        <text x="557.7" y="336">189</text><text x="728.3" y="336">252</text>
+      </g>
+      <text x="390" y="356" font-size="10.5" fill="var(--ink-mute)" text-anchor="middle">track length t (trading days since admission) - age-aligned, never a calendar date</text>
+      <text x="16" y="240" font-size="10" fill="var(--ink-dim)" transform="rotate(-90 16 240)">median matched-population percentile (D36)</text>
+    </svg>
+    </div>
+
+    <!-- replay quarantine field: its own strip, never co-plotted with the forward axes -->
+    <div class="quarantine">
+    <svg viewBox="0 0 940 120" role="img" aria-label="Quarantined replay strip: a D64 plant cohort rendered on the hatched replay field, separate from the forward chart.">
+      <defs>
+        <pattern id="replayHatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <rect width="8" height="8" fill="var(--panel2)"/>
+          <line x1="0" y1="0" x2="0" y2="8" stroke="var(--replay)" stroke-opacity="0.28" stroke-width="2"/>
+        </pattern>
+      </defs>
+      <rect x="0" y="0" width="940" height="120" fill="url(#replayHatch)"/>
+      <text x="470" y="26" font-size="11" fill="var(--replay)" text-anchor="middle" letter-spacing="1.5">REPLAY &#8212; validates the machinery &#183; never evidence a strategy works</text>
+      <polyline points="46,78 159.7,74 273.4,80 387.2,76 500.9,82 614.6,79 728.3,81" fill="none" stroke="var(--replay)" stroke-width="2"/>
+      <text x="736" y="84" font-size="10" fill="var(--replay)">plant cohort G1 (D64) &#183; 50 seeds</text>
+      <text x="46" y="108" font-size="10" fill="var(--replay)">run_kind = 'replay' &#183; quarantined: true &#183; never co-plotted with the forward axes above</text>
+    </svg>
+    </div>
+
+    <div class="foot">
+      The Overfitting-health S3 panel is one strategy's path against its band; this Analysis panel is a median across an admission vintage; they share the percentile source and are never visually merged.
+      <span class="prov">percentile source: D36 matched random populations (M=200) &#183; read-model: CohortMaturationReadModel (FR-39, D88) &#183; rule: UX-15 &#183; buckets: Kpi.CohortBucketMonths = 6</span>
+    </div>
+  </div>
+</div>
+</body>
+</html>

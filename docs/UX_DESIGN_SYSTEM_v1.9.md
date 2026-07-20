@@ -3,7 +3,7 @@
 > **What this doc is, and is not.** This is the *visual assembly layer* only — the anatomy of the recurring UI components and how they read the honesty read-models. It is the bridge between two documents that already exist and are authoritative:
 >
 > - **Colour, type, and their meaning** live in `UX_GUIDELINES_v1.9.md` → "Visual system — design tokens". This doc **does not restate the palette**; it references those tokens (`--gold`, `--cyan`/`--band`, `--violet`, `--replay`, `--up`/`--down`, `--amber`, `--disp`/`--body`/`--mono`) by name and never redefines a value. If a colour question arises, UX_GUIDELINES wins.
-> - **What each screen must render** lives in `UX_GUIDELINES_v1.9.md` rules UX-1…UX-14. This doc **does not restate a rule's behaviour**; it says which component satisfies it and what the component looks like.
+> - **What each screen must render** lives in `UX_GUIDELINES_v1.9.md` rules UX-1…UX-15. This doc **does not restate a rule's behaviour**; it says which component satisfies it and what the component looks like.
 >
 > The one thing neither of those documents carries is *component anatomy* — "given the backend hands me a `verdict_chip` field, exactly what element renders it, in which token colours, at what size." That gap is what this doc fills. Nothing here introduces new honesty behaviour; if a rule here and a UX-rule ever disagree, UX_GUIDELINES is authoritative and this doc is the bug.
 
@@ -106,6 +106,9 @@ Every screen reads the stamp first. `status == "no_run_yet"` → the designed da
 ### 16. `PlannedBadge` — for design-intent surfaces (build-phasing honesty)
 A small `--amber`-outline "design intent · not yet built" badge for panels whose read-models are specified but not yet wired (e.g. the allocator-value-add and researcher-yield KPI cards, which are later-phase read-models). Keeps the built-vs-designed distinction visible on the surface itself, matching how the docs separate the two everywhere else.
 
+### 17. `CohortCurvePanel` - binds `CohortMaturationReadModel` (UX-15, D88)
+One line per admission cohort on the Analysis/Journal research surface: median D36 population percentile vs track length t in trading days, the x-axis labeled as age, never a calendar date. Forward cohort medians render in `--cyan` inside their `--band` shading; a segment with `display == "dimmed"` renders at reduced contrast (~55% `--ink`) with a `~` prefix and its `reason` (`thin_cohort` / `inside_mde`) as the microcopy tooltip - the panel does **not** decide dimming, it reads `display` (the MetricCell rule). Cohorts with `quarantined: true` render only inside `ReplayField` (12), physically separated from the forward axes. Arena-stamped in the corner; never merges arenas (UX-13). Wears `PlannedBadge` (16) until the Phase-3 read-model lands. Reference look: `docs/mockups/cohort_curve_panel.html` (illustrative; the consolidated mockup absorbs it in the UI workstream). A `CohortCurvePanel` that computes its own dimming, drops retired members, or co-plots a replay cohort is a bug.
+
 ---
 
 ## How a builder uses this doc
@@ -119,6 +122,6 @@ A small `--amber`-outline "design intent · not yet built" badge for panels whos
 ## What this doc deliberately does not do
 
 - It does not redefine any colour, font, or semantic-colour meaning — those are UX_GUIDELINES' Visual-system table.
-- It does not restate any UX-rule's behaviour — those are UX-1…UX-14.
+- It does not restate any UX-rule's behaviour — those are UX-1…UX-15.
 - It does not put any honesty logic in a component — that is D58's read-models.
 - It is a look/assembly reference; the enforcement points remain the read-model tests (`AlphaLab.Evaluation.Tests`), not browser tests.
