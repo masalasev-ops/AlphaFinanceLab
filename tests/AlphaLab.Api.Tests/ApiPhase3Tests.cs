@@ -90,6 +90,24 @@ public class ApiPhase3Tests
     }
 
     [Fact]
+    public async Task CreateCandidate_InlineHypothesis_ButDuplicateStrategyId_Returns422_AndLeavesNoOrphanHypothesis()
+    {
+        using var f = new ApiArenaFactory();
+        using (var db = f.Open())   // the strategy already exists ⇒ CreateCandidate will throw after the hypothesis write
+        {
+            db.Strategies.Add(new StrategyRow { StrategyId = "dup", Family = "m", ConfigJson = "{}", ExitPolicyJson = "{}", CreatedOn = "2026-02-01", Status = "candidate" });
+            db.SaveChanges();
+        }
+
+        var body = "{\"strategy_id\":\"dup\",\"hypothesis\":{\"title\":\"t\",\"body_md\":\"b\",\"metric\":\"alpha\",\"evidence_window_days\":252}}";
+        var response = await f.CreateClient().PostAsync("/api/v1/candidates", Body(body));
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        using var check = f.Open();
+        Assert.Empty(check.JournalEntries.ToList());   // the hypothesis INSERT was rolled back — no orphan (atomic command)
+    }
+
+    [Fact]
     public async Task FR34_CreateCandidate_WhileARunIsLive_Returns409()
     {
         using var f = new ApiArenaFactory();

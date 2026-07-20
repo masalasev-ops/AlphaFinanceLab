@@ -120,6 +120,32 @@ public class OverfittingMonitorTests
     }
 
     [Fact]
+    public void S2_DeflatesByTheGlobalTrialsCount_ElevatingAModestSharpeUnderManyTrials()
+    {
+        // D23: the honest trials count is GLOBAL — every fork spends everyone's significance. A modest raw
+        // Sharpe (>0.5) selected from many trials deflates negative ⇒ S2 elevated. (This drives the Run/
+        // Evaluate trials-count path the isolated MonitorSignals.S2 test never exercised.)
+        using var arena = new EvalArena();
+        using var db = arena.Open();
+
+        // Centered to an exact daily mean of 0.0007 with ~0.5%/day vol ⇒ raw ann Sharpe ≈ 2.2, comfortably
+        // inside (0.5, SR0_ann≈4.7) so the deflation flips it negative under 1000 trials.
+        var raw = EvalArena.Noise(120, 0.005, seed: 7);
+        var m = raw.Average();
+        var returns = raw.Select(x => x - m + 0.0007).ToArray();
+        var bench = EvalArena.Noise(120, 0.001, seed: 8);
+
+        var monitor = new OverfittingMonitor(db, new GateOptions());
+        var elevated = monitor.Evaluate("2026-03-10", "cand", returns, bench, memberAlphas: [], memberWindowAlphas: [], trialsCount: 1000, runKind: "live");
+        Assert.Equal("elevated", elevated.S2.Contribution);
+        Assert.Equal(MonitorStatus.Warning, elevated.S2.Status);
+
+        // With a single trial there is no selection to deflate ⇒ the same Sharpe is NOT elevated.
+        var notElevated = monitor.Evaluate("2026-03-31", "cand", returns, bench, memberAlphas: [], memberWindowAlphas: [], trialsCount: 1, runKind: "live");
+        Assert.Equal("none", notElevated.S2.Contribution);
+    }
+
+    [Fact]
     public void Run_PersistsThreeCheckRowsPerStrategy_AndOneStatusRow()
     {
         using var arena = new EvalArena();

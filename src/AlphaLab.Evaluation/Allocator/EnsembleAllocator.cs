@@ -38,7 +38,7 @@ public static class EnsembleAllocator
         var floor = opts.WeightFloorPct / 100.0;
         var effectiveFloor = Math.Min(floor, 1.0 / n);            // finding 116: scale floors below 1/N when the roster > cap
         var ceiling = opts.WeightCeilingPct / 100.0;
-        var tooEarlyCap = (opts.WeightFloorPct + opts.TooEarlyTiltCapPts) / 100.0;
+        var tooEarlyMoveCap = opts.TooEarlyTiltCapPts / 100.0;   // a MOVE cap: |t_i − prior_i| ≤ this
         var suspectMult = 1.0 - opts.SuspectDecayPctPerEval / 100.0;
         var band = opts.BandPts / 100.0;
 
@@ -76,14 +76,35 @@ public static class EnsembleAllocator
             if (w < effectiveFloor) { w = effectiveFloor; clamps[i].Add("floor"); }
             else if (w > ceiling) { w = ceiling; clamps[i].Add("ceiling"); }
 
-            // 2. TooEarly tilt cap — an unproven strategy cannot tilt above floor + cap.
-            if (inputs[i].TooEarly && w > tooEarlyCap) { w = tooEarlyCap; clamps[i].Add("too_early_cap"); }
+            // 2. TooEarly tilt cap — bound the MOVE from the current (prior) weight, |t_i − prior| ≤ cap
+            // (MASTER §20.2 cl.3), in BOTH directions. On the first allocation the prior is the floor a new
+            // strategy enters at, so the bound degenerates to [0, floor + cap] (the old absolute behaviour).
+            if (inputs[i].TooEarly)
+            {
+                var basis = inputs[i].PriorWeight ?? effectiveFloor;
+                var lo = Math.Max(0.0, basis - tooEarlyMoveCap);
+                var hi = basis + tooEarlyMoveCap;
+                if (w < lo) { w = lo; clamps[i].Add("too_early_cap"); }
+                else if (w > hi) { w = hi; clamps[i].Add("too_early_cap"); }
+            }
 
-            // 3. Suspect decay.
-            if (inputs[i].Suspect) { w *= suspectMult; clamps[i].Add("suspect_decay"); }
+            // 3. Suspect decay — a hard decay of the PRIOR weight ("decay only, never a new tilt", so a
+            // Suspect strategy can never GAIN weight). On the first allocation there is no prior to gain
+            // against, so the target is decayed instead.
+            if (inputs[i].Suspect)
+            {
+                w = (inputs[i].PriorWeight ?? w) * suspectMult;
+                clamps[i].Add("suspect_decay");
+            }
 
-            // 4. band hysteresis — block a sub-band move from the prior weight (no churn on noise).
-            if (inputs[i].PriorWeight is { } prior && Math.Abs(w - prior) < band) { w = prior; clamps[i].Add("band"); }
+            // 4. band hysteresis — a sub-band move HOLDS the prior (no churn on noise); a supra-band move
+            // steps only to the band EDGE (prior ± band), never the full target (continuous, banded, slow).
+            if (inputs[i].PriorWeight is { } prior)
+            {
+                var d = w - prior;
+                if (Math.Abs(d) < band) { w = prior; clamps[i].Add("band"); }
+                else { w = prior + Math.Sign(d) * band; clamps[i].Add("band"); }
+            }
 
             applied[i] = w;
         }

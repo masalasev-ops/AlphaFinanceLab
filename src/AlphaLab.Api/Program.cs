@@ -92,6 +92,10 @@ v1.MapPost("/candidates", async (
 
         var createdOn = clock.GetUtcNow().UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         var factory = new CandidateFactory(db);
+        // ONE atomic transaction around both writes (D59 / the factory's own "writes via the caller's
+        // transaction" contract): registering a hypothesis then failing to create the candidate (e.g. a
+        // duplicate strategy_id ⇒ 422) must NOT leave an orphaned locked hypothesis behind.
+        using var tx = db.Database.BeginTransaction();
         try
         {
             long? hypothesisId = req.Hypothesis is { } h
@@ -100,11 +104,13 @@ v1.MapPost("/candidates", async (
             var spec = new CandidateSpec(req.StrategyId, req.Family ?? "unknown", req.ConfigJson ?? "{}",
                 req.ExitPolicyJson ?? "{}", req.HoldingHorizonDays, req.ParentStrategyId);
             factory.CreateCandidate(spec, hypothesisId, req.Unregistered, createdOn, req.TrialKind ?? "new");
+            tx.Commit();
             return Results.Ok(strategies.Build());   // the updated read-model (FR-32)
         }
         catch (InvalidOperationException ex)
         {
-            // FR-28: missing hypothesis-or-flag (and the other pre-registration guards) ⇒ 422.
+            // FR-28: missing hypothesis-or-flag (and the other pre-registration guards) ⇒ 422. The
+            // transaction is disposed without commit, so any hypothesis INSERT is rolled back (no orphan).
             return ApiResults.Error(422, "unprocessable_entity", ex.Message);
         }
     })

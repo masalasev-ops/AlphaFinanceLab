@@ -98,9 +98,12 @@ public sealed class StrategiesReadModelBuilder(AlphaLabDbContext db, VerdictsOpt
     private static string ResolveTier(string verdict, string status, string? monitorStatus, Core.ReadModels.SeparationInfo? separation)
     {
         if (monitorStatus is "suspect" or "retired" || status == "retired") return StrategyRow.TierBelowOrFlagged;
+        // A Refused verdict is distinguishable DOWNWARD — separation_state is direction-agnostic (D63/§20.8),
+        // so it must be checked BEFORE 'distinguishable-above' or a below-benchmark loser would flatter-sort
+        // into the top tier.
+        if (verdict == "Refused") return StrategyRow.TierBelowOrFlagged;
         if (separation?.State == Core.ReadModels.SeparationInfo.Distinguishable || verdict == "Promoted" || status == "live")
             return StrategyRow.TierDistinguishableAbove;
-        if (verdict == "Refused") return StrategyRow.TierBelowOrFlagged;
         return StrategyRow.TierNotYetDistinguishable;   // TooEarly / no evidence / emerging
     }
 

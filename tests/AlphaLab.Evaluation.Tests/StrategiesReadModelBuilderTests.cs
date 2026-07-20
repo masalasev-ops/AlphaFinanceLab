@@ -92,6 +92,34 @@ public class StrategiesReadModelBuilderTests
     }
 
     [Fact]
+    public void Build_RefusedCandidate_IsBelowOrFlagged_NotDistinguishableAbove()
+    {
+        // A Refused strategy is distinguishable DOWNWARD (a decisive negative gap) — separation_state is
+        // direction-agnostic, so the tier must NOT flatter-sort it into 'distinguishable-above' (D63/§20.8).
+        using var arena = new EvalArena();
+        var dates = EvalArena.Dates(90, new DateOnly(2026, 1, 5));
+        arena.SeedStrategy("buyhold:cw", "baseline", dates, Enumerable.Repeat(0.0, 89).ToArray());
+        arena.SeedStrategy("cand:loser", "candidate", dates, Enumerable.Repeat(-0.002, 89).ToArray());   // clear negative edge ⇒ Refused
+        arena.SeedRun(dates[^1]);
+
+        using var db = arena.Open();
+        new EvaluationStep(db, new GateOptions()).Run(dates[^1]);
+        // An S3 row makes the separation path non-empty; with the decisive Refused verdict that yields
+        // separation_state='distinguishable' (downward) — the case where the old tier logic misclassified.
+        db.OverfittingChecks.Add(new AlphaLab.Data.Entities.OverfittingCheckRow
+        {
+            StrategyId = "cand:loser", AsOf = dates[^1], Signal = "S3", Value = 40,
+            ThresholdJson = "{\"n\":200}", Contribution = "in_band", RunKind = "live",
+        });
+        db.SaveChanges();
+
+        var row = Builder(db).Build().Rows.Single(r => r.Id == "cand:loser");
+        Assert.Equal("Refused", row.VerdictChip);
+        Assert.Equal("distinguishable", row.Separation!.State);       // the state IS distinguishable (downward)…
+        Assert.Equal("below-or-flagged", row.Tier);                   // …but the TIER is below-or-flagged, not above
+    }
+
+    [Fact]
     public void Build_PromotedCandidate_IsDistinguishableAbove_WithUndimmedAlpha()
     {
         using var arena = new EvalArena();

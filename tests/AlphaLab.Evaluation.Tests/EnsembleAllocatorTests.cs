@@ -61,6 +61,52 @@ public class EnsembleAllocatorTests
     }
 
     [Fact]
+    public void FR27_TooEarlyCap_BoundsTheMoveFromThePrior_InBothDirections()
+    {
+        var cap = Opts.TooEarlyTiltCapPts / 100.0;   // 0.10
+
+        // A huge alpha with a small prior tilts up only to prior + cap (NOT an absolute 0.15).
+        var up = EnsembleAllocator.Allocate(
+            [In("early", 30.0, 0.5, tooEarly: true, prior: 0.02), In("b", 1.0, 0.5, prior: 0.49)], Opts)
+            .Rows.Single(r => r.StrategyId == "early");
+        Assert.Contains("too_early_cap", up.ClampsBound);
+        Assert.True(up.Applied <= 0.02 + cap + 1e-9, $"applied {up.Applied:F3} ≤ prior+cap {0.02 + cap}");
+
+        // A large negative alpha is bounded on the DOWNSIDE too — to prior − cap (the old code never did this).
+        var down = EnsembleAllocator.Allocate(
+            [In("early", -30.0, 0.5, tooEarly: true, prior: 0.50), In("b", 1.0, 0.5, prior: 0.50)], Opts)
+            .Rows.Single(r => r.StrategyId == "early");
+        Assert.Contains("too_early_cap", down.ClampsBound);
+        Assert.True(down.Applied >= 0.50 - cap - 1e-9, $"applied {down.Applied:F3} ≥ prior−cap {0.50 - cap}");
+    }
+
+    [Fact]
+    public void FR27_Suspect_DecaysFromThePrior_AndNeverGains()
+    {
+        // A dominant alpha (would grab the ceiling) with a Suspect flag must DECAY from its prior weight,
+        // never rise toward the target — the old code let a Suspect strategy gain to a dominant weight.
+        var s = EnsembleAllocator.Allocate(
+            [In("s", 40.0, 0.5, suspect: true, prior: 0.40), In("b", 1.0, 0.5, prior: 0.30)], Opts)
+            .Rows.Single(r => r.StrategyId == "s");
+
+        Assert.Contains("suspect_decay", s.ClampsBound);
+        Assert.True(s.Applied <= 0.40 + 1e-9, $"suspect applied {s.Applied:F3} must never exceed its prior 0.40");
+        Assert.True(s.Applied < 0.40, "a Suspect strategy should have decayed below its prior");
+    }
+
+    [Fact]
+    public void FR27_Band_SupraBandMove_StepsOnlyToTheBandEdge()
+    {
+        // prior 0.10, a far-higher target ⇒ move only to the band edge prior + BandPts (0.15), not the target.
+        var a = EnsembleAllocator.Allocate(
+            [In("a", 20.0, 0.5, prior: 0.10), In("b", 1.0, 0.5, prior: 0.90)], Opts)
+            .Rows.Single(r => r.StrategyId == "a");
+
+        Assert.Contains("band", a.ClampsBound);
+        Assert.Equal(0.10 + Opts.BandPts / 100.0, a.Applied, 9);   // 0.15 — the band edge, not the softmax target
+    }
+
+    [Fact]
     public void FR27_Band_BlocksASubThresholdMoveFromThePriorWeight()
     {
         // The softmax target is near the prior weight (within BandPts) ⇒ keep the prior, log "band".

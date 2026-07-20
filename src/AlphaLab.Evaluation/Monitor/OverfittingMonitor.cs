@@ -48,6 +48,12 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
             ? PopulationAlphas(pid, benchCurve, runKind)
             : ([], []);
 
+        // The S2 deflation uses the GLOBAL honest trials count (D23 / OVERFITTING_MONITOR §3 + App. B):
+        // every fork/sibling/retrain is a new strategy_id, so "one researcher's trial spends everyone's
+        // significance" — the same N deflates every strategy's Sharpe. Replay trials (run_kind='replay')
+        // are excluded by the predicate. Computed once (it is strategy-invariant).
+        var trialsCount = db.TrialsRegistry.Count(t => t.RunKind == runKind);
+
         var promotable = db.Strategies
             .Where(s => s.Status == "candidate" || s.Status == "live")
             .Select(s => s.StrategyId)
@@ -65,8 +71,7 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
             var (stratReturns, benchReturns) = AlignedReturns(stratCurve, benchCurve);
             if (stratReturns.Count < 2) continue;
 
-            var trials = db.TrialsRegistry.Count(t => t.StrategyId == strategyId && t.RunKind == runKind);
-            results.Add(Evaluate(asOf, strategyId, stratReturns, benchReturns, memberAlphas, memberWindowAlphas, trials, runKind));
+            results.Add(Evaluate(asOf, strategyId, stratReturns, benchReturns, memberAlphas, memberWindowAlphas, trialsCount, runKind));
         }
 
         return results;
