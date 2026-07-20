@@ -77,6 +77,10 @@ public sealed class DailyPipeline(
     // /eod-bulk-last-day path or a shorter window once the historical gate has run once.
     private const int FetchContextSessions = 40;
 
+    // The finding-115 turnover-match window: the trailing sessions over which a strategy's realized
+    // turnover is compared to its matched population's (≈ one month).
+    private const int TurnoverWindowSessions = 21;
+
     private const string RunKindLive = "live";
 
     /// <summary>
@@ -175,7 +179,7 @@ public sealed class DailyPipeline(
 
         // ---- Step 5: the 21-day evaluation (D31/D48), AFTER the daily write commits, in its own
         // transaction — the heavier cadence work is amortized and stays out of the <60s daily budget. ----
-        RunEvaluationIfDue(asOf);
+        RunEvaluationIfDue(asOf, asOfDate, watermark);
 
         // Canary for the sp500 widen + replay scale: a day whose write transaction runs long enough to
         // approach the stale threshold is worth a warning even when it succeeds (D72). 3× the heartbeat
@@ -486,7 +490,7 @@ public sealed class DailyPipeline(
     // The 21-day evaluation cadence (D31). Session count since inception = the committed 'ok' forward runs
     // (today's is committed by now). On a cadence day, run the evaluation step (metrics → MDE → power_reports;
     // the gate/monitor/allocator layer on in 3.5–3.7) in its OWN transaction. Never inside the daily write.
-    private void RunEvaluationIfDue(string asOf)
+    private void RunEvaluationIfDue(string asOf, DateOnly asOfDate, string watermark)
     {
         var sessionsSinceInception = db.Runs.Count(r => r.Status == "ok" && (r.RunKind == "live" || r.RunKind == "catchup"));
         if (!new EvaluationScheduler(gate).IsEvaluationDay(sessionsSinceInception)) return;
@@ -500,12 +504,40 @@ public sealed class DailyPipeline(
             .Select(p => (long?)p.PopulationId)
             .FirstOrDefault();
         var monitored = new OverfittingMonitor(db, gate).Run(asOf, EvaluationStep.DefaultBenchmarkStrategyId, matchedPopulation);
+
+        // Turnover-match verification (finding 115): re-simulate the daily population's turnover vs each
+        // strategy's trades over the recent window, and persist the status-neutral caveat rows.
+        var windowDates = LastSessions(asOfDate, TurnoverWindowSessions);   // last 21 sessions
+        if (windowDates.Count >= 2)
+        {
+            var features = new BarFeatureView(barReads, calendar, asOfDate, watermark, costs);
+            var market = new PopulationMarket(features, membership, calendar, new CostModel(costs), costs.AdvWindowDays);
+            var dailyFamily = PopulationFamilies.ForPhase3(populations).First(f => f is { Name: "daily", CostsOn: true });
+            new TurnoverMatchStep(db, populations.TurnoverMatchTolerancePct)
+                .Run(asOf, windowDates, new PopulationEngine(market), dailyFamily, EvaluationStep.DefaultBenchmarkStrategyId);
+        }
+
         // The ensemble allocator (D51) reads the gate + monitor outputs and persists allocation_log.
         var allocation = new AllocationStep(db, gate, allocator).Run(asOf);
         txn.Commit();
 
         logger.LogInformation("{AsOf}: evaluation day (session {Session}) — {Pairs} pair(s) scored, {Monitored} monitored, {Allocated} allocated.",
             asOf, sessionsSinceInception, evaluations.Count, monitored.Count, allocation.Rows.Count);
+    }
+
+    // The last <paramref name="n"/> sessions ending at (and including) asOf, oldest first — the turnover
+    // window for the finding-115 match.
+    private IReadOnlyList<string> LastSessions(DateOnly asOf, int n)
+    {
+        var list = new List<string>(n);
+        var cursor = calendar.IsTradingDay(asOf) ? asOf : calendar.PreviousSession(asOf);
+        for (var i = 0; i < n && cursor is { } c; i++)
+        {
+            list.Add(Iso(c));
+            cursor = calendar.PreviousSession(c);
+        }
+        list.Reverse();
+        return list;
     }
 
     // ---- ledger math ----

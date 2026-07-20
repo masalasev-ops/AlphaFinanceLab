@@ -48,5 +48,10 @@ public class EvaluationPipelineTests
         Assert.NotEmpty(db.OverfittingStatus.ToList());
         Assert.Single(db.AllocationLog.ToList());
         Assert.All(db.AllocationLog.ToList(), a => Assert.Equal("live", a.RunKind));
+
+        // Turnover-match (finding 115): a status-neutral turnover_match row is persisted for the candidate.
+        var turnover = db.OverfittingChecks.Where(c => c.Signal == "turnover_match").ToList();
+        Assert.NotEmpty(turnover);
+        Assert.All(turnover, c => Assert.Contains(c.Contribution, new[] { "matched", "caveat" }));
     }
 }
