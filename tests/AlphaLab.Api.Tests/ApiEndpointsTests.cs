@@ -4,9 +4,9 @@ using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace AlphaLab.Api.Tests;
 
-public class ApiEndpointsTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
+public class ApiEndpointsTests(ApiArenaFactory factory) : IClassFixture<ApiArenaFactory>
 {
-    private readonly WebApplicationFactory<Program> _factory = factory;
+    private readonly ApiArenaFactory _factory = factory;
 
     [Fact]
     public async Task OpenApiJson_IsServedUnconditionally_200()
