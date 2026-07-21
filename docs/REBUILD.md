@@ -77,7 +77,8 @@ tools/Backfill/appsettings.Secrets.json
 ```
 
 **The connection string — four spots, and they must be byte-identical.** The committed value points
-at `E:\AlphaLabDatabase\{Arena.Id}\alphalab.db` (the original deployment). On any other machine,
+at `E:/AlphaLabDatabase/{Arena.Id}/alphalab.db` (the original deployment; separators are normalized
+to the running OS — v1.9.36 — so the same template is valid on Linux). On any other machine,
 repoint **all four** — `ConnectionStrings:AlphaLab` in `src/AlphaLab.Worker/appsettings.json`,
 `src/AlphaLab.Api/appsettings.json`, and `tools/Backfill/appsettings.json`, plus
 `DefaultConnectionString` in `src/AlphaLab.Data/DbPathResolver.cs` — to the portable form:

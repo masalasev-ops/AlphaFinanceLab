@@ -98,10 +98,11 @@ A new top-level `Arena` block in each instance's `appsettings.json`:
 
 Everything arena-specific **derives from `Arena.Id`** so two arenas can never collide:
 
-- **Database file:** `Data Source=<DbBase>\{Arena.Id}\alphalab.db`, where `<DbBase>` is whatever
+- **Database file:** `Data Source=<DbBase>/{Arena.Id}/alphalab.db`, where `<DbBase>` is whatever
   base `ConnectionStrings:AlphaLab` carries. **This deployment uses the literal absolute base
-  `E:\AlphaLabDatabase`** (relocated per `docs/DB_RELOCATION.md`); the portable alternative is the
-  `{LocalAppData}\AlphaLab` token form. Either way the **`{Arena.Id}` token is what isolates
+  `E:/AlphaLabDatabase`** (relocated per `docs/DB_RELOCATION.md`); the portable alternative is the
+  `{LocalAppData}/AlphaLab` token form. Path separators are normalized to the running OS (v1.9.36),
+  so one template serves Windows and Linux alike. Either way the **`{Arena.Id}` token is what isolates
   arenas** — it is resolved by the shared `DbPathResolver` (see §3.2) and must never be removed
   when the base changes.
 - **Snapshots / backups:** `<DbBase>\{Arena.Id}\snapshots\`, `<DbBase>\{Arena.Id}\backups\`.
@@ -124,9 +125,9 @@ one responsibility: **arena-namespacing the path.** Signature stays the same; th
 includes the arena segment.
 
 ```
-Data Source={LocalAppData}\AlphaLab\alphalab.db              // v1.9 (single arena, implicit)
-Data Source={LocalAppData}\AlphaLab\{Arena.Id}\alphalab.db   // v1.9.3 (arena-namespaced, portable token base)
-Data Source=E:\AlphaLabDatabase\{Arena.Id}\alphalab.db       // as deployed (literal absolute base — docs/DB_RELOCATION.md)
+Data Source={LocalAppData}/AlphaLab/alphalab.db              // v1.9 (single arena, implicit)
+Data Source={LocalAppData}/AlphaLab/{Arena.Id}/alphalab.db   // v1.9.3 (arena-namespaced, portable token base)
+Data Source=E:/AlphaLabDatabase/{Arena.Id}/alphalab.db       // as deployed (literal absolute base — docs/DB_RELOCATION.md)
 ```
 
 Consumed identically by the Worker, the Api, and the EF design-time factory — so all three of an

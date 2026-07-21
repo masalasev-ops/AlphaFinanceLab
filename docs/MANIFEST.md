@@ -31,7 +31,8 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `docs/SETUP_v1.9.md` — day-zero environment + provider setup.
 - `docs/RUNBOOK_v1.9.md` — operating the lab, backups, and running more than one arena.
 - `docs/DB_RELOCATION.md` — ops runbook for moving the SQLite file(s) to another directory/drive
-  (a config edit + file move; the deployed base is `E:\AlphaLabDatabase`).
+  (a config edit + file move; the deployed base is `E:/AlphaLabDatabase`, with separators normalized
+  to the running OS — v1.9.36 — so the same template serves a cloud/Linux move).
 - `docs/FUTURE_DB_MIGRATION.md` — contingency plan for ever leaving SQLite for a server RDBMS
   (a different job from relocation; closed until needed).
 - `docs/REBUILD.md` — ops runbook: from a fresh clone to a working arena (the *data* bootstrap;

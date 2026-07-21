@@ -62,6 +62,23 @@ public class DbPathResolverTests
         Assert.DoesNotContain("{LocalAppData}", resolved);
     }
 
+    [Fact]
+    public void ResolvePath_ProducesOsNativeAbsolutePath_NoForeignSeparator()
+    {
+        // The portable default (token form, forward slashes in the template) must resolve to
+        // a fully-qualified path anchored at the known folder, with NO separator from the
+        // other OS surviving. This is the property that makes a Windows-authored config valid
+        // on a Linux VM.
+        const string cs = "Data Source={LocalAppData}/AlphaLabDatabase/{Arena.Id}/alphalab.db";
+
+        var path = DbPathResolver.GetDataSourcePath(DbPathResolver.ResolvePath(cs, "sp500"));
+
+        Assert.True(Path.IsPathFullyQualified(path), $"expected an absolute path, got '{path}'");
+        var foreignSeparator = Path.DirectorySeparatorChar == '\\' ? '/' : '\\';
+        Assert.DoesNotContain(foreignSeparator.ToString(), path);
+        Assert.EndsWith(Path.Combine("AlphaLabDatabase", "sp500", "alphalab.db"), path);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("   ")]

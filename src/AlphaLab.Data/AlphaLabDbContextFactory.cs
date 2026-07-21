@@ -6,13 +6,16 @@ namespace AlphaLab.Data;
 /// <summary>
 /// Design-time factory so `dotnet ef` can build the model without a running host. When invoked
 /// bare (no --connection), it defaults to arena "sp500" and <see cref="DbPathResolver.DefaultConnectionString"/>
-/// — the E: literal `Data Source=E:\AlphaLabDatabase\{Arena.Id}\alphalab.db`, resolving to
-/// `E:\AlphaLabDatabase\sp500\alphalab.db` — as a WRITER (ensureDirectory:true — creating the store
-/// is a writer's job, D59). This constant is INTENTIONALLY the E: literal, byte-identical to both
-/// appsettings (the three-spots rule, DB_RELOCATION.md, guarded by ConfigConsistencyTests). Do NOT
-/// "correct" it to a {LocalAppData} form to match a portability assumption — that would redden
-/// ConfigConsistencyTests or, worse, make the three spots disagree with the deployed store. To move
-/// the store off E:, change all three spots together per DB_RELOCATION.md.
+/// — the E: literal `Data Source=E:/AlphaLabDatabase/{Arena.Id}/alphalab.db`, which `ResolvePath`
+/// normalizes to the running platform's separator (on Windows: `E:\AlphaLabDatabase\sp500\alphalab.db`)
+/// — as a WRITER (ensureDirectory:true — creating the store is a writer's job, D59). This constant is
+/// INTENTIONALLY the E: literal, byte-identical to both appsettings (the three-spots rule,
+/// DB_RELOCATION.md, guarded by ConfigConsistencyTests). Do NOT "correct" it to a {LocalAppData} form
+/// to match a portability assumption, and do NOT "correct" the forward slashes back to backslashes
+/// (they are deliberate, v1.9.36 — the separator normalization is what keeps one string valid on
+/// Windows and Linux alike) — either edit would redden ConfigConsistencyTests or, worse, make the
+/// three spots disagree with the deployed store. To move the store off E:, change all three spots
+/// together per DB_RELOCATION.md.
 ///
 /// Real migrations do NOT rely on this fallback: tools/migrate.ps1 reads
 /// ConnectionStrings:AlphaLab from the Worker's appsettings.json, resolves the `{Arena.Id}` /

@@ -70,8 +70,10 @@ Blazor WebAssembly · xUnit. Package versions are pinned centrally in `Directory
 2. **Database setup (first run / new machine)** — the database is **not** in the repo; there is no
    `.db` to import. It is created from EF migrations the first time you run the Worker. Two things to
    know on a fresh clone:
-   - **Where it lives.** The committed connection string points at `E:\AlphaLabDatabase\{Arena.Id}\alphalab.db`
-     (this deployment). On a machine without an `E:` drive, repoint it to the portable form — the
+   - **Where it lives.** The committed connection string points at `E:/AlphaLabDatabase/{Arena.Id}/alphalab.db`
+     (this deployment). Path separators are normalized to the running OS (v1.9.36), so the same template
+     is valid on Linux — moving to a cloud VM is a config-value edit, not a code change.
+     On a machine without an `E:` drive, repoint it to the portable form — the
      **same value in all four spots** (they must be byte-identical or `ConfigConsistencyTests` fails):
      `ConnectionStrings:AlphaLab` in `src/AlphaLab.Worker/appsettings.json`,
      `src/AlphaLab.Api/appsettings.json`, and `tools/Backfill/appsettings.json`, and

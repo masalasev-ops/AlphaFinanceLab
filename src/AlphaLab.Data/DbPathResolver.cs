@@ -11,6 +11,12 @@ namespace AlphaLab.Data;
 ///                     known-folders API. D67 bans env-var reads, so we NEVER use
 ///                     GetEnvironmentVariable / ExpandEnvironmentVariables here.
 ///
+/// After substitution the DataSource is rebuilt with the RUNNING platform's directory separator
+/// (v1.9.36), so ONE config string is valid on every OS: a Windows '\' never survives on Linux and
+/// a '/' never survives on Windows. That is what makes a cloud (Linux) lift-and-shift a config-value
+/// change with no code change — only the base in the four spots moves. Normalization is pure string
+/// work through SqliteConnectionStringBuilder; it reads no environment and touches no filesystem.
+///
 /// Path resolution is split from directory creation (v1.9.6):
 ///   ResolvePath  — PURE (token replacement only, no filesystem). Readers and tests use
 ///                  this to resolve a connection string without touching disk.
@@ -27,14 +33,19 @@ public static class DbPathResolver
     /// one of the "four edit spots" that must stay identical to the Worker, Api, and Backfill-CLI
     /// appsettings.json ConnectionStrings:AlphaLab, so every process opens the SAME file
     /// (DB_RELOCATION.md; guarded by ConfigConsistencyTests). This deployment uses the E: literal;
-    /// the {LocalAppData} token form is the portable alternative. tools/migrate.ps1 still passes an
-    /// explicit --connection resolved from the Worker appsettings (finding 119), so real migrations
-    /// never depend on this constant — but keeping it equal keeps a bare `dotnet ef` on-target.
+    /// the {LocalAppData} token form is the portable alternative. The FORWARD SLASHES are deliberate
+    /// (v1.9.36) — ResolvePath normalizes them to the running platform's separator, so this one string
+    /// is valid on Windows and Linux alike; do NOT "correct" them back to backslashes, and if you do
+    /// change the form, change all four spots together or ConfigConsistencyTests reddens.
+    /// tools/migrate.ps1 still passes an explicit --connection resolved from the Worker appsettings
+    /// (finding 119), so real migrations never depend on this constant — but keeping it equal keeps a
+    /// bare `dotnet ef` on-target.
     /// </summary>
     public const string DefaultConnectionString =
-        @"Data Source=E:\AlphaLabDatabase\{Arena.Id}\alphalab.db";
+        @"Data Source=E:/AlphaLabDatabase/{Arena.Id}/alphalab.db";
 
-    /// <summary>PURE token replacement. No filesystem access. Returns the resolved connection string.</summary>
+    /// <summary>PURE token replacement + OS separator normalization. No filesystem access. Returns the
+    /// resolved connection string.</summary>
     public static string ResolvePath(string connectionString, string arenaId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
@@ -42,9 +53,19 @@ public static class DbPathResolver
 
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
-        return connectionString
+        var substituted = connectionString
             .Replace("{Arena.Id}", arenaId, StringComparison.Ordinal)
             .Replace("{LocalAppData}", localAppData, StringComparison.Ordinal);
+        // One config string, every OS: a template may be written with '/' or '\', and the
+        // expanded {LocalAppData} contributes the running platform's own separator. Rebuild
+        // DataSource with the OS separator so a Windows '\' never survives on Linux (cloud
+        // lift-and-shift) and vice-versa. Still D67-safe (known-folders API only, no env
+        // vars) and PURE (no filesystem access).
+        var builder = new SqliteConnectionStringBuilder(substituted);
+        builder.DataSource = builder.DataSource
+            .Replace('\\', Path.DirectorySeparatorChar)
+            .Replace('/', Path.DirectorySeparatorChar);
+        return builder.ToString();
     }
 
     /// <summary>Resolve the connection string, then ensure the store's parent directory exists (writers only).</summary>
