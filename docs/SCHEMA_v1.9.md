@@ -280,7 +280,7 @@ CREATE TABLE allocation_log (
 
 CREATE TABLE overfitting_checks (
   check_id INTEGER PRIMARY KEY, strategy_id TEXT NOT NULL, as_of TEXT NOT NULL,
-  signal TEXT NOT NULL,                            -- S1..S8
+  signal TEXT NOT NULL,                            -- S1..S8; turnover_match (descriptive, excluded from status) [finding 115, Phase 3]
   value REAL, threshold_json TEXT NOT NULL, contribution TEXT NOT NULL,
   run_kind TEXT NOT NULL DEFAULT 'live'
 );

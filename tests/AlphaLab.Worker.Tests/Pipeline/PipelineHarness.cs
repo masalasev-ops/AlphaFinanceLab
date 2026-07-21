@@ -87,6 +87,11 @@ public sealed class PipelineHarness : IDisposable
         services.AddSingleton(OpsOptions);
         services.AddAlphaLabData(cs, "sp500", ensureDirectory: true);
         services.AddSingleton(new CostsOptions());
+        // Phase 3 (checkpoint 3.3): populations compute in Stage 2. Small M here keeps the shared harness
+        // fast — the dedicated determinism/band/perf tests exercise the full M=200.
+        services.AddSingleton(new PopulationsOptions { Size = 6, CostFreeSize = 3 });
+        services.AddSingleton(new GateOptions());       // checkpoint 3.4: the 21-day evaluation step
+        services.AddSingleton(new AllocatorOptions());   // checkpoint 3.7: the ensemble allocator
         services.AddSingleton(new DataQualityOptions());
         services.AddSingleton(new CalendarOptions());
         services.AddSingleton(new CorporateActionsOptions());

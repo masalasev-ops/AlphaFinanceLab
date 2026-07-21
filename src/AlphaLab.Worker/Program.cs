@@ -50,11 +50,21 @@ var dataQualityOptions = builder.Configuration.GetSection(DataQualityOptions.Sec
 var calendarOptions = builder.Configuration.GetSection(CalendarOptions.SectionName).Get<CalendarOptions>() ?? new CalendarOptions();
 var corporateActionsOptions = builder.Configuration.GetSection(CorporateActionsOptions.SectionName).Get<CorporateActionsOptions>() ?? new CorporateActionsOptions();
 var costsOptions = builder.Configuration.GetSection(CostsOptions.SectionName).Get<CostsOptions>() ?? new CostsOptions();
+// Phase 3 (D36): the random control populations compute inside the daily Stage-2 write (checkpoint 3.3).
+// The Worker is their consuming phase, so it owns the bind (finding F).
+var populationsOptions = builder.Configuration.GetSection(PopulationsOptions.SectionName).Get<PopulationsOptions>() ?? new PopulationsOptions();
+// The 21-day evaluation step (checkpoint 3.4) runs in the pipeline post-commit; the Worker binds the gate.
+var gateOptions = builder.Configuration.GetSection(GateOptions.SectionName).Get<GateOptions>() ?? new GateOptions();
+// The D51 ensemble allocator (checkpoint 3.7) runs in the same evaluation step.
+var allocatorOptions = builder.Configuration.GetSection(AllocatorOptions.SectionName).Get<AllocatorOptions>() ?? new AllocatorOptions();
 
 builder.Services.AddSingleton(dataQualityOptions);
 builder.Services.AddSingleton(calendarOptions);
 builder.Services.AddSingleton(corporateActionsOptions);
 builder.Services.AddSingleton(costsOptions);
+builder.Services.AddSingleton(populationsOptions);
+builder.Services.AddSingleton(gateOptions);
+builder.Services.AddSingleton(allocatorOptions);
 builder.Services.AddAlphaLabMembership(regimeOptions);
 
 // EODHD provider (finding D — the Worker needs its OWN Eodhd section; CONFIG previously scoped it to

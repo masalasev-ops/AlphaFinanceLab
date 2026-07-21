@@ -1,4 +1,5 @@
 using AlphaLab.Core.ReadModels;
+using AlphaLab.Evaluation.ReadModels;
 
 namespace AlphaLab.Api;
 
@@ -12,17 +13,23 @@ public static class ScreenEndpoints
 {
     public static RouteGroupBuilder MapScreenReadEndpoints(this RouteGroupBuilder group)
     {
-        group.MapGet("/strategies", () => TypedResults.Ok(StrategiesReadModel.NoRunYet))
+        // D58 read-models: pure projections built in AlphaLab.Evaluation and rendered verbatim (the API
+        // holds NO statistics/thresholds/verdict logic — D57). Forward-only, so a replay row can never
+        // appear (FR-33). The builders resolve to no_run_yet before the first committed forward run.
+        group.MapGet("/strategies", (StrategiesReadModelBuilder b) => TypedResults.Ok(b.Build()))
             .WithName("GetStrategies").WithSummary("Strategy leaderboard read-model.");
 
-        group.MapGet("/strategies/{id}", (string id) => TypedResults.Ok(StrategyDetailReadModel.NoRunYet))
+        group.MapGet("/strategies/{id}", (string id, StrategiesReadModelBuilder b) => TypedResults.Ok(b.BuildDetail(id)))
             .WithName("GetStrategyDetail").WithSummary("Single strategy card read-model.");
 
         group.MapGet("/live", () => TypedResults.Ok(LiveReadModel.NoRunYet))
             .WithName("GetLive").WithSummary("Live account read-model.");
 
-        group.MapGet("/allocation", () => TypedResults.Ok(AllocationReadModel.NoRunYet))
+        group.MapGet("/allocation", (AllocationReadModelBuilder b) => TypedResults.Ok(b.Build()))
             .WithName("GetAllocation").WithSummary("Ensemble allocation read-model.");
+
+        group.MapGet("/cohort-maturation", (CohortMaturationBuilder b) => TypedResults.Ok(b.Build()))
+            .WithName("GetCohortMaturation").WithSummary("Cohort maturation curve read-model (D88/FR-39).");
 
         group.MapGet("/go-live-log", () => TypedResults.Ok(GoLiveLogReadModel.NoRunYet))
             .WithName("GetGoLiveLog").WithSummary("Go-live / retire log read-model.");

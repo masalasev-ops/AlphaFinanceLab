@@ -7,6 +7,10 @@ using AlphaLab.Data;
 using AlphaLab.Data.Entities;
 using AlphaLab.Data.Providers;
 using AlphaLab.Data.Services;
+using AlphaLab.Evaluation;
+using AlphaLab.Evaluation.Allocator;
+using AlphaLab.Evaluation.Monitor;
+using AlphaLab.Evaluation.Populations;
 using AlphaLab.Strategies;
 using Microsoft.Extensions.Logging;
 
@@ -59,6 +63,9 @@ public sealed class DailyPipeline(
     IIndexMembershipRead membership,
     IDataQualityFlagStore flagStore,
     CostsOptions costs,
+    PopulationsOptions populations,
+    GateOptions gate,
+    AllocatorOptions allocator,
     ArenaOptions arena,
     WorkerOptions worker,
     TimeProvider clock,
@@ -69,6 +76,10 @@ public sealed class DailyPipeline(
     // documented threshold); a stop-and-report seam if the daily EODHD-call budget (2.12) argues for the
     // /eod-bulk-last-day path or a shorter window once the historical gate has run once.
     private const int FetchContextSessions = 40;
+
+    // The finding-115 turnover-match window: the trailing sessions over which a strategy's realized
+    // turnover is compared to its matched population's (≈ one month).
+    private const int TurnoverWindowSessions = 21;
 
     private const string RunKindLive = "live";
 
@@ -140,6 +151,12 @@ public sealed class DailyPipeline(
                     await RunAccountDayAsync(account, asOfDate, asOf, watermark, features, broker, ct).ConfigureAwait(false);
                 }
 
+                // The random control populations (D36) are part of the forward day: one compact equity
+                // row per member, computed against the SAME feature view + cost model as the accounts,
+                // inside this atomic transaction (run_kind='live'). Batched — one bulk insert, no
+                // per-member EF round-trip (§5.2).
+                ComputePopulations(asOfDate, asOf, features);
+
                 PersistQualityFlags(runId, staged, watermark);
 
                 FinaliseRun(runId, runKind, asOf);
@@ -157,7 +174,13 @@ public sealed class DailyPipeline(
             }
         }
 
-        // ---- Step 4: small txn — clear run_in_progress (success only). ----
+        // ---- Step 5: the 21-day evaluation (D31/D48), AFTER the daily write commits, in its own
+        // transaction — the heavier cadence work is amortized and stays out of the <60s daily budget.
+        // It runs BEFORE run_in_progress is cleared so the API's 409 liveness guard (D72/rule 19) stays
+        // live through this post-commit write — a candidate command must not race the evaluation's INSERTs. ----
+        RunEvaluationIfDue(asOf, asOfDate, watermark);
+
+        // ---- Step 4: small txn — clear run_in_progress (success only; AFTER the evaluation write). ----
         ClearRunInProgress();
 
         // Canary for the sp500 widen + replay scale: a day whose write transaction runs long enough to
@@ -404,6 +427,42 @@ public sealed class DailyPipeline(
         }
     }
 
+    // The random control populations (D36 / STRATEGY_CATALOG §5.2). Members are lightweight ledger-only
+    // accounts: one compact control_equity scalar per member per day, bulk-inserted. Each member's day is
+    // reconstructible from its prior equity + the deterministic (familySeed, memberIndex, date) draws, so
+    // no held-set state is persisted. Populations start at the same nominal capital as the dummy accounts.
+    private void ComputePopulations(DateOnly asOfDate, string asOf, BarFeatureView features)
+    {
+        var costModel = new CostModel(costs);
+        var market = new PopulationMarket(features, membership, calendar, costModel, costs.AdvWindowDays);
+        var engine = new PopulationEngine(market);
+        var familyMap = new PopulationSeeder(db, populations).Seed(costs.ModelVersion);
+        var writer = new ControlEquityWriter(db);
+
+        var prevSession = calendar.PreviousSession(asOfDate);
+        var prevDate = prevSession is { } p ? Iso(p) : null;
+
+        var points = new List<ControlEquityWriter.Point>();
+        foreach (var (family, populationId) in familyMap)
+        {
+            var prior = writer.LatestEquity(populationId, asOf);
+            for (var m = 0; m < family.Size; m++)
+            {
+                // Inception is decided PER MEMBER, not per family: a member with no prior equity is on its
+                // own inception day (an initial buy, no prior return) even if the rest of the family already
+                // has history. This is what makes a Size increase safe — a newly-added member (m ≥ the old
+                // size) starts fresh instead of being handed a non-null prevDate that fabricates a spurious
+                // first-day gross return and turnover against holdings it never had.
+                var memberInception = !prior.TryGetValue(m, out var priorEquity);
+                if (memberInception) priorEquity = DummyRoster.DefaultStartingCash;
+                var day = engine.Step(family, m, priorEquity, memberInception ? null : prevDate, asOf);
+                points.Add(new ControlEquityWriter.Point(populationId, m, day.Equity));
+            }
+        }
+
+        writer.Write(asOf, points);
+    }
+
     private void PersistQualityFlags(long runId, StagedDay staged, string watermark)
     {
         foreach (var s in staged.All.Where(s => s.Report.Flags.Count > 0))
@@ -433,6 +492,80 @@ public sealed class DailyPipeline(
         state.RunInProgress = 0;
         db.SaveChanges();
         txn.Commit();
+    }
+
+    // The 21-day evaluation cadence (D31). Session count since inception = the committed 'ok' forward runs
+    // (today's is committed by now). Run the evaluation step (metrics → MDE → power_reports → gate/monitor/
+    // allocator) in its OWN transaction — never inside the daily write. SELF-HEALING (D48): the trigger
+    // compares elapsed cadences to evaluations already completed (one overfitting_status date per
+    // evaluation), so a cadence whose evaluation crashed is re-driven on the next launch rather than lost.
+    private void RunEvaluationIfDue(string asOf, DateOnly asOfDate, string watermark)
+    {
+        // Nothing promotable yet ⇒ no evaluation to run; do NOT treat the boundary as missed (that would
+        // re-fire every launch, writing nothing). A candidate/live strategy must exist first.
+        if (!db.Strategies.Any(s => s.Status == "candidate" || s.Status == "live")) return;
+
+        var sessionsSinceInception = db.Runs.Count(r => r.Status == "ok" && (r.RunKind == "live" || r.RunKind == "catchup"));
+        var evaluationsCompleted = db.OverfittingStatus
+            .Where(o => o.RunKind == RunKindLive)
+            .Select(o => o.AsOf)
+            .Distinct()
+            .Count();
+        if (!new EvaluationScheduler(gate).IsEvaluationDue(sessionsSinceInception, evaluationsCompleted)) return;
+
+        try
+        {
+            using var txn = db.Database.BeginTransaction();
+            var evaluations = new EvaluationStep(db, gate).Run(asOf);
+            // The overfitting monitor (S2/S3/S6) runs in the same evaluation transaction. Phase-3: all
+            // promotable strategies are matched to the daily cost-on population (the default null).
+            var matchedPopulation = db.ControlPopulations
+                .Where(p => p.Family == "daily" && p.CostsOn)
+                .Select(p => (long?)p.PopulationId)
+                .FirstOrDefault();
+            var monitored = new OverfittingMonitor(db, gate).Run(asOf, EvaluationStep.DefaultBenchmarkStrategyId, matchedPopulation);
+
+            // Turnover-match verification (finding 115): re-simulate the daily population's turnover vs each
+            // strategy's trades over the recent window, and persist the status-neutral caveat rows.
+            var windowDates = LastSessions(asOfDate, TurnoverWindowSessions);   // last 21 sessions
+            if (windowDates.Count >= 2)
+            {
+                var features = new BarFeatureView(barReads, calendar, asOfDate, watermark, costs);
+                var market = new PopulationMarket(features, membership, calendar, new CostModel(costs), costs.AdvWindowDays);
+                var dailyFamily = PopulationFamilies.ForPhase3(populations).First(f => f is { Name: "daily", CostsOn: true });
+                new TurnoverMatchStep(db, populations.TurnoverMatchTolerancePct)
+                    .Run(asOf, windowDates, new PopulationEngine(market), dailyFamily, EvaluationStep.DefaultBenchmarkStrategyId);
+            }
+
+            // The ensemble allocator (D51) reads the gate + monitor outputs and persists allocation_log.
+            var allocation = new AllocationStep(db, gate, allocator).Run(asOf);
+            txn.Commit();
+
+            logger.LogInformation("{AsOf}: evaluation (session {Session}) — {Pairs} pair(s) scored, {Monitored} monitored, {Allocated} allocated.",
+                asOf, sessionsSinceInception, evaluations.Count, monitored.Count, allocation.Rows.Count);
+        }
+        catch (Exception ex)
+        {
+            // The trading day is already committed 'ok'. The evaluation runs post-commit in its own
+            // transaction (kept out of the <60s daily budget), so a failure rolls back ONLY the evaluation
+            // and MUST NOT fail the daily run. The self-healing trigger re-drives it on the next launch.
+            logger.LogError(ex, "{AsOf}: post-commit evaluation failed and was rolled back; it will be retried on the next launch.", asOf);
+        }
+    }
+
+    // The last <paramref name="n"/> sessions ending at (and including) asOf, oldest first — the turnover
+    // window for the finding-115 match.
+    private IReadOnlyList<string> LastSessions(DateOnly asOf, int n)
+    {
+        var list = new List<string>(n);
+        var cursor = calendar.IsTradingDay(asOf) ? asOf : calendar.PreviousSession(asOf);
+        for (var i = 0; i < n && cursor is { } c; i++)
+        {
+            list.Add(Iso(c));
+            cursor = calendar.PreviousSession(c);
+        }
+        list.Reverse();
+        return list;
     }
 
     // ---- ledger math ----

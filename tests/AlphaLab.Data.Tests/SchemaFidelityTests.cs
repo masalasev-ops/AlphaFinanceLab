@@ -96,7 +96,7 @@ public class SchemaFidelityTests
     }
 
     [Fact]
-    public void Schema_ExactlyTheTwentyFiveTables_Exist()
+    public void Schema_ExactlyTheThirtyFourTables_Exist()
     {
         var dbPath = TempDb();
         try
@@ -114,29 +114,34 @@ public class SchemaFidelityTests
             while (reader.Read()) tables.Add(reader.GetString(0));
 
             // Phase 0 infra(5) + Phase 1 data(9) + the D77 pre-Phase-2 data_quality_flags(1)
-            // + the Phase-2 checkpoint-2.2 ledger(8) + the checkpoint-2.8 regime tables(2) = 25.
+            // + the Phase-2 checkpoint-2.2 ledger(8) + the checkpoint-2.8 regime tables(2) = 25, plus
+            // the Phase-3 "honest arena" tables(9): control_populations, control_equity, trials_registry,
+            // power_reports, go_live_log, allocation_log, overfitting_checks, overfitting_status, and the
+            // D52 journal_entries (needed by the FR-28 CandidateFactory pre-registration) = 34.
             //
             // STILL deliberately absent, and each for its own reason — this list is the guard
             // against a table appearing before the phase that earns it:
-            //   • features        — NOT Phase 2 at all. It has no observed_at/version column, so it
-            //                       cannot express the watermark read rule (rule 4); persisting a
-            //                       feature computed at watermark W and re-reading it at W' is a leak
-            //                       F-LEAK could not catch. No Phase-2 strategy needs it (B&H never
-            //                       re-scores; ThresholdModel is trivial), and IFeatureView computes
-            //                       over the versioned bar reader instead — leak-proof by
-            //                       construction. Phase 6 decides the shape it actually needs.
-            //   • control_populations / control_equity — Phase 3
-            //   • factor_returns / factor_refresh_log  — Phase 6
-            //   • journal_entries / admin_actions      — Phase 7
+            //   • features                              — NOT built yet. It has no observed_at/version
+            //                       column, so it cannot express the watermark read rule (rule 4);
+            //                       persisting a feature at watermark W and re-reading it at W' is a leak
+            //                       F-LEAK could not catch. IFeatureView computes over the versioned bar
+            //                       reader instead — leak-proof by construction. Phase 6 decides its shape.
+            //   • trade_evidence                        — Phase 6 (the D44 trade-level track)
+            //   • parameter_scans / feature_baselines   — later monitor signals (S4/S5), not S2/S3/S6
+            //   • factor_returns / factor_refresh_log   — Phase 6 (French RF ingestion)
+            //   • news_items / analysis_cache / llm_budget_log — Phase 5 (the LLM path)
+            //   • admin_actions                         — Phase 7 (the D55 admin commands)
             // The ux_runs_ok_forward partial index lands in checkpoint 2.10 (M3), where Stage 2
             // first writes runs.
             Assert.Equal(new[]
             {
-                "accounts", "api_usage_log", "bars", "capacity_rejections", "cash_events",
-                "catchup_log", "config", "corporate_actions", "data_quality_flags", "decisions",
-                "equity_curve", "index_membership", "index_membership_log", "jobs", "positions",
-                "regime_episodes", "regime_labels", "runs", "sector_changes", "securities",
-                "strategies", "ticker_history", "trades", "trading_calendar", "worker_state"
+                "accounts", "allocation_log", "api_usage_log", "bars", "capacity_rejections",
+                "cash_events", "catchup_log", "config", "control_equity", "control_populations",
+                "corporate_actions", "data_quality_flags", "decisions", "equity_curve", "go_live_log",
+                "index_membership", "index_membership_log", "jobs", "journal_entries", "overfitting_checks",
+                "overfitting_status", "positions", "power_reports", "regime_episodes", "regime_labels",
+                "runs", "sector_changes", "securities", "strategies", "ticker_history",
+                "trades", "trading_calendar", "trials_registry", "worker_state"
             }, tables);
         }
         finally { TryDelete(dbPath); }
@@ -208,8 +213,17 @@ public class SchemaFidelityTests
 
             // Every bare INTEGER PRIMARY KEY per SCHEMA — the migration hand-edit removed AUTOINCREMENT.
             // Phase 0: runs, jobs. Phase 1: securities, corporate_actions, index_membership_log. D77:
-            // data_quality_flags. Checkpoint 2.8: regime_episodes.
-            foreach (var table in new[] { "runs", "jobs", "securities", "corporate_actions", "index_membership_log", "data_quality_flags", "regime_episodes" })
+            // data_quality_flags. Checkpoint 2.8: regime_episodes. Phase 2 ledger: accounts, cash_events,
+            // decisions, trades. Phase 3: control_populations, trials_registry, power_reports, go_live_log,
+            // allocation_log, overfitting_checks, journal_entries (control_equity + overfitting_status
+            // have composite PKs, so no autoincrement question arises there).
+            foreach (var table in new[]
+            {
+                "runs", "jobs", "securities", "corporate_actions", "index_membership_log",
+                "data_quality_flags", "regime_episodes", "accounts", "cash_events", "decisions", "trades",
+                "control_populations", "trials_registry", "power_reports", "go_live_log", "allocation_log",
+                "overfitting_checks", "journal_entries"
+            })
             {
                 Assert.DoesNotContain("AUTOINCREMENT", TableDdl(dbPath, table), StringComparison.OrdinalIgnoreCase);
             }
@@ -351,6 +365,62 @@ public class SchemaFidelityTests
                 db.SaveChanges(); // no throw
                 Assert.Equal(2, db.Runs.Count(r => r.AsOf == "2026-01-05" && r.RunKind == "replay"));
             }
+        }
+        finally { TryDelete(dbPath); }
+    }
+
+    [Fact]
+    public void Schema_Phase3CheckConstraints_PresentOnStatusAndJournal_AbsentElsewhere()
+    {
+        var dbPath = TempDb();
+        try
+        {
+            using (var db = NewContext(dbPath)) db.Database.Migrate();
+
+            // SCHEMA declares CHECKs on exactly TWO honest-arena tables. Count the uppercase SQL keyword
+            // CASE-SENSITIVELY: "overfitting_checks"/"check_id"/"PK_overfitting_checks" contain the
+            // substring "check", so an IgnoreCase count would over-count on that table (its DDL has 0 real
+            // CHECK constraints but 3 lowercase "check" substrings).
+            Assert.Contains("ck_overfitting_status_status", TableDdl(dbPath, "overfitting_status"));
+            Assert.Equal(1, Regex.Matches(TableDdl(dbPath, "overfitting_status"), "CHECK").Count);
+            Assert.Contains("ck_journal_entries_kind", TableDdl(dbPath, "journal_entries"));
+            Assert.Contains("ck_journal_entries_outcome", TableDdl(dbPath, "journal_entries"));
+            Assert.Equal(2, Regex.Matches(TableDdl(dbPath, "journal_entries"), "CHECK").Count);
+
+            // The other seven honest-arena tables carry NO CHECK (SCHEMA fidelity) — notably
+            // overfitting_checks.signal is unconstrained (S1..S8 + the descriptive 'turnover_match').
+            foreach (var table in new[]
+            {
+                "control_populations", "control_equity", "trials_registry", "power_reports",
+                "go_live_log", "allocation_log", "overfitting_checks"
+            })
+            {
+                Assert.Equal(0, Regex.Matches(TableDdl(dbPath, table), "CHECK").Count);
+            }
+        }
+        finally { TryDelete(dbPath); }
+    }
+
+    [Fact]
+    public void Schema_OverfittingChecksPath_CoveringIndex_Exists()
+    {
+        // The FR-35 separation state and FR-39 cohort curve read the persisted S3 percentile path per
+        // strategy; ix_overfitting_checks_path(strategy_id, signal, as_of) makes that queryable (D88).
+        var dbPath = TempDb();
+        try
+        {
+            using (var db = NewContext(dbPath)) db.Database.Migrate();
+
+            using var db2 = NewContext(dbPath);
+            var conn = db2.Database.GetDbConnection();
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT sql FROM sqlite_master WHERE type='index' AND name='ix_overfitting_checks_path';";
+            var sql = (string?)cmd.ExecuteScalar();
+            Assert.NotNull(sql);
+            Assert.Contains("strategy_id", sql);
+            Assert.Contains("signal", sql);
+            Assert.Contains("as_of", sql);
         }
         finally { TryDelete(dbPath); }
     }

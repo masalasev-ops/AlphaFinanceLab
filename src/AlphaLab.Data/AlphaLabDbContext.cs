@@ -44,6 +44,17 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
     public DbSet<EquityCurveRow> EquityCurve => Set<EquityCurveRow>();
     public DbSet<DecisionRow> Decisions => Set<DecisionRow>();
 
+    // ---- Phase 3 "honest arena" tables (D36/D48/D51/D52; MONITOR doc) ----
+    public DbSet<ControlPopulationRow> ControlPopulations => Set<ControlPopulationRow>();
+    public DbSet<ControlEquityRow> ControlEquity => Set<ControlEquityRow>();
+    public DbSet<TrialsRegistryRow> TrialsRegistry => Set<TrialsRegistryRow>();
+    public DbSet<PowerReportRow> PowerReports => Set<PowerReportRow>();
+    public DbSet<GoLiveLogRow> GoLiveLog => Set<GoLiveLogRow>();
+    public DbSet<AllocationLogRow> AllocationLog => Set<AllocationLogRow>();
+    public DbSet<OverfittingCheckRow> OverfittingChecks => Set<OverfittingCheckRow>();
+    public DbSet<OverfittingStatusRow> OverfittingStatus => Set<OverfittingStatusRow>();
+    public DbSet<JournalEntryRow> JournalEntries => Set<JournalEntryRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -456,6 +467,150 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
             e.Property(x => x.AsOf).HasColumnName("as_of").IsRequired();
             e.Property(x => x.StageJson).HasColumnName("stage_json").IsRequired();
             e.Property(x => x.RunKind).HasColumnName("run_kind").IsRequired().HasDefaultValue("live");
+        });
+
+        // ================= Phase 3: the honest arena (SCHEMA §"CONTROL POPULATIONS", §"EVALUATION,
+        // GATE, MONITOR", §"v1.8 ADDITIONS" journal_entries) ====================================
+        // Money → TEXT is declared explicitly on the one money column (control_equity.equity, D69).
+        // Exactly TWO CHECKs across these nine tables — overfitting_status.status and
+        // journal_entries.(kind, outcome); SCHEMA declares no CHECK on the other seven, so none is added.
+
+        // ---- control_populations ---- population_id bare INTEGER PK (NO AUTOINCREMENT — hand-edit).
+        modelBuilder.Entity<ControlPopulationRow>(e =>
+        {
+            e.ToTable("control_populations");
+            e.HasKey(x => x.PopulationId);
+            e.Property(x => x.PopulationId).HasColumnName("population_id");
+            e.Property(x => x.Family).HasColumnName("family").IsRequired();
+            e.Property(x => x.FamilySeed).HasColumnName("family_seed").IsRequired();
+            e.Property(x => x.M).HasColumnName("m").IsRequired();
+            e.Property(x => x.CostsOn).HasColumnName("costs_on").IsRequired();
+            e.Property(x => x.MatchedParamsJson).HasColumnName("matched_params_json").IsRequired();
+        });
+
+        // ---- control_equity ---- PK (population_id, member_index, as_of, run_kind): run_kind IN the key
+        // quarantines a replay curve from the forward one (D37, the equity_curve precedent).
+        modelBuilder.Entity<ControlEquityRow>(e =>
+        {
+            e.ToTable("control_equity");
+            e.HasKey(x => new { x.PopulationId, x.MemberIndex, x.AsOf, x.RunKind });
+            e.Property(x => x.PopulationId).HasColumnName("population_id");
+            e.Property(x => x.MemberIndex).HasColumnName("member_index");
+            e.Property(x => x.AsOf).HasColumnName("as_of");
+            e.Property(x => x.Equity).HasColumnName("equity").HasColumnType("TEXT").IsRequired();
+            e.Property(x => x.RunKind).HasColumnName("run_kind").HasDefaultValue("live");
+        });
+
+        // ---- trials_registry ---- trial_id bare INTEGER PK (NO AUTOINCREMENT — hand-edit).
+        modelBuilder.Entity<TrialsRegistryRow>(e =>
+        {
+            e.ToTable("trials_registry");
+            e.HasKey(x => x.TrialId);
+            e.Property(x => x.TrialId).HasColumnName("trial_id");
+            e.Property(x => x.StrategyId).HasColumnName("strategy_id").IsRequired();
+            e.Property(x => x.RegisteredOn).HasColumnName("registered_on").IsRequired();
+            e.Property(x => x.Kind).HasColumnName("kind").IsRequired();
+            e.Property(x => x.RunKind).HasColumnName("run_kind").IsRequired().HasDefaultValue("live");
+        });
+
+        // ---- power_reports ---- report_id bare INTEGER PK (NO AUTOINCREMENT — hand-edit).
+        modelBuilder.Entity<PowerReportRow>(e =>
+        {
+            e.ToTable("power_reports");
+            e.HasKey(x => x.ReportId);
+            e.Property(x => x.ReportId).HasColumnName("report_id");
+            e.Property(x => x.AsOf).HasColumnName("as_of").IsRequired();
+            e.Property(x => x.StrategyA).HasColumnName("strategy_a").IsRequired();
+            e.Property(x => x.StrategyB).HasColumnName("strategy_b").IsRequired();
+            e.Property(x => x.TDays).HasColumnName("t_days").IsRequired();
+            e.Property(x => x.SigmaLr).HasColumnName("sigma_lr").IsRequired();
+            e.Property(x => x.NwLag).HasColumnName("nw_lag").IsRequired();
+            e.Property(x => x.MdeAnn).HasColumnName("mde_ann").IsRequired();
+            e.Property(x => x.ObservedGapAnn).HasColumnName("observed_gap_ann");
+            e.Property(x => x.Verdict).HasColumnName("verdict");
+            e.Property(x => x.RunKind).HasColumnName("run_kind").IsRequired().HasDefaultValue("live");
+        });
+
+        // ---- go_live_log ---- event_id bare INTEGER PK (NO AUTOINCREMENT — hand-edit).
+        modelBuilder.Entity<GoLiveLogRow>(e =>
+        {
+            e.ToTable("go_live_log");
+            e.HasKey(x => x.EventId);
+            e.Property(x => x.EventId).HasColumnName("event_id");
+            e.Property(x => x.AsOf).HasColumnName("as_of").IsRequired();
+            e.Property(x => x.Promoted).HasColumnName("promoted");
+            e.Property(x => x.Demoted).HasColumnName("demoted");
+            e.Property(x => x.Verdict).HasColumnName("verdict").IsRequired();
+            e.Property(x => x.EvidenceJson).HasColumnName("evidence_json").IsRequired();
+            e.Property(x => x.RunKind).HasColumnName("run_kind").IsRequired().HasDefaultValue("live");
+        });
+
+        // ---- allocation_log ---- event_id bare INTEGER PK (NO AUTOINCREMENT — hand-edit).
+        modelBuilder.Entity<AllocationLogRow>(e =>
+        {
+            e.ToTable("allocation_log");
+            e.HasKey(x => x.EventId);
+            e.Property(x => x.EventId).HasColumnName("event_id");
+            e.Property(x => x.AsOf).HasColumnName("as_of").IsRequired();
+            e.Property(x => x.WeightsJson).HasColumnName("weights_json").IsRequired();
+            e.Property(x => x.Reason).HasColumnName("reason").IsRequired();
+            e.Property(x => x.RunKind).HasColumnName("run_kind").IsRequired().HasDefaultValue("live");
+        });
+
+        // ---- overfitting_checks ---- check_id bare INTEGER PK (NO AUTOINCREMENT — hand-edit).
+        // Covering index ix_overfitting_checks_path(strategy_id, signal, as_of): the FR-35/FR-39
+        // reconstruction reads the signal='S3' path per strategy (SCHEMA:287-290). No CHECK on signal.
+        modelBuilder.Entity<OverfittingCheckRow>(e =>
+        {
+            e.ToTable("overfitting_checks");
+            e.HasKey(x => x.CheckId);
+            e.Property(x => x.CheckId).HasColumnName("check_id");
+            e.Property(x => x.StrategyId).HasColumnName("strategy_id").IsRequired();
+            e.Property(x => x.AsOf).HasColumnName("as_of").IsRequired();
+            e.Property(x => x.Signal).HasColumnName("signal").IsRequired();
+            e.Property(x => x.Value).HasColumnName("value");
+            e.Property(x => x.ThresholdJson).HasColumnName("threshold_json").IsRequired();
+            e.Property(x => x.Contribution).HasColumnName("contribution").IsRequired();
+            e.Property(x => x.RunKind).HasColumnName("run_kind").IsRequired().HasDefaultValue("live");
+            e.HasIndex(x => new { x.StrategyId, x.Signal, x.AsOf }).HasDatabaseName("ix_overfitting_checks_path");
+        });
+
+        // ---- overfitting_status ---- PK (strategy_id, as_of, run_kind); status CHECK.
+        modelBuilder.Entity<OverfittingStatusRow>(e =>
+        {
+            e.ToTable("overfitting_status", t => t.HasCheckConstraint(
+                "ck_overfitting_status_status", "status IN ('healthy','warning','suspect','retired')"));
+            e.HasKey(x => new { x.StrategyId, x.AsOf, x.RunKind });
+            e.Property(x => x.StrategyId).HasColumnName("strategy_id");
+            e.Property(x => x.AsOf).HasColumnName("as_of");
+            e.Property(x => x.Status).HasColumnName("status").IsRequired();
+            e.Property(x => x.TriggerJson).HasColumnName("trigger_json").IsRequired();
+            e.Property(x => x.RunKind).HasColumnName("run_kind").HasDefaultValue("live");
+        });
+
+        // ---- journal_entries (D52) ---- entry_id bare INTEGER PK (NO AUTOINCREMENT — hand-edit);
+        // kind + outcome CHECKs. REFERENCES links are documentary (no EF FK).
+        modelBuilder.Entity<JournalEntryRow>(e =>
+        {
+            e.ToTable("journal_entries", t =>
+            {
+                t.HasCheckConstraint("ck_journal_entries_kind",
+                    "kind IN ('hypothesis','observation','decision_note','skeptic_review','outcome')");
+                t.HasCheckConstraint("ck_journal_entries_outcome",
+                    "outcome IN ('confirmed','refuted','inconclusive')");
+            });
+            e.HasKey(x => x.EntryId);
+            e.Property(x => x.EntryId).HasColumnName("entry_id");
+            e.Property(x => x.CreatedOn).HasColumnName("created_on").IsRequired();
+            e.Property(x => x.Kind).HasColumnName("kind").IsRequired();
+            e.Property(x => x.Title).HasColumnName("title").IsRequired();
+            e.Property(x => x.BodyMd).HasColumnName("body_md").IsRequired();
+            e.Property(x => x.StrategyId).HasColumnName("strategy_id");
+            e.Property(x => x.LinkedEntryId).HasColumnName("linked_entry_id");
+            e.Property(x => x.Metric).HasColumnName("metric");
+            e.Property(x => x.EvidenceWindowDays).HasColumnName("evidence_window_days");
+            e.Property(x => x.Outcome).HasColumnName("outcome");
+            e.Property(x => x.Locked).HasColumnName("locked").IsRequired().HasDefaultValue(false);
         });
     }
 }
