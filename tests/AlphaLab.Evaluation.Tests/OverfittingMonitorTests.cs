@@ -1,4 +1,5 @@
 using AlphaLab.Core.Config;
+using AlphaLab.Data.Entities;
 using AlphaLab.Evaluation.Monitor;
 
 namespace AlphaLab.Evaluation.Tests;
@@ -143,6 +144,67 @@ public class OverfittingMonitorTests
         // With a single trial there is no selection to deflate ⇒ the same Sharpe is NOT elevated.
         var notElevated = monitor.Evaluate("2026-03-31", "cand", returns, bench, memberAlphas: [], memberWindowAlphas: [], trialsCount: 1, runKind: "live");
         Assert.Equal("none", notElevated.S2.Contribution);
+    }
+
+    [Fact]
+    public void AutoRetire_WritesAGoLiveLogDemotionRow()
+    {
+        using var arena = new EvalArena();
+        var dates = EvalArena.Dates(100, new DateOnly(2026, 1, 5));
+        arena.SeedStrategy("buyhold:cw", "baseline", dates, EvalArena.Noise(99, 0.008, seed: 5));
+
+        const int m = 60;
+        var members = Enumerable.Range(0, m).Select(i => EvalArena.Noise(99, 0.01, 3000 + i)).ToList();
+        var popId = arena.SeedPopulation("daily", costsOn: true, seed: 1001, dates, i => members[i], m);
+        var anti = Centroid(members, 99).Select(r => r - 0.003).ToArray();   // the anti-predictive Suspect plant
+        arena.SeedStrategy("cand:anti", "candidate", dates, anti);
+
+        using var db = arena.Open();
+        // Three PRIOR consecutive Suspect evaluations — this one makes four ⇒ auto-retire.
+        foreach (var d in new[] { "2026-01-01", "2026-01-02", "2026-01-03" })
+            db.OverfittingStatus.Add(new OverfittingStatusRow { StrategyId = "cand:anti", AsOf = d, Status = "suspect", TriggerJson = "{}", RunKind = "live" });
+        db.SaveChanges();
+
+        var result = new OverfittingMonitor(db, new GateOptions()).Run(dates[^1], "buyhold:cw", popId).Single(r => r.StrategyId == "cand:anti");
+
+        Assert.Equal(MonitorStatus.Retired, result.Status);
+        Assert.Equal("retired", db.Strategies.Single(s => s.StrategyId == "cand:anti").Status);
+        // The retire is audited as a demotion EVENT (D31) — the go_live_log's `demoted` column, verdict 'Revert'.
+        var demotion = Assert.Single(db.GoLiveLog.Where(g => g.Demoted == "cand:anti").ToList());
+        Assert.Null(demotion.Promoted);
+        Assert.Equal("Revert", demotion.Verdict);
+        Assert.Contains("auto_retire", demotion.EvidenceJson);
+    }
+
+    [Fact]
+    public void S3_HorizonMatchesMemberAlphasToTheStrategyTrackLength_NotTheFullMemberTrack()
+    {
+        // A YOUNG strategy is scored against member alphas computed over ITS window length, not the members'
+        // full track. Members up-drift strongly over their first 69 days then go flat; a young flat strategy
+        // (last 30 days only) must be ranked against the members' FLAT last-30 window (~50th, in-band), not
+        // their up-drifting full track (which would slam it into the <25th Suspect tail).
+        using var arena = new EvalArena();
+        var dates = EvalArena.Dates(100, new DateOnly(2026, 1, 5));
+        arena.SeedStrategy("buyhold:cw", "baseline", dates, Enumerable.Repeat(0.0, 99).ToArray());   // flat benchmark
+
+        const int m = 60;
+        var members = Enumerable.Range(0, m).Select(i =>
+        {
+            var r = new double[99];
+            for (var t = 0; t < 99; t++)
+                r[t] = t < 69 ? 0.003 + i * 0.0001         // dispersed strong up-drift over the first 69 days
+                              : (i - m / 2) * 0.00002;      // tiny dispersed ~zero-mean returns over the last 30
+            return r;
+        }).ToList();
+        var popId = arena.SeedPopulation("daily", costsOn: true, seed: 1001, dates, i => members[i], m);
+
+        var youngDates = dates.Skip(dates.Count - 31).ToList();   // 31 points ⇒ 30 returns (the last 30 sessions)
+        arena.SeedStrategy("cand:young", "candidate", youngDates, Enumerable.Repeat(0.0, 30).ToArray());   // flat ⇒ ~0 alpha
+
+        using var db = arena.Open();
+        var result = new OverfittingMonitor(db, new GateOptions()).Run(dates[^1], "buyhold:cw", popId).Single(r => r.StrategyId == "cand:young");
+
+        Assert.True(result.S3.Value >= 25, $"young S3 percentile {result.S3.Value} should be in-band once horizon-matched, not in the Suspect tail");
     }
 
     [Fact]

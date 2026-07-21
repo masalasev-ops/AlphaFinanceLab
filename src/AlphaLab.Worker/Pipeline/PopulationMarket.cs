@@ -19,7 +19,13 @@ public sealed class PopulationMarket(
     CostModel costModel,
     int advWindowSessions) : IPopulationMarket
 {
+    // A fixed epoch well before any seeded arena calendar. The absolute ordinal is irrelevant — only that it
+    // is monotone per session and stable across runs (the calendar is fixed), which keeps the population's
+    // re-draw grid reconstructible. Arena-scoped (D71): ordinals never cross arenas.
+    private static readonly DateOnly SessionEpoch = new(1990, 1, 1);
+
     private readonly Dictionary<string, IReadOnlyList<long>> _eligible = [];
+    private readonly Dictionary<string, long> _sessionOrdinal = [];
 
     public IReadOnlyList<long> Eligible(string date)
     {
@@ -27,6 +33,17 @@ public sealed class PopulationMarket(
         var members = membership.MembersAsOf(date).ToList();
         _eligible[date] = members;
         return members;
+    }
+
+    public long SessionOrdinal(string date)
+    {
+        if (_sessionOrdinal.TryGetValue(date, out var cached)) return cached;
+        // The trading-session index = the count of sessions from the fixed epoch through the date. The
+        // calendar is binary-searched over its loaded snapshot, so this is cheap; memoized per date, and in
+        // the daily compute only two distinct dates (today + prior session) are ever queried across all members.
+        var ordinal = calendar.SessionsBetween(SessionEpoch, ParseDate(date)).Count - 1L;
+        _sessionOrdinal[date] = ordinal;
+        return ordinal;
     }
 
     public double DailyReturn(long securityId, string date)

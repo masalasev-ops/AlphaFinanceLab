@@ -7,9 +7,12 @@ namespace AlphaLab.Core.ReadModels;
 // cohort (no survivorship); thin and sub-MDE segments ship dimmed; replay cohorts are quarantined and
 // never co-plotted with forward cohorts.
 
-/// <summary>One age-aligned point on a cohort's maturation curve: at track length <see cref="T"/> (trading
-/// days since admission), the cohort's median D36 population percentile (the S3 source, reused verbatim)
-/// with its 25–75% band. <see cref="Display"/>/<see cref="Reason"/> carry the honesty dimming.</summary>
+/// <summary>One age-aligned point on a cohort's maturation curve. <see cref="T"/> is the NOMINAL age axis —
+/// evaluations completed × the evaluation cadence — since the curve is age-aligned BY EVALUATION INDEX
+/// (FR-39), not by each strategy's exact trading-day track length (a strategy admitted mid-cadence reaches a
+/// given evaluation with slightly less real track). At that age, the cohort's median D36 population
+/// percentile (the S3 source, reused verbatim) with its 25–75% band. <see cref="Display"/>/<see cref="Reason"/>
+/// carry the honesty dimming.</summary>
 public sealed record CohortPoint(
     int T, int MemberCountAtT, double MedianPercentile, double BandLo, double BandHi, string Display, string? Reason)
 {

@@ -110,9 +110,11 @@ v1.MapPost("/candidates", async (
             tx.Commit();
             return Results.Ok(strategies.Build());   // the updated read-model (FR-32)
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
         {
-            // FR-28: missing hypothesis-or-flag (and the other pre-registration guards) ⇒ 422. The
+            // FR-28/D60: a missing hypothesis-or-flag or any pre-registration guard (InvalidOperationException),
+            // AND a blank/whitespace hypothesis field such as an empty metric (ArgumentException from
+            // RegisterHypothesis), are all VALIDATION failures ⇒ 422 — never a 500 internal_error. The
             // transaction is disposed without commit, so any hypothesis INSERT is rolled back (no orphan).
             return ApiResults.Error(422, "unprocessable_entity", ex.Message);
         }

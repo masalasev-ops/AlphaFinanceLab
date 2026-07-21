@@ -145,6 +145,29 @@ public class StrategiesReadModelBuilderTests
     }
 
     [Fact]
+    public void Build_DriftBackFromRefused_IsNotFlatterSortedIntoTheTopTier()
+    {
+        // A strategy decisively Refused (below-benchmark) at an early eval, then drifted back to TooEarly:
+        // its LATEST verdict is TooEarly and separation reverts to 'none', so it must NOT land in the top
+        // 'distinguishable-above' tier (the flatter-sort a past-Refused row used to cause).
+        using var arena = new EvalArena();
+        var dates = EvalArena.Dates(90, new DateOnly(2026, 1, 5));
+        arena.SeedStrategy("buyhold:cw", "baseline", dates, Enumerable.Repeat(0.0, 89).ToArray());
+        arena.SeedStrategy("cand:drift", "candidate", dates, Enumerable.Repeat(0.0, 89).ToArray());
+        arena.SeedRun(dates[^1]);
+
+        using var db = arena.Open();
+        db.PowerReports.Add(new PowerReportRow { AsOf = "2026-01-20", StrategyA = "cand:drift", StrategyB = "buyhold:cw", TDays = 15, SigmaLr = 0.01, NwLag = 21, MdeAnn = 0.1, ObservedGapAnn = -0.5, Verdict = "Refused", RunKind = "live" });
+        db.PowerReports.Add(new PowerReportRow { AsOf = "2026-03-20", StrategyA = "cand:drift", StrategyB = "buyhold:cw", TDays = 89, SigmaLr = 0.01, NwLag = 21, MdeAnn = 0.5, ObservedGapAnn = 0.01, Verdict = "TooEarly", RunKind = "live" });
+        db.OverfittingChecks.Add(new OverfittingCheckRow { StrategyId = "cand:drift", AsOf = "2026-03-20", Signal = "S3", Value = 50, ThresholdJson = "{\"n\":200}", Contribution = "in_band", RunKind = "live" });
+        db.SaveChanges();
+
+        var row = Builder(db).Build().Rows.Single(r => r.Id == "cand:drift");
+        Assert.Equal("TooEarly", row.VerdictChip);              // the latest verdict, not the stale Refused
+        Assert.Equal("not-yet-distinguishable", row.Tier);      // NOT distinguishable-above
+    }
+
+    [Fact]
     public void Build_PromotedCandidate_IsDistinguishableAbove_WithUndimmedAlpha()
     {
         using var arena = new EvalArena();

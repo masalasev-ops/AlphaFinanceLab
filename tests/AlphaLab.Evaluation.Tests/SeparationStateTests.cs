@@ -96,6 +96,28 @@ public class SeparationStateTests
     }
 
     [Fact]
+    public void DriftBackToTooEarly_RevertsToNone_NotPinnedByAPastDecisiveVerdict()
+    {
+        using var arena = new EvalArena();
+        var dates = EvalArena.Dates(30, new DateOnly(2026, 1, 5));
+        arena.SeedStrategy("s", "candidate", dates, Enumerable.Repeat(0.0, 29).ToArray());
+
+        using var db = arena.Open();
+        SeedS3Path(db, "s", 50);   // S3 back in-band
+        // An EARLIER decisive Refused, then a LATER TooEarly — the cumulative gap decayed back inside the MDE.
+        db.PowerReports.Add(new PowerReportRow { AsOf = "2026-01-10", StrategyA = "s", StrategyB = "buyhold:cw", TDays = 20, SigmaLr = 0.01, NwLag = 21, MdeAnn = 0.1, ObservedGapAnn = -0.5, Verdict = "Refused", RunKind = "live" });
+        db.PowerReports.Add(new PowerReportRow { AsOf = "2026-02-10", StrategyA = "s", StrategyB = "buyhold:cw", TDays = 30, SigmaLr = 0.01, NwLag = 21, MdeAnn = 0.5, ObservedGapAnn = 0.01, Verdict = "TooEarly", RunKind = "live" });
+        db.SaveChanges();
+
+        var sep = SeparationState.Resolve(db, "s", Verdicts, "live");
+
+        // The LATEST verdict is TooEarly ⇒ not decisive; a single historical Refused must NOT pin it to
+        // 'distinguishable' — the IndistinguishableFromRandom chip reappears (track ≥ min).
+        Assert.Equal(SeparationInfo.None, sep.State);
+        Assert.True(sep.IsIndistinguishable);
+    }
+
+    [Fact]
     public void Separation_ReconstructsFromThePersistedRows_Deterministically()
     {
         using var arena = new EvalArena();

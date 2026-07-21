@@ -175,6 +175,24 @@ public class EvaluationStepTests
     }
 
     [Fact]
+    public void Run_ShortHorizonStrategy_TakesTheBenchmarkHorizonForTheNwLag()
+    {
+        // A short-horizon strategy must still get the full-lag autocorrelation correction: the NW lag is
+        // min(2·max(h_strat, h_benchmark), cap). The benchmark's null horizon ⇒ default 21, so the lag is 21
+        // regardless of the strategy's own 5 — never min(2·5, 21) = 10, which would under-claim the MDE.
+        using var arena = new EvalArena();
+        var dates = EvalArena.Dates(100, new DateOnly(2026, 1, 5));
+        arena.SeedStrategy("buyhold:cw", "baseline", dates, EvalArena.Noise(99, 0.01, seed: 1));   // null horizon ⇒ 21
+        arena.SeedStrategy("cand:fast", "candidate", dates, EvalArena.Noise(99, 0.01, seed: 2), horizonDays: 5);
+
+        using var db = arena.Open();
+        new EvaluationStep(db, new GateOptions()).Run(dates[^1]);
+
+        var pr = db.PowerReports.Single(p => p.StrategyA == "cand:fast");
+        Assert.Equal(21, pr.NwLag);
+    }
+
+    [Fact]
     public void Run_NoBenchmarkAccount_ProducesNothing()
     {
         using var arena = new EvalArena();

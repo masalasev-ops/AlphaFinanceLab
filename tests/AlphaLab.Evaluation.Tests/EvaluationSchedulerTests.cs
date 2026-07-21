@@ -27,6 +27,26 @@ public class EvaluationSchedulerTests
         Assert.True(weekly.IsEvaluationDay(10));
         Assert.False(weekly.IsEvaluationDay(7));
     }
+
+    [Theory]
+    [InlineData(20, 0, false)]   // not yet one cadence
+    [InlineData(21, 0, true)]    // first cadence, none completed
+    [InlineData(21, 1, false)]   // this cadence already evaluated
+    [InlineData(42, 1, true)]    // second cadence due
+    [InlineData(63, 2, true)]
+    [InlineData(63, 3, false)]   // fully caught up
+    public void IsEvaluationDue_ComparesElapsedCadencesToCompleted(int session, int done, bool expected) =>
+        Assert.Equal(expected, Sched.IsEvaluationDue(session, done));
+
+    [Fact]
+    public void IsEvaluationDue_SelfHeals_AMissedCadence()
+    {
+        // A crashed evaluation on the cadence day (0 completed at session 21) is still DUE on the next
+        // session — the boundary is not lost until the following cadence.
+        Assert.True(Sched.IsEvaluationDue(22, 0));
+        // …and once it has been re-driven (1 completed), it stops re-firing until the next boundary.
+        Assert.False(Sched.IsEvaluationDue(22, 1));
+    }
 }
 
 public class PromotionGateTests

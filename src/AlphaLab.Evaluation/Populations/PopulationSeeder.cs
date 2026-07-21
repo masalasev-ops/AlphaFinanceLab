@@ -48,6 +48,15 @@ public sealed class PopulationSeeder(AlphaLabDbContext db, PopulationsOptions op
                 db.ControlPopulations.Add(existing);
                 db.SaveChanges();
             }
+            else if (existing.M != f.Size)
+            {
+                // Keep M in step with the configured Size. If Size is raised mid-arena the daily compute
+                // now brings the new members in at their own inception (DailyPipeline.ComputePopulations),
+                // so control_populations.M must reflect the true member count rather than the stale one it
+                // was first seeded with — otherwise M disagrees with the persisted control_equity rows.
+                existing.M = f.Size;
+                db.SaveChanges();
+            }
 
             map[f] = existing.PopulationId;
         }

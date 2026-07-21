@@ -19,4 +19,11 @@ public interface IPopulationMarket
     /// FRACTION of that notional (half-spread + square-root impact). The engine multiplies by the member's
     /// equal weight. Only called for cost-on families.</summary>
     double OneWayCostFraction(long securityId, string date, decimal perNameNotional);
+
+    /// <summary>The 0-based ordinal of <paramref name="date"/> in the arena's TRADING-SESSION sequence — the
+    /// re-draw grid must step per SESSION, not per calendar day (STRATEGY_CATALOG §5.2: daily/banded/monthly
+    /// are session-grid intervals). Flooring calendar days would make a "monthly" (21-session) family redraw
+    /// every ~15 sessions. Deterministic (a pure function of the fixed arena calendar), so the population
+    /// stays reconstructible.</summary>
+    long SessionOrdinal(string date);
 }

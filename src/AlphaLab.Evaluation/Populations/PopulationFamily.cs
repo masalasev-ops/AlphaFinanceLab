@@ -12,9 +12,11 @@ namespace AlphaLab.Evaluation.Populations;
 public sealed record PopulationFamily(
     string Name, int FamilySeed, int SelectionN, int RedrawIntervalDays, bool CostsOn, int Size)
 {
-    /// <summary>The re-draw grid ordinal for a date: the date's day-number floored to the interval, so
-    /// scores are constant within an interval (turnover only on grid boundaries) and reconstructible.</summary>
-    public long GridOrdinal(DateOnly date) => date.DayNumber / RedrawIntervalDays * RedrawIntervalDays;
+    /// <summary>The re-draw grid ordinal for a SESSION ordinal (the date's position in the trading-session
+    /// sequence, from <see cref="IPopulationMarket.SessionOrdinal"/>): floored to the interval, so scores are
+    /// constant within an interval (turnover only on grid boundaries) and reconstructible. Session-based, not
+    /// calendar-day-based, so banded (5) / monthly (21) redraw on the intended session cadence (§5.2).</summary>
+    public long GridOrdinal(long sessionOrdinal) => sessionOrdinal / RedrawIntervalDays * RedrawIntervalDays;
 }
 
 /// <summary>

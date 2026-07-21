@@ -43,10 +43,14 @@ public sealed class CohortMaturationBuilder(AlphaLabDbContext db, KpiOptions kpi
 
         foreach (var group in groups)
         {
-            // Each member's S3 percentile path, ordered — age-aligned by EVALUATION INDEX (all on the 21-day cadence).
+            // Each member's S3 percentile path in EVALUATION ORDER, kept POSITIONAL: an evaluation whose S3
+            // was undefined (no matched population yet ⇒ Value null) holds its slot rather than being
+            // dropped, so index k is the TRUE evaluation index and a member's first real percentile stays
+            // age-aligned at its actual evaluation instead of shifting left. Only members with at least one
+            // real value are plotted (and counted).
             var paths = group
                 .Select(s => S3Path(s.StrategyId, runKind))
-                .Where(p => p.Count > 0)
+                .Where(p => p.Any(v => v.HasValue))
                 .ToList();
             if (paths.Count == 0) continue;
 
@@ -54,9 +58,12 @@ public sealed class CohortMaturationBuilder(AlphaLabDbContext db, KpiOptions kpi
             var series = new List<CohortPoint>(maxEvals);
             for (var k = 0; k < maxEvals; k++)
             {
-                var atK = paths.Where(p => p.Count > k).Select(p => p[k]).ToList();
+                var atK = paths.Where(p => p.Count > k && p[k].HasValue).Select(p => p[k]!.Value).ToList();
                 if (atK.Count == 0) continue;
 
+                // T is the NOMINAL age axis — evaluations completed × cadence. Alignment is BY EVALUATION
+                // INDEX (FR-39): T labels that axis, it is NOT a per-strategy exact trading-day count (a
+                // strategy admitted mid-cadence reaches evaluation k with slightly less real track).
                 var t = (k + 1) * gate.EvaluationCadenceDays;
                 var median = Statistics.Percentile(atK, 50);
                 var lo = Statistics.Percentile(atK, 25);
@@ -70,7 +77,10 @@ public sealed class CohortMaturationBuilder(AlphaLabDbContext db, KpiOptions kpi
                 series.Add(new CohortPoint(t, atK.Count, median, lo, hi, display, reason));
             }
 
-            cohorts.Add(new Cohort(Label(group.Key), group.Count(), quarantined, series));
+            // MemberCount is the members that actually contribute a path for THIS run_kind — not the whole
+            // admission-vintage bucket. A quarantined replay cohort must report only its replay members, else
+            // it would claim the full vintage size while the curve reflects far fewer.
+            cohorts.Add(new Cohort(Label(group.Key), paths.Count, quarantined, series));
         }
 
         return cohorts;
@@ -106,11 +116,13 @@ public sealed class CohortMaturationBuilder(AlphaLabDbContext db, KpiOptions kpi
 
     private static double HalfBand(CohortPoint p) => Math.Max(p.BandHi - p.MedianPercentile, p.MedianPercentile - p.BandLo);
 
-    private List<double> S3Path(string strategyId, string runKind) =>
+    // The full S3 path in evaluation order, INCLUDING undefined (null-value) rows so positions map to true
+    // evaluation indices — the caller skips the nulls when aggregating but keeps their slots for alignment.
+    private List<double?> S3Path(string strategyId, string runKind) =>
         db.OverfittingChecks
-            .Where(c => c.StrategyId == strategyId && c.Signal == "S3" && c.RunKind == runKind && c.Value != null)
+            .Where(c => c.StrategyId == strategyId && c.Signal == "S3" && c.RunKind == runKind)
             .OrderBy(c => c.AsOf).ThenBy(c => c.CheckId)
-            .Select(c => c.Value!.Value)
+            .Select(c => c.Value)
             .ToList();
 
     private (int Year, int Bucket) BucketKey(string createdOn)

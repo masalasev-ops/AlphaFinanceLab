@@ -74,6 +74,25 @@ public class ApiPhase3Tests
     }
 
     [Fact]
+    public async Task CreateCandidate_InlineHypothesis_WithBlankMetric_Returns422_NotA500()
+    {
+        using var f = new ApiArenaFactory();
+
+        // A blank hypothesis metric is a VALIDATION failure (RegisterHypothesis throws ArgumentException) ⇒
+        // the D60 contract requires 422, never a 500 internal_error.
+        var body = "{\"strategy_id\":\"cand:x\",\"hypothesis\":{\"title\":\"t\",\"body_md\":\"b\",\"metric\":\"\",\"evidence_window_days\":252}}";
+        var response = await f.CreateClient().PostAsync("/api/v1/candidates", Body(body));
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        var json = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"code\":\"unprocessable_entity\"", json);
+
+        using var check = f.Open();
+        Assert.Empty(check.JournalEntries.ToList());   // rolled back — no orphan hypothesis
+        Assert.Empty(check.Strategies.ToList());
+    }
+
+    [Fact]
     public async Task CreateCandidate_Unregistered_Succeeds_AndPersistsTheCandidate()
     {
         using var f = new ApiArenaFactory();

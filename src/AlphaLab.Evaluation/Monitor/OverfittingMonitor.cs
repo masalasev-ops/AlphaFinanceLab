@@ -44,9 +44,11 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
         var benchCurve = CurveMath.Curve(db, benchAccount.AccountId, runKind);
         if (benchCurve.Count < 2) return [];
 
-        var (memberAlphas, memberWindowAlphas) = matchedPopulationId is { } pid
-            ? PopulationAlphas(pid, benchCurve, runKind)
-            : ([], []);
+        // The matched population's per-member aligned return series (vs the benchmark). Kept as SERIES, not
+        // pre-reduced alphas, so S3 can be horizon-matched to each strategy's own track length below.
+        var memberSeries = matchedPopulationId is { } pid
+            ? PopulationReturns(pid, benchCurve, runKind)
+            : [];
 
         // The S2 deflation uses the GLOBAL honest trials count (D23 / OVERFITTING_MONITOR §3 + App. B):
         // every fork/sibling/retrain is a new strategy_id, so "one researcher's trial spends everyone's
@@ -70,6 +72,23 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
 
             var (stratReturns, benchReturns) = CurveMath.AlignedReturns(stratCurve, benchCurve);
             if (stratReturns.Count < 2) continue;
+
+            // Horizon-match S3 to THIS strategy's track: rank its alpha inside member alphas computed over
+            // the SAME window length (the strategy's return count), not the members' full ~200-day tracks.
+            // A young strategy's short-window alpha has far higher sampling variance, so scoring it against a
+            // tighter long-window distribution over-trips the <25th Suspect tail. S6 already tail-windows both
+            // sides to 63 days; S3 was the unmatched signal. For a mature strategy (L ≥ member length) the
+            // tail is the full series, so this leaves established comparisons unchanged.
+            var l = stratReturns.Count;
+            var memberAlphas = memberSeries
+                .Select(ms => (Mr: Tail(ms.Mr, l), Br: Tail(ms.Br, l)))
+                .Where(w => w.Mr.Count >= 2)
+                .Select(w => SafeAlpha(w.Mr, w.Br).Alpha)
+                .ToList();
+            var memberWindowAlphas = memberSeries
+                .Where(ms => ms.Mr.Count >= RollingWindowDays)
+                .Select(ms => SafeAlpha(Tail(ms.Mr, RollingWindowDays), Tail(ms.Br, RollingWindowDays)).Alpha)
+                .ToList();
 
             results.Add(Evaluate(asOf, strategyId, stratReturns, benchReturns, memberAlphas, memberWindowAlphas, trialsCount, runKind));
         }
@@ -139,6 +158,24 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
         {
             var row = db.Strategies.FirstOrDefault(s => s.StrategyId == strategyId);
             if (row is not null) row.Status = "retired";
+
+            // The retire is a demotion EVENT in the go-live/retire audit (D31): write the go_live_log row
+            // with the dedicated `demoted` column set (verdict 'Revert'). Without it the audit records only
+            // promotions and a retired strategy still reads as live/promoted there — in the same-eval case
+            // (EvaluationStep promotes a candidate, then the monitor retires it) the log would carry a
+            // Promoted row with no offsetting demotion. A retired strategy is not re-evaluated (it drops out
+            // of the promotable set), so exactly one demotion row is written.
+            db.GoLiveLog.Add(new GoLiveLogRow
+            {
+                AsOf = asOf,
+                Promoted = null,
+                Demoted = strategyId,
+                Verdict = "Revert",
+                EvidenceJson = JsonSerializer.Serialize(
+                    new { reason = "auto_retire", trigger = "four_consecutive_suspect", s2 = s2.Contribution, s3 = s3.Contribution, s6 = s6.Contribution },
+                    AlphaLabJson.Options),
+                RunKind = runKind,
+            });
         }
 
         db.SaveChanges();
@@ -176,7 +213,10 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
         return count;
     }
 
-    private (List<double> Alphas, List<double> WindowAlphas) PopulationAlphas(long populationId, List<(string AsOf, decimal Equity)> benchCurve, string runKind)
+    // Each population member's aligned (member, benchmark) return series over the forward window. Returned
+    // as SERIES (not reduced to a single alpha) so the caller can window them to each strategy's track
+    // length for the horizon-matched S3 rank.
+    private List<(List<double> Mr, List<double> Br)> PopulationReturns(long populationId, List<(string AsOf, decimal Equity)> benchCurve, string runKind)
     {
         var members = db.ControlEquity
             .Where(e => e.PopulationId == populationId && e.RunKind == runKind)
@@ -185,18 +225,15 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
             .AsEnumerable()
             .GroupBy(e => e.MemberIndex);
 
-        var alphas = new List<double>();
-        var windowAlphas = new List<double>();
+        var series = new List<(List<double> Mr, List<double> Br)>();
         foreach (var member in members)
         {
             var curve = member.Select(e => (e.AsOf, e.Equity)).ToList();
             var (mr, br) = CurveMath.AlignedReturns(curve, benchCurve);
             if (mr.Count < 2) continue;
-            alphas.Add(SafeAlpha(mr, br).Alpha);
-            if (mr.Count >= RollingWindowDays)
-                windowAlphas.Add(SafeAlpha(Tail(mr, RollingWindowDays), Tail(br, RollingWindowDays)).Alpha);
+            series.Add((mr, br));
         }
-        return (alphas, windowAlphas);
+        return series;
     }
 
     // β-adjusted alpha with a degenerate-safe fallback: a constant-benchmark window makes the OLS

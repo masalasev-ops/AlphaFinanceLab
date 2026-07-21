@@ -47,6 +47,15 @@ public sealed class EvaluationStep(AlphaLabDbContext db, GateOptions gate)
         var benchCurve = CurveMath.Curve(db, benchAccount.AccountId, runKind);
         if (benchCurve.Count < 2) return [];
 
+        // The NW lag is driven by the LARGER of the two horizons (MdeCalculator contract: L = min(2·max(hA,hB),
+        // cap)). The benchmark is the cap-weight Buy&Hold, whose null horizon maps to the conservative default,
+        // so a short-horizon strategy still gets the full-lag autocorrelation correction — never an under-set
+        // lag that under-claims the MDE and lets a gap inside the true MDE read Promoted (hard rule 6).
+        var benchHorizon = db.Strategies
+            .Where(s => s.StrategyId == benchmarkStrategyId)
+            .Select(s => s.HoldingHorizonDays)
+            .FirstOrDefault() ?? DefaultHorizonDays;
+
         var promotable = db.Strategies
             .Where(s => s.Status == "candidate" || s.Status == "live")
             .Select(s => new { s.StrategyId, s.HoldingHorizonDays, s.Status })
@@ -69,7 +78,7 @@ public sealed class EvaluationStep(AlphaLabDbContext db, GateOptions gate)
             var d = new double[stratReturns.Count];
             for (var i = 0; i < d.Length; i++) d[i] = stratReturns[i] - benchReturns[i];
 
-            var maxHorizon = strat.HoldingHorizonDays ?? DefaultHorizonDays;
+            var maxHorizon = Math.Max(strat.HoldingHorizonDays ?? DefaultHorizonDays, benchHorizon);
             var mde = MdeCalculator.Compute(d, maxHorizon, gate);
             var gap = d.Average() * MetricsConstants.TradingDaysPerYear;
             var verdict = PromotionGate.Decide(gap, mde.MdeAnn, d.Length, gate.MinTrackDays);

@@ -24,6 +24,12 @@ public class PopulationEngineTests
 
         public double OneWayCostFraction(long securityId, string date, decimal perNameNotional) => costFraction;
 
+        // The synthetic tests use CONSECUTIVE calendar days (Sessions() steps +1 day with no weekend/holiday
+        // gaps), so the day-number IS the session ordinal here — exercising the same grid cadence the real
+        // calendar-backed PopulationMarket produces, without needing a seeded trading calendar.
+        public long SessionOrdinal(string date) =>
+            DateOnly.ParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture).DayNumber;
+
         private static double Raw(long id, int day) => 0.02 * Math.Sin(id * 0.7 + day * 0.13);
     }
 
@@ -124,6 +130,33 @@ public class PopulationEngineTests
 
         Assert.True(dailyTurnover > monthlyTurnover * 3,
             $"daily churn {dailyTurnover:F3} should dwarf monthly {monthlyTurnover:F3}");
+    }
+
+    [Fact]
+    public void GridOrdinal_FloorsBySessionOrdinal_NotCalendarDays()
+    {
+        // The re-draw grid steps per SESSION: a monthly (21) family redraws every 21 session-ordinals, so
+        // ordinals 0..20 share grid 0 and 21 starts the next — never a calendar-day floor (§5.2).
+        var monthly = new PopulationFamily("monthly", 1003, 40, PopulationFamilies.MonthlyInterval, CostsOn: true, Size: 1);
+        Assert.Equal(0, monthly.GridOrdinal(0));
+        Assert.Equal(0, monthly.GridOrdinal(20));
+        Assert.Equal(21, monthly.GridOrdinal(21));
+        Assert.Equal(21, monthly.GridOrdinal(41));
+        Assert.Equal(42, monthly.GridOrdinal(42));
+    }
+
+    [Fact]
+    public void ThinUniverse_InceptionTurnover_IsOneWholeBook_NotUnderstatedBySelectionN()
+    {
+        // Only 5 names eligible but SelectionN=40 ⇒ the member holds all 5. On inception it buys the whole
+        // book, so the reported one-way turnover is 1.0 (5 buys / 5 held) — not 5/40, which the old
+        // SelectionN-weighted convention would have reported when the universe is thinner than SelectionN.
+        var engine = new PopulationEngine(new SyntheticMarket(5, 0.001));
+        var f = new PopulationFamily("daily", 1001, 40, 1, CostsOn: true, Size: 1);
+
+        var day0 = engine.Step(f, memberIndex: 0, priorEquity: 100_000m, prevDate: null, "2026-03-10");
+
+        Assert.Equal(1.0, day0.TurnoverOneWay, 9);
     }
 
     [Fact]

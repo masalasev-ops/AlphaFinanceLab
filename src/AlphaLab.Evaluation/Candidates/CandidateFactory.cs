@@ -71,6 +71,15 @@ public sealed class CandidateFactory(AlphaLabDbContext db)
                 throw new InvalidOperationException(
                     $"Hypothesis entry {hid} is not locked — a pre-registration must be immutable before it can back a candidate (D52).");
             }
+            // A pre-registration backs EXACTLY ONE candidate (D52/rule 16). If it is already linked, reusing
+            // its entry_id would silently create a second candidate claiming the frozen claim/metric of the
+            // first — reject it rather than skip the link (the link guard below would otherwise pass silently).
+            if (hypothesis.StrategyId is not null)
+            {
+                throw new InvalidOperationException(
+                    $"Hypothesis entry {hid} is already linked to strategy '{hypothesis.StrategyId}' — " +
+                    "a pre-registration backs exactly one candidate (D52/rule 16).");
+            }
         }
 
         if (db.Strategies.Any(s => s.StrategyId == spec.StrategyId))

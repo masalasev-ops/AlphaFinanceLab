@@ -87,6 +87,24 @@ public class CandidateFactoryTests
     }
 
     [Fact]
+    public void CreateCandidate_ReusingAnAlreadyLinkedHypothesis_Fails()
+    {
+        using var arena = new EvalArena();
+        using var db = arena.Open();
+        var factory = new CandidateFactory(db);
+
+        var hid = factory.RegisterHypothesis("2026-03-10", "t", "b", metric: "beta_adjusted_alpha", evidenceWindowDays: 252);
+        factory.CreateCandidate(Spec("first:1"), hid, unregistered: false, "2026-03-10");   // links hid → first:1
+
+        // A pre-registration backs EXACTLY ONE candidate (D52/rule 16): reusing hid must fail, not silently
+        // create a second candidate claiming the frozen claim/metric authored for the first.
+        Assert.Throws<InvalidOperationException>(() =>
+            factory.CreateCandidate(Spec("second:2"), hid, unregistered: false, "2026-03-11"));
+        Assert.Empty(db.Strategies.Where(s => s.StrategyId == "second:2").ToList());
+        Assert.Single(db.TrialsRegistry.ToList());   // only the first candidate's trial exists
+    }
+
+    [Fact]
     public void CreateCandidate_DuplicateStrategyId_Fails()
     {
         using var arena = new EvalArena();

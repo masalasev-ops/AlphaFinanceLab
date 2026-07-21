@@ -115,6 +115,64 @@ public class CohortMaturationBuilderTests
     }
 
     [Fact]
+    public void ReplayCohort_MemberCount_CountsOnlyMembersWithAPath_NotTheWholeVintage()
+    {
+        using var arena = new EvalArena();
+        using (var db = arena.Open())
+        {
+            SeedStrategy(db, "a1", "candidate", "2026-02-01");
+            SeedStrategy(db, "a2", "candidate", "2026-02-10");
+            SeedStrategy(db, "a3", "candidate", "2026-02-15");
+            SeedS3(db, "a1", "live", 50); SeedS3(db, "a2", "live", 50); SeedS3(db, "a3", "live", 50);
+            SeedS3(db, "a1", "replay", 90);   // ONLY a1 has a replay path
+            db.Runs.Add(new RunRow { AsOf = "2026-03-01", RunKind = "live", Watermark = "w", StartedAt = "t", Status = "ok" });
+            db.SaveChanges();
+        }
+
+        using var read = arena.Open();
+        var cohorts = new CohortMaturationBuilder(read, new KpiOptions(), new GateOptions()).Build().Cohorts;
+
+        Assert.Equal(1, cohorts.Single(c => c.Quarantined).MemberCount);    // replay reflects only a1, not 3
+        Assert.Equal(3, cohorts.Single(c => !c.Quarantined).MemberCount);   // all three contribute a live path
+    }
+
+    [Fact]
+    public void UndefinedEarlyS3_KeepsItsEvaluationSlot_SoTheFirstRealPointIsAgeAligned()
+    {
+        using var arena = new EvalArena();
+        using (var db = arena.Open())
+        {
+            SeedStrategy(db, "x", "candidate", "2026-02-01");
+            SeedStrategy(db, "y", "candidate", "2026-02-01");   // a second member so the cohort is not thin at that point
+            // Evals 0 + 1: S3 undefined (no matched population yet ⇒ Value null); eval 2: the first real percentile.
+            foreach (var id in new[] { "x", "y" })
+            {
+                var day = new DateOnly(2026, 3, 1);
+                foreach (var v in new double?[] { null, null, 60.0 })
+                {
+                    db.OverfittingChecks.Add(new OverfittingCheckRow
+                    {
+                        StrategyId = id, AsOf = day.ToString("yyyy-MM-dd"), Signal = "S3", Value = v,
+                        ThresholdJson = "{\"n\":200}", Contribution = v is null ? "undefined" : "in_band", RunKind = "live",
+                    });
+                    day = day.AddDays(21);
+                }
+            }
+            db.Runs.Add(new RunRow { AsOf = "2026-03-01", RunKind = "live", Watermark = "w", StartedAt = "t", Status = "ok" });
+            db.SaveChanges();
+        }
+
+        using var read = arena.Open();
+        var cohort = new CohortMaturationBuilder(read, new KpiOptions(), new GateOptions()).Build().Cohorts.Single(c => !c.Quarantined);
+
+        // The lone real percentile sits at evaluation index 2 ⇒ T = 3×cadence (63), NOT collapsed to 21 by
+        // dropping the two undefined-S3 rows before indexing.
+        var pt = Assert.Single(cohort.Series);
+        Assert.Equal(63, pt.T);
+        Assert.Equal(60.0, pt.MedianPercentile, 6);
+    }
+
+    [Fact]
     public void Build_BeforeAnyCommittedRun_IsNoRunYet()
     {
         using var arena = new EvalArena();

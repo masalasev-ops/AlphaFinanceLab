@@ -1,5 +1,3 @@
-using System.Globalization;
-
 namespace AlphaLab.Evaluation.Populations;
 
 /// <summary>One member's equity on one day, plus the realized one-way turnover fraction that produced it
@@ -24,7 +22,7 @@ public sealed class PopulationEngine(IPopulationMarket market)
     public IReadOnlySet<long> Select(PopulationFamily family, int memberIndex, string date)
     {
         var eligible = market.Eligible(date);
-        var grid = family.GridOrdinal(ParseDate(date));
+        var grid = family.GridOrdinal(market.SessionOrdinal(date));
         // Partial top-N: sort the (score, id) pairs descending by score, then ascending by id.
         var scored = new List<(double Score, long Id)>(eligible.Count);
         foreach (var id in eligible)
@@ -53,21 +51,32 @@ public sealed class PopulationEngine(IPopulationMarket market)
         var grossReturn = heldPrev.Count > 0 ? heldPrev.Average(s => market.DailyReturn(s, date)) : 0.0;
         var turnover = SymmetricDifference(heldPrev, heldToday);      // both legs (drives cost)
 
-        // Cost is charged on EVERY traded name (a spread on each buy and each sell — both legs). The
-        // REPORTED turnover is one-way (the BUY leg only) so it matches the strategy comparator, which
-        // counts buy notional only (StrategyMetrics.AnnualizedTurnover) — the finding-115 match must be
-        // on a consistent scale (a two-way count here would double the population's figure).
+        // Per-name equal weight follows the ACTUAL held count — the same convention as the gross return
+        // above (each held name is 1/heldCount of a fully-invested book), NOT a fixed 1/SelectionN. A SELL
+        // settles at yesterday's weight (1/heldPrev), a BUY at today's (1/heldToday). Weighting cost and
+        // turnover by SelectionN instead would misprice both whenever the eligible universe is thinner than
+        // SelectionN (heldCount < N) — the gross side would credit ~1/heldCount while cost charged ~1/N.
+        //
+        // Cost is charged on EVERY traded name (a spread on each buy and each sell — both legs). The REPORTED
+        // turnover is one-way (the BUY leg only) so it matches the strategy comparator, which counts buy
+        // notional only (StrategyMetrics.AnnualizedTurnover) — a two-way count would double the population's.
+        var perNamePrev = heldPrev.Count > 0 ? priorEquity / heldPrev.Count : 0m;
+        var perNameToday = heldToday.Count > 0 ? priorEquity / heldToday.Count : 0m;
         var buyCount = 0;
         var costDrag = 0.0;
-        var perName = family.SelectionN > 0 ? priorEquity / family.SelectionN : 0m;
         foreach (var s in turnover)
         {
-            if (!heldPrev.Contains(s)) buyCount++;                    // a buy = a newly entered name
-            if (family.CostsOn) costDrag += market.OneWayCostFraction(s, date, perName) / family.SelectionN;
+            var isBuy = !heldPrev.Contains(s);                        // a buy = a newly entered name
+            if (isBuy) buyCount++;
+            if (family.CostsOn)
+            {
+                var (perName, weightDenom) = isBuy ? (perNameToday, heldToday.Count) : (perNamePrev, heldPrev.Count);
+                costDrag += market.OneWayCostFraction(s, date, perName) / weightDenom;
+            }
         }
 
         var equity = priorEquity * (decimal)(1.0 + grossReturn - costDrag);
-        var turnoverOneWay = family.SelectionN > 0 ? (double)buyCount / family.SelectionN : 0.0;
+        var turnoverOneWay = heldToday.Count > 0 ? (double)buyCount / heldToday.Count : 0.0;
         return new MemberDay(equity, turnoverOneWay);
     }
 
@@ -105,7 +114,4 @@ public sealed class PopulationEngine(IPopulationMarket market)
         foreach (var x in a) if (!b.Contains(x)) yield return x;
         foreach (var x in b) if (!a.Contains(x)) yield return x;
     }
-
-    private static DateOnly ParseDate(string iso) =>
-        DateOnly.ParseExact(iso, "yyyy-MM-dd", CultureInfo.InvariantCulture);
 }

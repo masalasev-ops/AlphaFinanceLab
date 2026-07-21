@@ -36,8 +36,17 @@ public static class SeparationState
         var hi = 50.0 + half;
 
         // A decisive gate verdict (anything but TooEarly) means the pair IS distinguishable (up or down).
-        var decisive = db.PowerReports.Any(p =>
-            p.StrategyA == strategyId && p.RunKind == runKind && (p.Verdict == "Promoted" || p.Verdict == "Refused"));
+        // Read the LATEST verdict — never an all-history .Any() — so a strategy that earned a decisive
+        // verdict once but has since decayed back inside the MDE (latest verdict TooEarly) correctly reverts
+        // to 'none' and surfaces the IndistinguishableFromRandom chip (D63/FR-35). This mirrors how the
+        // Strategies builder resolves its gate verdict (latest by AsOf, then ReportId), so the tier and the
+        // separation state can never disagree about the same strategy.
+        var latestVerdict = db.PowerReports
+            .Where(p => p.StrategyA == strategyId && p.RunKind == runKind)
+            .OrderByDescending(p => p.AsOf).ThenByDescending(p => p.ReportId)
+            .Select(p => p.Verdict)
+            .FirstOrDefault();
+        var decisive = latestVerdict is "Promoted" or "Refused";
 
         string state;
         if (decisive || latest >= 95.0) state = SeparationInfo.Distinguishable;   // sustained above P_edge (flat anchor)
