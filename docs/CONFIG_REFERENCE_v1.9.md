@@ -108,7 +108,9 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     "EvaluationCadenceDays": 21,
     "MinTrackDays": 63,
     "Confidence": 0.95, "Power": 0.80,
-    "NwLagCapDays": 21
+    "NwLagCapDays": 21,
+    "DetectabilityHorizonYears": 3                  // D89 (v1.9.35): the FR-40 detectability-at-admission gate refuses a candidate whose pre-registered
+                                                   // expected_effect_ann could not clear the NW-MDE within this horizon, calibrated against the C-1 detection-power curves
   },
 
   "Populations": {                                 // D36
