@@ -1,6 +1,6 @@
 # AlphaLab — Complete Design Package (revision v1.9)
 
-This is the **full, self-contained** design package. Design revision v1.9. Build status is live, not pre-implementation: Phase 0 and Phase 1 have shipped and Phase 2 (funnel + ledger) is merged. The full pass-by-pass history (v4/v5/v6 through the v1.9.26 twin-scorer pass, every CHANGELOG finding and decision D1-D88) lives in `docs/CHANGELOG_v1.9.md`; current phase, test count, and the open-item list live in `PROGRESS.md`. Consult those two rather than any count or status quoted inline, which may lag. Every file here is current; nothing external is required.
+This is the **full, self-contained** design package. Design revision v1.9. Build status is live, not pre-implementation: Phase 0 and Phase 1 have shipped and Phase 2 (funnel + ledger) is merged. The full pass-by-pass history (v4/v5/v6 through the v1.9.26 twin-scorer pass, every CHANGELOG finding and decision D1-D89) lives in `docs/CHANGELOG_v1.9.md`; current phase, test count, and the open-item list live in `PROGRESS.md`. Consult those two rather than any count or status quoted inline, which may lag. Every file here is current; nothing external is required.
 
 Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to drive the build).
 
@@ -13,7 +13,7 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `CLAUDE.md` (repo root) — hard rules, solution layout, commands (the constitution the build obeys).
 
 **The design**
-- `docs/MASTER_DESIGN_v1.9.md` — the comprehensive document: decisions D1–D88,
+- `docs/MASTER_DESIGN_v1.9.md` — the comprehensive document: decisions D1–D89,
   architecture, golden rules, math appendix, UI boundary.
 - `docs/ARENA_ARCHITECTURE_v1.9.3.md` — how AlphaLab supports multiple isolated universes
   ("arenas"); decision D71. Additive, no schema change; the S&P 500 build is unaffected.
@@ -22,7 +22,7 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `docs/INTEGRATIONS_v1.9.md` — every external data feed, named + validated + fail-closed.
 
 **Build & test**
-- `docs/BUILD_AND_PROMPTS_v1.9.md` — FR-1…FR-39, the gated phase plan, and the ready-to-paste
+- `docs/BUILD_AND_PROMPTS_v1.9.md` — FR-1…FR-42, the gated phase plan, and the ready-to-paste
   Claude Code prompt for each phase (Phase 0 hardened for .NET 10 / EF Core 10 and arena-aware
   per FR-37).
 - `docs/TEST_PLAN_v1.9.md` — the fixtures and tests each phase must pass (§8 is the canonical

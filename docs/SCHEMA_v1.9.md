@@ -272,6 +272,21 @@ CREATE TABLE go_live_log (
   evidence_json TEXT NOT NULL, run_kind TEXT NOT NULL DEFAULT 'live'
 );
 
+-- D89 (v1.9.35): per-regime replay-outcome persistence (FR-41, forward-provision for the post-Phase-8
+-- multi-regime survival requirement; not load-bearing for the Phase-4 DoD). Replay strategy outcomes
+-- decomposed by regime episode; keyed to regime_episodes(episode_id); run_kind='replay' by construction
+-- under the D37 quarantine (never a forward view); rows aggregate to the overall replay outcome.
+-- power_reports/go_live_log carry run_kind but do not decompose by regime, so they are not overloaded.
+-- Recorded now; EF migration lands with the Phase-4 build.
+CREATE TABLE replay_regime_outcomes (               -- D89 (v1.9.35), FR-41
+  strategy_id TEXT NOT NULL,
+  regime_episode_id INTEGER NOT NULL REFERENCES regime_episodes(episode_id),
+  run_kind TEXT NOT NULL DEFAULT 'replay',          -- replay-only by construction; D37 quarantine
+  edge_ann REAL, median_percentile REAL,            -- per-regime edge/percentile summary
+  n_days INTEGER NOT NULL,                           -- session count contributing in this episode
+  PRIMARY KEY (strategy_id, regime_episode_id, run_kind)
+);
+
 CREATE TABLE allocation_log (
   event_id INTEGER PRIMARY KEY, as_of TEXT NOT NULL,
   weights_json TEXT NOT NULL, reason TEXT NOT NULL,
@@ -391,7 +406,8 @@ CREATE TABLE journal_entries (                     -- D52
   metric      TEXT,                                -- pre-declared confirm/refute metric
   evidence_window_days INTEGER,                    -- pre-declared window
   outcome     TEXT CHECK (outcome IN ('confirmed','refuted','inconclusive')),
-  locked      INTEGER NOT NULL DEFAULT 0           -- 1 once linked at candidate creation
+  locked      INTEGER NOT NULL DEFAULT 0,          -- 1 once linked at candidate creation
+  expected_effect_ann REAL                         -- D89 (v1.9.35): pre-declared expected annualized effect; the FR-40 detectability-at-admission gate reads it; EF migration lands with the Phase-4 build
 );
 -- RULE (D52): a locked hypothesis row is immutable except via the outcome-closure
 -- flow. CandidateFactory requires a linked hypothesis OR an 'unregistered' marker
@@ -490,7 +506,7 @@ CREATE TABLE worker_state (                        -- single row, seeded by Phas
 ```
 
 ## Enforcement notes
-- **Quarantine (D37):** every forward view/query filters `run_kind='live' OR 'catchup'`; a dedicated test inserts replay rows and asserts zero leakage into forward views.
+- **Quarantine (D37):** every forward view/query filters `run_kind='live' OR 'catchup'`; a dedicated test inserts replay rows and asserts zero leakage into forward views. The D89 `replay_regime_outcomes` table (FR-41) is replay-only by construction (`run_kind='replay'`) and is covered by the same quarantine: no per-regime replay row reaches a forward view (`FX-ReplayPerRegime`).
 - **CI greps:** `DELETE FROM bars`, `UPDATE bars` anywhere in `src/` fail the build.
 - **EF Core:** map these shapes 1:1; migrations are versioned; SCHEMA_v1.9.md updates ride the same PR as any migration.
 - **`REFERENCES` clauses are documentary — no FK constraints are enforced (v1.9.10):** the `REFERENCES` clauses in the DDL above (`bars`/`corporate_actions`/… → `securities`, and the rest) declare **intent**, not enforced constraints. The EF model (`DataEntities.cs`: "the SCHEMA `REFERENCES` links are documentation only") declares **no** foreign keys, creates **no** shadow indexes, and nothing sets `PRAGMA foreign_keys=ON` on any connection — SQLite leaves FK enforcement **off** by default — so the shipped database enforces none of them. The DDL stays a 1:1 description of the migration; referential integrity is upheld in code (the ingestion + reconciliation services keyed on `security_id`), not by the engine.
