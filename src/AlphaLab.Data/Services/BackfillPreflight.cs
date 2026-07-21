@@ -88,7 +88,23 @@ public static class BackfillPreflight
     private static (PreflightStatus, string) CheckDbPath(string connectionString, string arenaId)
     {
         var resolved = DbPathResolver.ResolvePath(connectionString, arenaId); // throws on blank -> caught -> Fail
-        var dataSource = ExtractDataSource(resolved);
+
+        // A relative store would give the Worker, the Api, and this CLI a database each, under their own
+        // working directories (DB_RELOCATION.md §1). Report it as a preflight Fail with the reason rather
+        // than letting Path.GetFullPath below silently root it at the CWD and pass.
+        try
+        {
+            DbPathResolver.RequireAbsoluteStorePath(resolved);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return (PreflightStatus.Fail, ex.Message);
+        }
+
+        // Reuse the shared extractor (v1.9.36) instead of hand-splitting on ';'/'=': ResolvePath now
+        // returns SqliteConnectionStringBuilder output, which QUOTES a value containing ';' or '=', and a
+        // naive split would return it truncated and quote-wrapped.
+        var dataSource = DbPathResolver.GetDataSourcePath(resolved);
         var targetDir = Path.GetDirectoryName(dataSource);
         if (string.IsNullOrWhiteSpace(targetDir))
         {
@@ -182,17 +198,4 @@ public static class BackfillPreflight
             : (PreflightStatus.Pass, $"as-of year {asOfYear} is within the closure list's reviewed-through year {reviewedThroughYear}.");
 
     /// <summary>Pull the <c>Data Source</c> value out of the resolved connection string (SQLite form).</summary>
-    private static string ExtractDataSource(string connectionString)
-    {
-        foreach (var part in connectionString.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            var eq = part.IndexOf('=', StringComparison.Ordinal);
-            if (eq > 0 && part[..eq].Trim().Equals("Data Source", StringComparison.OrdinalIgnoreCase))
-            {
-                return part[(eq + 1)..].Trim();
-            }
-        }
-
-        throw new InvalidOperationException($"connection string has no 'Data Source': {connectionString}");
-    }
 }

@@ -27,6 +27,11 @@ public static class ServiceCollectionExtensions
             ? DbPathResolver.Resolve(connectionString, arenaId)
             : DbPathResolver.ResolvePath(connectionString, arenaId);
 
+        // Fail closed at the composition root, readers included: a relative Data Source would give this
+        // process its OWN database under its OWN working directory instead of the arena's store (rule 10).
+        // Resolve() already checks for writers; this covers the reader branch (the Api) on the same terms.
+        DbPathResolver.RequireAbsoluteStorePath(resolved);
+
         services.AddDbContext<AlphaLabDbContext>(options => options.UseSqlite(resolved));
         return services;
     }

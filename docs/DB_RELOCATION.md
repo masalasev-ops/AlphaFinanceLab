@@ -47,7 +47,10 @@ Two tokens are resolved at runtime by the shared C# `DbPathResolver` (and, for t
 
 Absolute-anchored is required (never a relative path): the Worker, the Api, and the EF design-time
 factory run from three different working directories, so a relative path would mean three different
-databases.
+databases. **This is now enforced, not just documented (v1.9.36):** `DbPathResolver.RequireAbsoluteStorePath`
+throws at startup — for writers *before* the store directory is created, and for the read-only Api on the
+same terms — so a relative base fails loudly instead of silently giving each process its own empty
+database (hard rule 10). `tools/Backfill --preflight` reports the same condition as a `Fail` with the reason.
 
 **Separators are OS-agnostic (v1.9.36).** Write the base with forward slashes. After token
 substitution `DbPathResolver.ResolvePath` rebuilds the `Data Source` with the *running* platform's
@@ -57,6 +60,12 @@ resolves to `E:\AlphaLabDatabase\sp500\alphalab.db`, exactly as the old backslas
 practical payoff: **relocating to a cloud (Linux) VM is this same §5 procedure with a POSIX base**
 (e.g. `Data Source=/var/lib/alphalab/{Arena.Id}/alphalab.db`, or the `{LocalAppData}` token, which
 resolves to `~/.local/share` there) — a config-value edit in the four spots, with **no code change**.
+
+**Normalizing separators does not make a drive letter portable.** `E:/…` parses identically on both
+platforms, but on Linux it is a *relative* path (there is no `E:` volume), so the four spots **must** be
+repointed as part of the move. The absolute-path guard above is what makes that failure loud: run the
+Worker on Linux against the committed Windows base and it refuses at startup, naming the key — it does
+not quietly create `./E:/AlphaLabDatabase/sp500/alphalab.db` under whatever directory you launched from.
 
 ---
 

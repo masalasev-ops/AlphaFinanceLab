@@ -105,7 +105,7 @@ Everything arena-specific **derives from `Arena.Id`** so two arenas can never co
   so one template serves Windows and Linux alike. Either way the **`{Arena.Id}` token is what isolates
   arenas** — it is resolved by the shared `DbPathResolver` (see §3.2) and must never be removed
   when the base changes.
-- **Snapshots / backups:** `<DbBase>\{Arena.Id}\snapshots\`, `<DbBase>\{Arena.Id}\backups\`.
+- **Snapshots / backups:** `<DbBase>/{Arena.Id}/snapshots/`, `<DbBase>/{Arena.Id}/backups/`.
 - **Ports (dev):** each arena's API listen URL is the standard, committed `Urls` key in its
   appsettings profile (non-secret; never the `ASPNETCORE_URLS` env var — D67), and the Web dev
   port is per-instance config; a simple convention is a per-arena offset (e.g. sp500 → Api 5230 /
