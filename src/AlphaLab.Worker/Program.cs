@@ -98,8 +98,11 @@ builder.Services.AddScoped<HeartbeatWriter>();
 builder.Services.AddSingleton<StaleRunRecovery>();
 builder.Services.AddSingleton<JobDrainer>();
 builder.Services.AddSingleton<LocalBackup>();
-// Phase 2 registers NO IJobExecutor — a queued job fails closed in the drainer (named reason). Real
-// executors (replay, analysis briefs/skeptic) arrive with their phases (FR-32+).
+// The Phase-4 replay executor (FR-19/FR-32): the API's 202+job_id replay command drains here, after
+// catch-up, via the same ReplayRunner the `replay-calibrate` verb drives. The analysis executors
+// (briefs/skeptic) still arrive with Phase 5.
+builder.Services.AddSingleton<IJobExecutor>(sp => new ReplayJobExecutor(
+    builder.Configuration, arena, connectionString, sp.GetRequiredService<ILoggerFactory>()));
 builder.Services.AddHostedService<HeartbeatService>();
 
 // Schema application + WAL runs in BOTH modes and MUST be registered first (StartAsync runs in

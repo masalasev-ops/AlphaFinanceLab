@@ -1,3 +1,5 @@
+using AlphaLab.Worker.Ops;
+
 namespace AlphaLab.Worker;
 
 /// <summary>What a Worker launch was asked to do.</summary>
@@ -14,11 +16,18 @@ public enum WorkerCommandKind
     /// <summary>Assert journal_mode=WAL is active on the arena store and that a checkpoint completes
     /// (FR-25). Read-mostly: it never SETS the pragma.</summary>
     VerifyWal,
+
+    /// <summary>The Phase-4 Arena Replay + calibration chain (FR-19/36, D95): replay the window under
+    /// run_kind='replay' at the frozen watermark; the curve build + report + config freeze steps attach
+    /// per checkpoints 4.6–4.8. WRITES to the arena (quarantined rows) — the Worker is the sole writer.</summary>
+    ReplayCalibrate,
 }
 
 /// <summary>The parsed command. <see cref="Date"/> is set only for
-/// <see cref="WorkerCommandKind.ReproduceDay"/>.</summary>
-public sealed record WorkerCommand(WorkerCommandKind Kind, string? Date = null, string? ArenaId = null);
+/// <see cref="WorkerCommandKind.ReproduceDay"/>; <see cref="Replay"/> only for
+/// <see cref="WorkerCommandKind.ReplayCalibrate"/>.</summary>
+public sealed record WorkerCommand(
+    WorkerCommandKind Kind, string? Date = null, string? ArenaId = null, ReplayRequest? Replay = null);
 
 /// <summary>
 /// Pure parsing of the Worker's command line (the <see cref="WorkerModeParser"/> precedent —
@@ -40,6 +49,7 @@ public static class WorkerCommandParser
 {
     public const string ReproduceDayVerb = "reproduce-day";
     public const string VerifyWalVerb = "verify-wal";
+    public const string ReplayCalibrateVerb = "replay-calibrate";
 
     public static WorkerCommand Parse(string[] args)
     {
@@ -66,10 +76,33 @@ public static class WorkerCommandParser
             return new WorkerCommand(WorkerCommandKind.VerifyWal, null, arena);
         }
 
+        if (string.Equals(verb, ReplayCalibrateVerb, StringComparison.OrdinalIgnoreCase))
+        {
+            var from = RequireDate(ReplayCalibrateVerb, "--from", ValueOf(args, "--from"));
+            var to = RequireDate(ReplayCalibrateVerb, "--to", ValueOf(args, "--to"));
+            if (string.CompareOrdinal(from, to) >= 0)
+            {
+                throw new ArgumentException($"{ReplayCalibrateVerb}: --from ({from}) must precede --to ({to}).");
+            }
+            var learnThrough = ValueOf(args, "--learn-through");
+            if (learnThrough is not null) learnThrough = RequireDate(ReplayCalibrateVerb, "--learn-through", learnThrough);
+            return new WorkerCommand(WorkerCommandKind.ReplayCalibrate, null, arena,
+                new ReplayRequest(from, to, ValueOf(args, "--watermark"), learnThrough, args.Contains("--reset")));
+        }
+
         throw new ArgumentException(
-            $"Unknown command '{verb}'. Expected '{ReproduceDayVerb}', '{VerifyWalVerb}', or no verb at all " +
-            "(the daily launch). Refusing to fall through to the daily run on a typo — that would start the " +
-            "sole DB writer against the live arena.");
+            $"Unknown command '{verb}'. Expected '{ReproduceDayVerb}', '{VerifyWalVerb}', " +
+            $"'{ReplayCalibrateVerb}', or no verb at all (the daily launch). Refusing to fall through to " +
+            "the daily run on a typo — that would start the sole DB writer against the live arena.");
+    }
+
+    private static string RequireDate(string verb, string flag, string? value)
+    {
+        if (value is null || !DateOnly.TryParseExact(value, "yyyy-MM-dd", out _))
+        {
+            throw new ArgumentException($"{verb} requires {flag} <yyyy-MM-dd> (got '{value ?? "(none)"}').");
+        }
+        return value;
     }
 
     private static string? ValueOf(string[] args, string flag)

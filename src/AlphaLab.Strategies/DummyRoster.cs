@@ -32,10 +32,12 @@ public sealed class DummyRoster(AlphaLabDbContext db, ILedgerStore ledger)
     public const decimal DefaultStartingCash = 100_000m;
 
     /// <summary>
-    /// Register the three dummies and open a live account for each, at the resolved starting cash.
-    /// Returns the accounts (existing or newly opened), in seed order. Idempotent.
+    /// Register the three dummies and open an account for each under <paramref name="runKind"/>, at the
+    /// resolved starting cash. Strategy rows are SHARED across run kinds (identity is the strategy);
+    /// accounts are per kind (D37 — a replay trades its own isolated books). Returns the accounts
+    /// (existing or newly opened), in seed order. Idempotent.
     /// </summary>
-    public IReadOnlyList<Account> Seed(string asOf, decimal? startingCashOverride = null)
+    public IReadOnlyList<Account> Seed(string asOf, decimal? startingCashOverride = null, RunKind runKind = RunKind.Live)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(asOf);
 
@@ -54,7 +56,7 @@ public sealed class DummyRoster(AlphaLabDbContext db, ILedgerStore ledger)
         foreach (var (model, family, status) in seeds)
         {
             RegisterStrategy(model, family, status, asOf);
-            accounts.Add(OpenAccountIfAbsent(model.Id, startingCash, asOf));
+            accounts.Add(OpenAccountIfAbsent(model.Id, startingCash, asOf, runKind));
         }
         return accounts;
     }
@@ -106,11 +108,11 @@ public sealed class DummyRoster(AlphaLabDbContext db, ILedgerStore ledger)
         db.SaveChanges();
     }
 
-    private Account OpenAccountIfAbsent(string strategyId, decimal startingCash, string asOf)
+    private Account OpenAccountIfAbsent(string strategyId, decimal startingCash, string asOf, RunKind runKind)
     {
-        var existing = ledger.GetAccounts(RunKind.Live).FirstOrDefault(a => a.StrategyId == strategyId);
+        var existing = ledger.GetAccounts(runKind).FirstOrDefault(a => a.StrategyId == strategyId);
         return existing ?? ledger.OpenAccount(
-            new Account { StrategyId = strategyId, StartingCash = startingCash, RunKind = RunKind.Live },
+            new Account { StrategyId = strategyId, StartingCash = startingCash, RunKind = runKind },
             asOf);
     }
 }

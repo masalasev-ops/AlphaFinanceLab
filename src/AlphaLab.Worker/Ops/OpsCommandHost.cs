@@ -35,8 +35,46 @@ public static class OpsCommandHost
                 await ReproduceAsync(command, configuration, arena, connectionString, loggerFactory, ct).ConfigureAwait(false),
             WorkerCommandKind.VerifyWal =>
                 VerifyWal(arena, connectionString, loggerFactory),
+            WorkerCommandKind.ReplayCalibrate =>
+                await ReplayCalibrateAsync(command, configuration, arena, connectionString, loggerFactory, ct).ConfigureAwait(false),
             _ => throw new ArgumentOutOfRangeException(nameof(command), command.Kind, "Not an ops verb."),
         };
+    }
+
+    // The Phase-4 replay + calibration chain (checkpoints 4.4–4.8). NOT read-only: replay WRITES
+    // quarantined run_kind='replay' rows to the arena — which is exactly why it runs here, in the
+    // Worker process (the sole writer, D59), and not in the API or a separate tool.
+    private static async Task<int> ReplayCalibrateAsync(
+        WorkerCommand command,
+        IConfiguration configuration,
+        ArenaOptions arena,
+        string connectionString,
+        ILoggerFactory loggerFactory,
+        CancellationToken ct)
+    {
+        var logger = loggerFactory.CreateLogger("AlphaLab.Worker.ReplayCalibrate");
+        var runner = new ReplayRunner(configuration, arena, loggerFactory);
+        try
+        {
+            var outcome = await runner.RunAsync(connectionString, command.Replay!, ct).ConfigureAwait(false);
+            if (outcome.StoppedEarly)
+            {
+                logger.LogError(
+                    "replay-calibrate STOPPED early at {Committed}/{Planned} session(s): {Reason}. " +
+                    "The committed prefix persists — re-run the same command to resume.",
+                    outcome.SessionsCommitted, outcome.SessionsPlanned, outcome.StopReason);
+                return 1;
+            }
+            logger.LogInformation(
+                "replay-calibrate: {Committed} session(s) committed ({Skipped} already committed) at watermark {Watermark}.",
+                outcome.SessionsCommitted, outcome.SessionsSkippedAlreadyCommitted, outcome.Watermark);
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            logger.LogCritical(ex, "replay-calibrate could not run.");
+            return 1;
+        }
     }
 
     private static async Task<int> ReproduceAsync(

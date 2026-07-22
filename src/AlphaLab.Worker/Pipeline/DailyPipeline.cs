@@ -102,6 +102,11 @@ public sealed class DailyPipeline(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(asOf);
         var asOfDate = ParseDate(asOf);
+        // The D37 collapse: 'live'/'catchup' are both FORWARD (ledger kind Live); 'replay' is Replay.
+        // ledgerKind drives every ledger read/write; its token ('live'|'replay') is what the judged
+        // artifacts (control_equity, power_reports, overfitting_*, allocation_log) carry.
+        var ledgerKind = LedgerMapping.ParseRunKind(runKind);
+        var runKindToken = LedgerMapping.RunKindToken(ledgerKind);
         watermark ??= string.Equals(runKind, "catchup", StringComparison.Ordinal)
             ? NowIso()                 // captured ONCE — every write of the day carries the same instant
             : $"{asOf}T22:00:00Z";
@@ -145,26 +150,29 @@ public sealed class DailyPipeline(
 
                 // Regime label (reads the proxy series at the watermark — includes today's just-ingested
                 // proxy bar). Fails closed to "no label today" (logged), never aborting the run: the label
-                // is not a Phase-2 funnel input (regime-halt guardrails are Phase 7).
-                var label = regime.ComputeAndSave(asOf, watermark);
+                // is not a Phase-2 funnel input (regime-halt guardrails are Phase 7). Per run kind (D93):
+                // a replay maintains its own label rows + episode chain.
+                var label = regime.ComputeAndSave(asOf, watermark, runKindToken);
                 if (!label.Computed) logger.LogInformation("{AsOf}: regime label not computed — {Reason}", asOf, label.Reason);
 
-                // Seed the dummy roster (idempotent): the three baseline/dummy strategies + their accounts.
-                new DummyRoster(db, ledger).Seed(asOf);
+                // Seed the dummy roster (idempotent): the three baseline/dummy strategies + their
+                // accounts under this run kind (a replay opens its OWN accounts, D37).
+                new DummyRoster(db, ledger).Seed(asOf, runKind: ledgerKind);
 
                 var features = new BarFeatureView(barReads, calendar, asOfDate, watermark, costs);
                 var broker = new VirtualBroker(new CostModel(costs));
 
-                foreach (var account in ledger.GetAccounts(RunKind.Live))
+                foreach (var account in ledger.GetAccounts(ledgerKind))
                 {
-                    await RunAccountDayAsync(account, asOfDate, asOf, watermark, features, broker, ct).ConfigureAwait(false);
+                    await RunAccountDayAsync(account, ledgerKind, asOfDate, asOf, watermark, features, broker, ct).ConfigureAwait(false);
                 }
 
-                // The random control populations (D36) are part of the forward day: one compact equity
-                // row per member, computed against the SAME feature view + cost model as the accounts,
-                // inside this atomic transaction (run_kind='live'). Batched — one bulk insert, no
+                // The random control populations (D36) are part of the day: one compact equity row per
+                // member, computed against the SAME feature view + cost model as the accounts, inside
+                // this atomic transaction, under the run kind's token (a replay population never touches
+                // the forward one — run_kind is in control_equity's PK). Batched — one bulk insert, no
                 // per-member EF round-trip (§5.2).
-                ComputePopulations(asOfDate, asOf, features);
+                ComputePopulations(asOfDate, asOf, features, runKindToken);
 
                 PersistQualityFlags(runId, staged, watermark);
 
@@ -187,7 +195,7 @@ public sealed class DailyPipeline(
         // transaction — the heavier cadence work is amortized and stays out of the <60s daily budget.
         // It runs BEFORE run_in_progress is cleared so the API's 409 liveness guard (D72/rule 19) stays
         // live through this post-commit write — a candidate command must not race the evaluation's INSERTs. ----
-        RunEvaluationIfDue(asOf, asOfDate, watermark);
+        RunEvaluationIfDue(asOf, asOfDate, watermark, runKindToken);
 
         // ---- Step 4: small txn — clear run_in_progress (success only; AFTER the evaluation write). ----
         ClearRunInProgress();
@@ -301,7 +309,7 @@ public sealed class DailyPipeline(
     }
 
     private async Task RunAccountDayAsync(
-        Account account, DateOnly asOfDate, string asOf, string watermark,
+        Account account, RunKind kind, DateOnly asOfDate, string asOf, string watermark,
         BarFeatureView features, VirtualBroker broker, CancellationToken ct)
     {
         var plan = Phase2StrategyRegistry.For(account.StrategyId);
@@ -314,15 +322,15 @@ public sealed class DailyPipeline(
         // (a) Corporate actions effective since the prior session — the (prev, asOf] window, finding 192,
         // so a weekend/holiday effective date applies on the next session — BEFORE fills/funnel (D53 order).
         var caPrevSession = calendar.PreviousSession(asOfDate);
-        caApplier.ApplyForAccount(account.AccountId, RunKind.Live, asOf, watermark,
+        caApplier.ApplyForAccount(account.AccountId, kind, asOf, watermark,
             caPrevSession is { } cps ? Iso(cps) : null);
 
         // (b) Fill the orders decided on the PRIOR session at today's open (the T+1 half of decide-at-close-T).
-        FillPriorOrders(account.AccountId, asOfDate, asOf, features, broker);
+        FillPriorOrders(account.AccountId, kind, asOfDate, asOf, features, broker);
 
         // (c) The book post-CA/post-fill, and its equity at today's close.
         var held = ledger.GetPositions(account.AccountId);
-        var cash = ComputeCash(account.AccountId);
+        var cash = ComputeCash(account.AccountId, kind);
         var equity = cash + MarkToMarket(held, asOfDate, features);
 
         // (d) Decide today's orders (unless there is no next session to fill them).
@@ -341,14 +349,14 @@ public sealed class DailyPipeline(
                 Equity = equity,
                 Cash = cash, // D84: new opens are sized against cash on hand, never total equity.
                 FillOn = fillOn.Value,
-                SessionsSinceInception = SessionsSinceInception(account.AccountId, asOfDate),
+                SessionsSinceInception = SessionsSinceInception(account.AccountId, asOfDate, kind),
             };
             var outcome = await FunnelRunner.RunAsync(plan.Model, features, inputs, plan.Guardrails, plan.Sizing, ct).ConfigureAwait(false);
-            ledger.RecordDecision(account.AccountId, asOf, outcome.Snapshot.ToJson(), RunKind.Live);
+            ledger.RecordDecision(account.AccountId, asOf, outcome.Snapshot.ToJson(), kind);
         }
 
         // (e) The day's equity point (idempotent per account/as_of/run_kind).
-        ledger.RecordEquityPoint(account.AccountId, asOf, equity, cash, RunKind.Live);
+        ledger.RecordEquityPoint(account.AccountId, asOf, equity, cash, kind);
 
         // (f) The day's END-OF-DAY BOOK (D90). `held` was captured at (c), after corporate actions and
         // after the T+1 fills, and the funnel does not mutate positions — so it IS the book at this
@@ -357,15 +365,15 @@ public sealed class DailyPipeline(
         // conversions, spin-off lines) with no reversible trade row, so without this row a past day's
         // pre-trade book is unrecoverable and NFR-1 cannot hold for anything the ledger touches.
         // Inside the Stage-2 transaction, so a rolled-back day writes no snapshot (D59 sole writer).
-        ledger.RecordPositionSnapshot(account.AccountId, asOf, held, RunKind.Live);
+        ledger.RecordPositionSnapshot(account.AccountId, asOf, held, kind);
     }
 
-    private void FillPriorOrders(long accountId, DateOnly asOfDate, string asOf, BarFeatureView features, VirtualBroker broker)
+    private void FillPriorOrders(long accountId, RunKind kind, DateOnly asOfDate, string asOf, BarFeatureView features, VirtualBroker broker)
     {
         var prevSession = calendar.PreviousSession(asOfDate);
         if (prevSession is null) return;
 
-        var priorJson = ledger.GetDecisionJson(accountId, Iso(prevSession.Value), RunKind.Live);
+        var priorJson = ledger.GetDecisionJson(accountId, Iso(prevSession.Value), kind);
         if (priorJson is null) return; // the account's first decision has not been made yet (inception)
 
         var snapshot = DecisionSnapshot.FromJson(priorJson);
@@ -381,7 +389,7 @@ public sealed class DailyPipeline(
                 SigmaDaily = features.RealizedVolDaily(order.SecurityId, costs.AdvWindowDays),
             };
 
-            switch (OrderFill.Fill(order, mkt, accountId, broker, RunKind.Live))
+            switch (OrderFill.Fill(order, mkt, accountId, broker, kind))
             {
                 case FillResult.Filled f:
                     PostFill(accountId, f.Trade);
@@ -450,7 +458,7 @@ public sealed class DailyPipeline(
     // accounts: one compact control_equity scalar per member per day, bulk-inserted. Each member's day is
     // reconstructible from its prior equity + the deterministic (familySeed, memberIndex, date) draws, so
     // no held-set state is persisted. Populations start at the same nominal capital as the dummy accounts.
-    private void ComputePopulations(DateOnly asOfDate, string asOf, BarFeatureView features)
+    private void ComputePopulations(DateOnly asOfDate, string asOf, BarFeatureView features, string runKindToken)
     {
         var costModel = new CostModel(costs);
         var market = new PopulationMarket(features, membership, calendar, costModel, costs.AdvWindowDays);
@@ -464,7 +472,7 @@ public sealed class DailyPipeline(
         var points = new List<ControlEquityWriter.Point>();
         foreach (var (family, populationId) in familyMap)
         {
-            var prior = writer.LatestEquity(populationId, asOf);
+            var prior = writer.LatestEquity(populationId, asOf, runKindToken);
             for (var m = 0; m < family.Size; m++)
             {
                 // Inception is decided PER MEMBER, not per family: a member with no prior equity is on its
@@ -479,7 +487,7 @@ public sealed class DailyPipeline(
             }
         }
 
-        writer.Write(asOf, points);
+        writer.Write(asOf, points, runKindToken);
     }
 
     private void PersistQualityFlags(long runId, StagedDay staged, string watermark)
@@ -518,15 +526,19 @@ public sealed class DailyPipeline(
     // allocator) in its OWN transaction — never inside the daily write. SELF-HEALING (D48): the trigger
     // compares elapsed cadences to evaluations already completed (one overfitting_status date per
     // evaluation), so a cadence whose evaluation crashed is re-driven on the next launch rather than lost.
-    private void RunEvaluationIfDue(string asOf, DateOnly asOfDate, string watermark)
+    private void RunEvaluationIfDue(string asOf, DateOnly asOfDate, string watermark, string runKindToken)
     {
         // Nothing promotable yet ⇒ no evaluation to run; do NOT treat the boundary as missed (that would
         // re-fire every launch, writing nothing). A candidate/live strategy must exist first.
         if (!db.Strategies.Any(s => s.Status == "candidate" || s.Status == "live")) return;
 
-        var sessionsSinceInception = db.Runs.Count(r => r.Status == "ok" && (r.RunKind == "live" || r.RunKind == "catchup"));
+        // The cadence counts sessions of ITS OWN kind: forward = the committed forward runs; replay =
+        // the committed replay runs of the current generation (D95 — a reset clears them with the rest).
+        var sessionsSinceInception = runKindToken == RunKindLive
+            ? db.Runs.Count(r => r.Status == "ok" && (r.RunKind == "live" || r.RunKind == "catchup"))
+            : db.Runs.Count(r => r.Status == "ok" && r.RunKind == runKindToken);
         var evaluationsCompleted = db.OverfittingStatus
-            .Where(o => o.RunKind == RunKindLive)
+            .Where(o => o.RunKind == runKindToken)
             .Select(o => o.AsOf)
             .Distinct()
             .Count();
@@ -535,14 +547,14 @@ public sealed class DailyPipeline(
         try
         {
             using var txn = db.Database.BeginTransaction();
-            var evaluations = new EvaluationStep(db, gate).Run(asOf);
+            var evaluations = new EvaluationStep(db, gate).Run(asOf, runKind: runKindToken);
             // The overfitting monitor (S2/S3/S6) runs in the same evaluation transaction. Phase-3: all
             // promotable strategies are matched to the daily cost-on population (the default null).
             var matchedPopulation = db.ControlPopulations
                 .Where(p => p.Family == "daily" && p.CostsOn)
                 .Select(p => (long?)p.PopulationId)
                 .FirstOrDefault();
-            var monitored = new OverfittingMonitor(db, gate).Run(asOf, EvaluationStep.DefaultBenchmarkStrategyId, matchedPopulation);
+            var monitored = new OverfittingMonitor(db, gate).Run(asOf, EvaluationStep.DefaultBenchmarkStrategyId, matchedPopulation, runKindToken);
 
             // Turnover-match verification (finding 115): re-simulate the daily population's turnover vs each
             // strategy's trades over the recent window, and persist the status-neutral caveat rows.
@@ -553,11 +565,11 @@ public sealed class DailyPipeline(
                 var market = new PopulationMarket(features, membership, calendar, new CostModel(costs), costs.AdvWindowDays);
                 var dailyFamily = PopulationFamilies.ForPhase3(populations).First(f => f is { Name: "daily", CostsOn: true });
                 new TurnoverMatchStep(db, populations.TurnoverMatchTolerancePct)
-                    .Run(asOf, windowDates, new PopulationEngine(market), dailyFamily, EvaluationStep.DefaultBenchmarkStrategyId);
+                    .Run(asOf, windowDates, new PopulationEngine(market), dailyFamily, EvaluationStep.DefaultBenchmarkStrategyId, runKindToken);
             }
 
             // The ensemble allocator (D51) reads the gate + monitor outputs and persists allocation_log.
-            var allocation = new AllocationStep(db, gate, allocator).Run(asOf);
+            var allocation = new AllocationStep(db, gate, allocator).Run(asOf, runKindToken);
             txn.Commit();
 
             logger.LogInformation("{AsOf}: evaluation (session {Session}) — {Pairs} pair(s) scored, {Monitored} monitored, {Allocated} allocated.",
@@ -591,9 +603,9 @@ public sealed class DailyPipeline(
 
     // Cash reconciles from events + fills (there is no stored balance column): deposits/dividends/merger
     // cash are cash_events; buys/sells (with costs) are trade CashDeltas.
-    private decimal ComputeCash(long accountId) =>
-        ledger.GetCashEvents(accountId, RunKind.Live).Sum(e => e.Amount)
-        + ledger.GetTrades(accountId, RunKind.Live).Sum(t => t.CashDelta);
+    private decimal ComputeCash(long accountId, RunKind kind) =>
+        ledger.GetCashEvents(accountId, kind).Sum(e => e.Amount)
+        + ledger.GetTrades(accountId, kind).Sum(t => t.CashDelta);
 
     // Mark the book at today's raw close. A held name with no bar today (a frozen/halted position) is
     // valued at its average cost basis — neither a gain nor a loss recognised — rather than dropped;
@@ -610,9 +622,9 @@ public sealed class DailyPipeline(
         return total;
     }
 
-    private int SessionsSinceInception(long accountId, DateOnly asOf)
+    private int SessionsSinceInception(long accountId, DateOnly asOf, RunKind kind)
     {
-        var opening = ledger.GetCashEvents(accountId, RunKind.Live)
+        var opening = ledger.GetCashEvents(accountId, kind)
             .Where(e => e.Type == CashEventType.Deposit)
             .Select(e => e.AsOf)
             .FirstOrDefault();
