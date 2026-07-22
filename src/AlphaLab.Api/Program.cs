@@ -81,6 +81,7 @@ v1.MapScreenReadEndpoints();
 // (Worker:StaleRunThresholdSeconds, D72) rather than a hardcoded default — a divergence would let a
 // command slip past the guard during a slow daily write (WorkerLiveness: "the API binds its own").
 var staleThresholdSeconds = app.Configuration.GetValue("Worker:StaleRunThresholdSeconds", 300);
+var gateOptions = app.Configuration.GetSection(GateOptions.SectionName).Get<GateOptions>() ?? new GateOptions();
 v1.MapPost("/candidates", async (
         CreateCandidateRequest req, AlphaLabDbContext db, IWorkerLiveness liveness,
         StrategiesReadModelBuilder strategies, TimeProvider clock, CancellationToken ct) =>
@@ -94,22 +95,45 @@ v1.MapPost("/candidates", async (
         if (string.IsNullOrWhiteSpace(req.StrategyId))
             return ApiResults.Error(422, "unprocessable_entity", "strategy_id is required.");
 
+        // D89: expected_effect_ann is the FOURTH pre-declared field on every NEW hypothesis — the
+        // FR-40 gate has nothing to assess without it (annualized fraction, e.g. 0.02 = 2%/yr).
+        if (req.Hypothesis is { ExpectedEffectAnn: null })
+            return ApiResults.Error(422, "unprocessable_entity",
+                "hypothesis.expected_effect_ann is required (D89): the pre-declared annualized effect the detectability gate assesses.");
+
         var createdOn = clock.GetUtcNow().UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        var factory = new CandidateFactory(db);
+        var factory = new CandidateFactory(db, gateOptions);
         // ONE atomic transaction around both writes (D59 / the factory's own "writes via the caller's
         // transaction" contract): registering a hypothesis then failing to create the candidate (e.g. a
-        // duplicate strategy_id ⇒ 422) must NOT leave an orphaned locked hypothesis behind.
+        // duplicate strategy_id ⇒ 422, or an FR-40 refusal) must NOT leave an orphaned locked hypothesis.
         using var tx = db.Database.BeginTransaction();
         try
         {
             long? hypothesisId = req.Hypothesis is { } h
-                ? factory.RegisterHypothesis(createdOn, h.Title, h.BodyMd, h.Metric, h.EvidenceWindowDays)
+                ? factory.RegisterHypothesis(createdOn, h.Title, h.BodyMd, h.Metric, h.EvidenceWindowDays,
+                    expectedEffectAnn: h.ExpectedEffectAnn)
                 : req.HypothesisEntryId;
             var spec = new CandidateSpec(req.StrategyId, req.Family ?? "unknown", req.ConfigJson ?? "{}",
                 req.ExitPolicyJson ?? "{}", req.HoldingHorizonDays, req.ParentStrategyId);
             factory.CreateCandidate(spec, hypothesisId, req.Unregistered, createdOn, req.TrialKind ?? "new");
             tx.Commit();
             return Results.Ok(strategies.Build());   // the updated read-model (FR-32)
+        }
+        catch (DetectabilityRefusedException dex)
+        {
+            // FR-40/D89: the THIRD create-path outcome, beside the 422 (no hypothesis) and 409 (run in
+            // progress) — same status family, its own machine-readable code + structured details (D60).
+            // The transaction is disposed without commit: no strategy, no trials row, no orphaned hypothesis.
+            return ApiResults.Error(422, "detectability_refused", dex.Message, new
+            {
+                expected_effect_ann = dex.Details.ExpectedEffectAnn,
+                floor_ann = dex.Details.FloorAnn,
+                analytic_mde_ann = dex.Details.AnalyticMdeAnn,
+                empirical_alpha_star_ann = dex.Details.EmpiricalAlphaStarAnn is { } e && double.IsPositiveInfinity(e) ? null : dex.Details.EmpiricalAlphaStarAnn,
+                horizon_years = dex.Details.HorizonYears,
+                trials_after_admission = dex.Details.TrialsAfterAdmission,
+                sigma_source = dex.Details.SigmaSource,
+            });
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
         {
@@ -121,7 +145,8 @@ v1.MapPost("/candidates", async (
         }
     })
     .WithName("CreateCandidate")
-    .WithSummary("Create / pre-register a candidate (D52). 422 without a hypothesis-or-'unregistered' flag; 409 during a run.");
+    .WithSummary("Create / pre-register a candidate (D52). Outcomes: 422 unprocessable_entity (no hypothesis-or-'unregistered' flag), " +
+                 "422 detectability_refused (FR-40/D89: the expected effect cannot clear the detection floor), 409 conflict (run in progress).");
 
 // Unknown routes get the D60 envelope ({ error: { code:"not_found", … } }), not a framework 404 page.
 app.MapFallback(() => ApiResults.NotFound()).ExcludeFromDescription();
@@ -137,8 +162,10 @@ public sealed record CreateCandidateRequest(
     string StrategyId, string? Family, string? ConfigJson, string? ExitPolicyJson, int? HoldingHorizonDays,
     string? ParentStrategyId, bool Unregistered, long? HypothesisEntryId, HypothesisRequest? Hypothesis, string? TrialKind);
 
-/// <summary>An inline pre-registered hypothesis (claim + metric + evidence window), locked on creation.</summary>
-public sealed record HypothesisRequest(string Title, string BodyMd, string Metric, int EvidenceWindowDays);
+/// <summary>An inline pre-registered hypothesis (claim + metric + evidence window + the D89 expected
+/// annualized effect, a FRACTION — 0.02 = 2%/yr), locked on creation. ExpectedEffectAnn is REQUIRED
+/// (nullable only so the 422 is ours, not a serializer 400).</summary>
+public sealed record HypothesisRequest(string Title, string BodyMd, string Metric, int EvidenceWindowDays, double? ExpectedEffectAnn = null);
 
 /// <summary>Exposed so AlphaLab.Api.Tests can drive the app via WebApplicationFactory&lt;Program&gt;.</summary>
 public partial class Program;

@@ -26,4 +26,9 @@ public sealed class GateOptions
 
     /// <summary>Bartlett-kernel lag cap L for the Newey–West long-run variance (D48). L = min(2·maxHorizon, this).</summary>
     public int NwLagCapDays { get; set; } = 21;
+
+    /// <summary>D89 (v1.9.35)/FR-40: the detectability-at-admission horizon — a candidate whose
+    /// pre-registered expected effect could not clear the NW-MDE within this many years (net of the
+    /// trials-budget cost it adds) is refused at creation (Phase 4).</summary>
+    public int DetectabilityHorizonYears { get; set; } = 3;
 }
