@@ -38,6 +38,7 @@ builder.Services.AddSingleton(builder.Configuration.GetSection(KpiOptions.Sectio
 builder.Services.AddSingleton(builder.Configuration.GetSection(GateOptions.SectionName).Get<GateOptions>() ?? new GateOptions());
 builder.Services.AddScoped<StrategiesReadModelBuilder>();
 builder.Services.AddScoped<AllocationReadModelBuilder>();
+builder.Services.AddScoped<ReplayReadModelBuilder>();
 builder.Services.AddScoped<CohortMaturationBuilder>();
 
 // The bounded command surface (FR-32): the D52 CandidateFactory write + the D72 liveness 409 guard, so a

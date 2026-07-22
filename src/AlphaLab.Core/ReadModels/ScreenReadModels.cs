@@ -30,10 +30,21 @@ public sealed record LiveReadModel
     public static LiveReadModel NoRunYet { get; } = new() { Stamp = ReadModelStamp.NoRunYet };
 }
 
+/// <summary>The §1.2 allocator value-add KPI as a D58 field (v1.9.23 phasing: validated in the Phase-4
+/// replay against the D64 plants). ALWAYS replay-sourced and explicitly marked — the one sanctioned
+/// route a replay-derived number reaches a forward screen (the cohort quarantined-strip precedent):
+/// never co-mingled with forward rows, never a promotion input, rendered under its quarantine badge.</summary>
+public sealed record AllocatorValueAddDto(
+    string GapAnnPct, string MdeAnnPct, int TDays, string Verdict, string Source, bool Quarantined);
+
 public sealed record AllocationReadModel
 {
     public required ReadModelStamp Stamp { get; init; }
     public IReadOnlyList<AllocationRowDto> Rows { get; init; } = [];
+
+    /// <summary>Null until the Phase-4 replay computes it (D58: honesty resolved here, rendered verbatim).</summary>
+    public AllocatorValueAddDto? AllocatorValueAdd { get; init; }
+
     public static AllocationReadModel NoRunYet { get; } = new() { Stamp = ReadModelStamp.NoRunYet };
 }
 
