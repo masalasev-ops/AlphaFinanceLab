@@ -271,6 +271,116 @@ flowchart TB
 In one line: **the system grows continuously by writing new records over a fixed set of tools, and it grows in bigger jumps only when a human ships a new tool, and fundamentals is the next such tool.** That division is not incidental. It is exactly what lets the lab stay honest about how much it has really tried.
 
 ---
+
+## How the whole system runs, in three pictures
+
+The rest of this document explains the parts. This section puts them in motion. The system runs as three connected pieces at three speeds: what happens on a single trading evening, how a result is judged real or lucky, and the one-time calibration that sets the pass marks the judging uses. Read the three pictures in order; each hands off to the next through the records it writes.
+
+### Picture 1: one trading evening
+
+Nothing is decided here. An evening simply produces the day's evidence. Today's market data, using only what was knowable that day, feeds three places at once. On the field, every strategy and the AI contestant each trade their own fixed $100k: each ranks the eligible stocks, sizes its positions, and a pretend broker fills the orders with realistic costs, and all of that lands in the evening record. Alongside the field, three comparison runs happen: a crowd of random strategies (the luck benchmark), the contestant's twin with the AI removed (the placebo), and the rule grader scoring an earlier day. Those land in the benchmarks record. By the end of the evening there are two piles: what the strategies actually did, and everything they will be judged against.
+
+```mermaid
+flowchart TB
+    MKT[("Today's market data<br/><i>prices, dividends, index membership</i>")]:::notrade
+    subgraph FIELD["The field: each trades its own $100k"]
+        direction TB
+        H1["Momentum, Value, Low-vol..."]:::trade
+        H2["More human strategies"]:::trade
+        AIC["AI contestant, seat 1<br/><i>an AI that picks trades</i>"]:::trade
+    end
+    RUN["Each ranks stocks, sizes,<br/>and a pretend broker fills"]:::machine
+    CROWD["Random crowd trades too<br/><i>the luck benchmark</i>"]:::machine
+    TWIN["Twin: contestant's strategy,<br/><i>run without the AI (the placebo)</i>"]:::machine
+    GRADER["Rule grader (signal library)<br/><i>grades each rule on an earlier day</i>"]:::hub
+    REC[("The evening record<br/><i>trades, holdings, cash, equity</i>")]:::notrade
+    BENCH[("Benchmarks + rule grades<br/><i>crowd, twin, and rule report cards</i>")]:::notrade
+    MKT ==> FIELD
+    MKT ==> CROWD
+    MKT ==> TWIN
+    MKT ==> GRADER
+    FIELD ==> RUN ==> REC
+    CROWD ==> BENCH
+    TWIN ==> BENCH
+    GRADER ==> BENCH
+    classDef trade fill:#E8F5E9,stroke:#2E7D46,stroke-width:1.5px,color:#14351f;
+    classDef notrade fill:#EEEEEE,stroke:#7A7A7A,stroke-width:1.5px,color:#2b2b2b;
+    classDef machine fill:#E7F0FB,stroke:#1F5FA6,stroke-width:1.5px,color:#0f2f52;
+    classDef hub fill:#E2F5F1,stroke:#0F6E56,stroke-width:1.5px,color:#0a3b30;
+```
+
+### Picture 2: telling real from lucky
+
+This reads the two piles from picture 1, and it is deliberately not the AI. Two questions get asked: did a strategy beat the random crowd by enough to clear the luck margin, and for the AI specifically, did the contestant minus its twin show that the AI added value beyond the strategy itself. Those combine into a verdict and a set of lessons. The verdict flows two ways, into the math allocator, which shifts capital slowly toward proven edges, and onto your dashboards, the consistency ledger you read. Separately, the researcher, seat 2, reads the lessons and proposes one new strategy; you approve it, and it joins the field next evening. The advisor, seat 3, sits switched off beside the allocator until it can prove it beats the math. This whole picture is the rule that the part which proposes and the part which judges are never the same part.
+
+```mermaid
+flowchart TB
+    REC[("The evening records<br/><i>from the trading day</i>")]:::notrade
+    BENCH[("Benchmarks<br/><i>crowd + twin</i>")]:::notrade
+    subgraph JUDGE["Tell real from lucky (this is not the AI)"]
+        direction LR
+        Q1["Beat the random crowd?<br/><i>a big enough lead to clear the luck margin</i>"]:::machine
+        Q2["Contestant minus twin?<br/><i>did the AI add value over its own strategy</i>"]:::machine
+    end
+    VERD[("Verdict + lessons<br/><i>how strong, how proven</i>")]:::notrade
+    ALLOC["Math allocator<br/><i>splits capital slowly toward proven edges</i>"]:::machine
+    DASH["Your dashboards<br/><i>the consistency ledger you read</i>"]:::outcome
+    ADV["AI advisor, seat 3<br/><i>switched off</i>"]:::notrade
+    subgraph RESEARCH["The researcher, seat 2"]
+        direction TB
+        READ["Reads the lessons<br/><i>the whole lab's evidence</i>"]:::verdict
+        PROP["Proposes one strategy<br/><i>cannot start it alone</i>"]:::verdict
+        GATE["Worth-proving check,<br/>then you approve"]:::machine
+        READ ==> PROP ==> GATE
+    end
+    JOIN["Joins the field<br/><i>trades its own $100k next day</i>"]:::trade
+    REC ==> Q1
+    BENCH ==> Q2
+    Q1 ==> VERD
+    Q2 ==> VERD
+    VERD ==> ALLOC
+    VERD ==> DASH
+    VERD ==> READ
+    ALLOC -. "off until it beats the math" .- ADV
+    GATE ==> JOIN
+    classDef trade fill:#E8F5E9,stroke:#2E7D46,stroke-width:1.5px,color:#14351f;
+    classDef notrade fill:#EEEEEE,stroke:#7A7A7A,stroke-width:1.5px,color:#2b2b2b;
+    classDef machine fill:#E7F0FB,stroke:#1F5FA6,stroke-width:1.5px,color:#0f2f52;
+    classDef outcome fill:#FFF4E5,stroke:#C77700,stroke-width:1.5px,color:#5c3800;
+    classDef verdict fill:#F3EEFB,stroke:#6A4FB0,stroke-width:1.5px,color:#301d5c;
+```
+
+### Picture 3: the sealed room that sets the pass marks
+
+This runs once, on its own, not every evening, and it is what proves the judging in picture 2 can be trusted before it is turned on real strategies. Planted strategies with a known built-in edge, some genuine, some worthless, some deliberately bad, feed a replay runner that re-lives twenty years on a simulated clock. That runner drives the very same daily pipeline from picture 1, and the results feed back so you can watch whether the crowd-and-twin machinery catches the planted cases and how quickly. From that, the pass marks are set: what luck looks like versus a real edge. They freeze into a calibration report and saved settings, which the live checks use from then on. In plain terms, you test the lie detector against known liars and known truth-tellers, then lock its settings.
+
+```mermaid
+flowchart TB
+    subgraph SEAL["The sealed room (runs on its own, not daily)"]
+        direction TB
+        PLANTS["Planted strategies<br/><i>fake strategies with a known built-in edge</i>"]:::machine
+        RR["Replay runner<br/><i>re-lives 20 years on a simulated clock</i>"]:::machine
+        WATCH["Does the machinery catch the plants?<br/><i>crowd + twin checks, and how fast</i>"]:::machine
+        MARKS["Set the pass marks:<br/>luck vs real edge"]:::machine
+        PLANTS ==> RR ==> WATCH ==> MARKS
+    end
+    PIPE["The same live daily pipeline"]:::trade
+    REPORT[("Calibration report + saved settings<br/><i>the frozen record of how it was set</i>")]:::notrade
+    LIVE["The live checks<br/><i>from now on</i>"]:::machine
+    RR -. "drives" .-> PIPE
+    PIPE -. "results feed back" .-> WATCH
+    MARKS ==> REPORT
+    REPORT -. "pass marks" .-> LIVE
+    classDef trade fill:#E8F5E9,stroke:#2E7D46,stroke-width:1.5px,color:#14351f;
+    classDef notrade fill:#EEEEEE,stroke:#7A7A7A,stroke-width:1.5px,color:#2b2b2b;
+    classDef machine fill:#E7F0FB,stroke:#1F5FA6,stroke-width:1.5px,color:#0f2f52;
+```
+
+### How the three fit together
+
+Picture 1 produces the day's evidence. Picture 2 judges that evidence and can add a contestant that loops back into picture 1. Picture 3 is the one-time calibration that sets picture 2's pass marks before any of it counts as evidence. The grey record boxes are the handoffs between them, which is what lets three separate pictures describe one system: the evening writes records, the judging reads them, and the sealed room proves the judging first.
+
+---
 ## The signal library: grading the rules, not the traders
 
 Every strategy in the lab is built on a prediction rule, for example "stocks that rose over recent months tend to keep rising." The arena tests whole trading operations built on those rules, with money, costs, and exits attached, and that is deliberately slow: each operation produces one portfolio number per day. The signal library, added as its own small construction stage (Phase 4.5, between the replay stage and the AI stage), grades the rules themselves. Each day, every registered rule ranks every eligible stock using only information available that day. A few weeks later, when the future has arrived, the library checks whether the highly ranked stocks actually beat the low ranked ones, and stores that as one grade per rule per day. The product is a decay chart per rule: is this rule still predicting, fading, or gone?
