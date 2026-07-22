@@ -271,6 +271,34 @@ flowchart TB
 In one line: **the system grows continuously by writing new records over a fixed set of tools, and it grows in bigger jumps only when a human ships a new tool, and fundamentals is the next such tool.** That division is not incidental. It is exactly what lets the lab stay honest about how much it has really tried.
 
 ---
+## The signal library: grading the rules, not the traders
+
+Every strategy in the lab is built on a prediction rule, for example "stocks that rose over recent months tend to keep rising." The arena tests whole trading operations built on those rules, with money, costs, and exits attached, and that is deliberately slow: each operation produces one portfolio number per day. The signal library, added as its own small construction stage (Phase 4.5, between the replay stage and the AI stage), grades the rules themselves. Each day, every registered rule ranks every eligible stock using only information available that day. A few weeks later, when the future has arrived, the library checks whether the highly ranked stocks actually beat the low ranked ones, and stores that as one grade per rule per day. The product is a decay chart per rule: is this rule still predicting, fading, or gone?
+
+**Why bother, when the arena already exists?** Three reasons. A rule's daily ranking produces hundreds of observations instead of one, so a fading rule shows up in its grades years before a full trading operation could prove anything either way. When a strategy loses, the grade separates "the rule stopped predicting" from "trading costs ate the edge," which the arena alone cannot tell apart. And the AI researcher's limited budget of experiments gets pointed at rule families whose grades say they still predict, instead of ones the whole market has already arbitraged away.
+
+**Just as important is what the library never does.** It never buys, sells, or sizes anything. Its grades never feed the capital split, any promotion decision, or any safety gate; they are a report card on the rules, not a vote in the contest. It is plain arithmetic, not AI, and nothing inside it reads AI output, so the scorekeeping stays independent, the same one-way rule the rest of the lab lives by. The set of graded rules is fixed and registered up front, and there is no knob-twiddling to make a grade look better: tuning a rule against its own report card is exactly the self-deception the lab exists to prevent, and anyone who wants a tuned variant must enter it in the arena, where it pays the usual statistical price.
+
+**And because grades need only the scoring formula plus the stored price history,** one pass over the archive gives every rule two decades of grade history on day one. That is why this stage waits for the full historical price backfill to land first: grading the small starter universe would just be redone.
+
+```mermaid
+flowchart LR
+    BARS["Daily prices +<br/>index membership"]:::machine --> SCORE["Each registered rule ranks<br/>every eligible stock"]:::machine
+    BARS --> FWD["Realized returns,<br/>a few weeks later"]:::machine
+    SCORE --> GRADE["The grade: did high ranks<br/>beat low ranks?"]:::verdict
+    FWD --> GRADE
+    GRADE --> HIST[("Grade history<br/>one row per rule per day")]:::hub
+    HIST --> PANEL["Decay chart per rule<br/>stable / fading / gone"]:::outcome
+    HIST -.->|"later: a short evidence digest"| AI["The AI researcher's<br/>reading pack"]:::notrade
+    classDef trade fill:#E8F5E9,stroke:#2E7D46,stroke-width:1.5px,color:#14351f;
+    classDef notrade fill:#EEEEEE,stroke:#7A7A7A,stroke-width:1.5px,color:#2b2b2b;
+    classDef machine fill:#E7F0FB,stroke:#1F5FA6,stroke-width:1.5px,color:#0f2f52;
+    classDef outcome fill:#FFF4E5,stroke:#C77700,stroke-width:1.5px,color:#5c3800;
+    classDef hub fill:#E2F5F1,stroke:#0F6E56,stroke-width:1.5px,color:#0a3b30;
+    classDef verdict fill:#F3EEFB,stroke:#6A4FB0,stroke-width:1.5px,color:#301d5c;
+```
+
+---
 ## The rules that keep it straight
 
 A few hard rules run through the entire design. They are worth stating plainly because, for an investor, they *are* the product, the reason the numbers can be trusted.

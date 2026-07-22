@@ -336,6 +336,33 @@ CREATE TABLE feature_baselines (
 );
 
 ------------------------------------------------------------------
+-- SIGNAL LIBRARY (D91, Phase 4.5)
+------------------------------------------------------------------
+-- D91 (v1.9.38): the signal registry + daily rank-IC grade record (FR-43/FR-44). Descriptive only:
+-- nothing here is an input to the allocator (D51), any gate, sizing, or eligibility. No cross-section
+-- is persisted: scores recompute deterministically from versioned bars + as-of membership at the
+-- watermark (FX-SignalIcDeterminism), so signal_ic rows are re-derivable facts, not state.
+-- No run_kind: a grade is a property of a signal and a date, not of a forward/replay strategy run.
+-- The Worker remains the sole writer (D59). ~70k rows for the 20-year backfill (FR-45).
+-- Recorded now; the EF migration lands with the Phase-4.5 build (checkpoint 4.5.1).
+CREATE TABLE signals (                              -- the instrument registry (frozen rows, D91)
+  signal_id     TEXT PRIMARY KEY,                   -- e.g. 'mom:L252s21'
+  family        TEXT NOT NULL,                      -- catalog family: momentum|reversal|lowvol|breakout|resmom|bab
+  config_json   TEXT NOT NULL,                      -- frozen params; a change is a new registration (code + doc)
+  code_version  TEXT NOT NULL,                      -- the shipped scorer implementation the grades were computed by
+  registered_on TEXT NOT NULL
+);
+
+CREATE TABLE signal_ic (                            -- one row per grade (D91, FR-44)
+  signal_id    TEXT NOT NULL REFERENCES signals(signal_id),
+  as_of        TEXT NOT NULL,                       -- scoring day t (the grade is written once t+k resolves)
+  horizon_days INTEGER NOT NULL,                    -- k: 21|63 pre-registered; 126 open (PROGRESS P15)
+  rank_ic      REAL NOT NULL,                       -- Spearman rank correlation: scores at t vs t..t+k adjusted total returns
+  n            INTEGER NOT NULL,                    -- names contributing (Stage-1 pool as-of t; FX-SignalIcPit)
+  PRIMARY KEY (signal_id, as_of, horizon_days)
+);
+
+------------------------------------------------------------------
 -- LLM (D16, D24, D46)
 ------------------------------------------------------------------
 CREATE TABLE news_items (                           -- post-budget only

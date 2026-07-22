@@ -78,6 +78,11 @@
 | `FX-CatchupObservedAt` | a multi-day catch-up recovering sessions observed days after the fact | finding 194 (Phase-4 prerequisite): each recovered day is stamped with the true `observed_at`, never the session-derived `{as_of}T22:00:00Z` fiction, so replay reasons over honest observation dates |
 | `FX-ReplayPerRegime` | a replay run spanning several `regime_episodes`, persisted to `replay_regime_outcomes` | FR-41/D89: per-regime rows reconstruct and, aggregated, match the overall replay outcome; every row is `run_kind='replay'` and no per-regime row reaches a forward view (quarantine) |
 | `FX-ReplayPartition-NoLeak` | replay history partitioned into learn and validate periods at a runtime boundary | FR-42/D89 (extends the permanent F-LEAK suite): no validate-period datum reaches any learn-period computation |
+| `FX-SignalScorers` | tiny synthetic bar sets with hand-computed expected scores, one fixture per v1 scorer (Phase 4.5) | FR-43/D91: each of the seven `ISignal` implementations reproduces the hand-computed ranking; schema-fidelity for `signals` + `signal_ic` |
+| `FX-SignalIcDeterminism` | one grading day recomputed twice at the same watermark (Phase 4.5) | FR-44/D91: byte-identical `signal_ic` rows (no cross-section persisted; deterministic recompute from versioned bars) |
+| `FX-SignalIcPit` | a name outside Stage-1 membership as-of the grading day (Phase 4.5) | FR-44/D91: the name contributes nothing to that day's grade; `n` excludes it |
+| `FX-SignalBackfillIdempotent` | an interrupted then re-run signal-IC backfill over a fixture window (Phase 4.5; runs after D70) | FR-45/D91: resumable; the re-run produces identical tables |
+| `FX-SignalParity` | one catalog strategy's Stage-2 scores vs the library scorer on the same day and pool (lands with Phase 6) | FR-43/D91: scorer-output equality between the library path and the strategy path, so the instrument measures the exact deployed formula |
 
 ## 6. LLM layer — news read + the AI seats (Phase 5; D79-D82, spec MASTER §23)
 
@@ -122,6 +127,7 @@ Inventory = STRATEGY_CATALOG_v1.9 §13 verbatim, plus per-strategy sections (§5
 - `FR33_ForwardReadModel_ContainsNoReplayRow` — a forward-screen read-model built while replay rows exist provably excludes them (D58/UX-8).
 - `UX1_InsideMde_MetricCell_IsDimmedWithTilde` — a MetricCell whose head-to-head gap is inside the MDE serializes with `display:"dimmed", prefix:"~", reason:"inside_mde"` (D58/UX-1). *(Framework-agnostic — replaces the old Blazor view-model test.)*
 - `UX15_CohortCurve_ThinAndSubMdeDimmed_ReplayNeverCoplotted` (v1.9.34) - the `CohortMaturationReadModel` dims a thin-cohort segment and a sub-MDE cohort gap with their reasons, keeps a retired member in its cohort, and ships a replay cohort `quarantined:true` so no forward co-plot is possible (D88/UX-15; fixture `FX-CohortCurve`, §5).
+- `FX-SignalPanel` (v1.9.38) - the FR-46 signal read-model carries rolling 1y/5y rank-IC, Newey-West bands (lag = horizon), and the pre-registered trend flag as resolved fields per signal (D91/D58); flags come from the config thresholds, never client-side math; panel timing open per P15.
 
 - `FR34_NoOverlappingWriters` — a command issued while `worker_state.run_in_progress=1` is queued or returns 409, never racing the daily write transaction (D59).
 - `FR34_LabRunsWithoutApi` — the Worker completes a daily run with the AlphaLab.Api process stopped (proves the lab advances without any UI/API up).
