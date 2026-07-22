@@ -63,6 +63,8 @@ public interface IModel
 
 **Point-in-time is enforced by `IFeatureView`.** It only exposes data `<= asOf` at the run's watermark. Strategies never touch raw stores directly.
 
+**Scoring parity with the Signal Library (D91, Phase 4.5).** Cross-sectional IModels wrap the same `ISignal` implementations the Signal Library grades, so the library's rank-IC record measures the exact deployed formula, not a lookalike. Parity is pinned by `FX-SignalParity` (lands with Phase 6): scorer-output equality between the library path and the strategy path on the same day and pool. The library is descriptive only; nothing in it feeds Stage 2 or any other funnel stage (MASTER §24).
+
 **`ExitPolicy` shapes.** Declarative, serialized in `StrategyConfig`, executed by shared Stage 4 code:
 - `RankBuffer(exitRank)` — exit when cross-sectional rank falls below `exitRank` (momentum).
 - `TargetOrTimeStop(exitCondition, maxHoldDays)` — exit on the reversion condition or the time stop (mean reversion).

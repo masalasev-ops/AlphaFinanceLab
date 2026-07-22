@@ -1,6 +1,6 @@
 # AlphaLab — Complete Design Package (revision v1.9)
 
-This is the **full, self-contained** design package. Design revision v1.9. Build status is live, not pre-implementation: Phase 0 and Phase 1 have shipped and Phase 2 (funnel + ledger) is merged. The full pass-by-pass history (v4/v5/v6 through the v1.9.26 twin-scorer pass, every CHANGELOG finding and decision D1-D90) lives in `docs/CHANGELOG_v1.9.md`; current phase, test count, and the open-item list live in `PROGRESS.md`. Consult those two rather than any count or status quoted inline, which may lag. Every file here is current; nothing external is required.
+This is the **full, self-contained** design package. Design revision v1.9. Build status is live, not pre-implementation: Phase 0 and Phase 1 have shipped and Phase 2 (funnel + ledger) is merged. The full pass-by-pass history (v4/v5/v6 through the v1.9.26 twin-scorer pass, every CHANGELOG finding and decision D1-D91) lives in `docs/CHANGELOG_v1.9.md`; current phase, test count, and the open-item list live in `PROGRESS.md`. Consult those two rather than any count or status quoted inline, which may lag. Every file here is current; nothing external is required.
 
 Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to drive the build).
 
@@ -13,8 +13,8 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `CLAUDE.md` (repo root) — hard rules, solution layout, commands (the constitution the build obeys).
 
 **The design**
-- `docs/MASTER_DESIGN_v1.9.md` — the comprehensive document: decisions D1–D90,
-  architecture, golden rules, math appendix, UI boundary.
+- `docs/MASTER_DESIGN_v1.9.md` — the comprehensive document: decisions D1–D91,
+  architecture, golden rules, math appendix, UI boundary, the Signal Library (§24).
 - `docs/ARENA_ARCHITECTURE_v1.9.3.md` — how AlphaLab supports multiple isolated universes
   ("arenas"); decision D71. Additive, no schema change; the S&P 500 build is unaffected.
 - `docs/SCHEMA_v1.9.md` — the exact database schema (the rule-14 source of truth).
@@ -22,7 +22,7 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `docs/INTEGRATIONS_v1.9.md` — every external data feed, named + validated + fail-closed.
 
 **Build & test**
-- `docs/BUILD_AND_PROMPTS_v1.9.md` — FR-1…FR-42, the gated phase plan, and the ready-to-paste
+- `docs/BUILD_AND_PROMPTS_v1.9.md` — FR-1…FR-46, the gated phase plan, and the ready-to-paste
   Claude Code prompt for each phase (Phase 0 hardened for .NET 10 / EF Core 10 and arena-aware
   per FR-37).
 - `docs/TEST_PLAN_v1.9.md` — the fixtures and tests each phase must pass (§8 is the canonical
@@ -46,11 +46,15 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `docs/UX_GUIDELINES_v1.9.md` — the UX honesty rules (UX-1…UX-15, incl. the arena no-merge rule and the paired-comparison screen).
 - `docs/UX_DESIGN_SYSTEM_v1.9.md` — the component catalogue: each honesty read-model field → its Blazor component, element, and token treatment. The visual-assembly layer under UX_GUIDELINES' tokens and UX-1…UX-15.
 
+**Post-Phase-8 roadmap**
+- `docs/POST_PHASE8_IMPROVEMENTS.md` - what each post-Phase-8 improvement is and why it earns its slot (the what and why; companion to the plan below).
+- `docs/POST_PHASE8_PLAN.md` - the post-Phase-8 build sequence: the passes in order and the hooks that exist when post-8 begins (including the Phase 4.5 signal digest, D91).
+
 **UI mockups (reference for the Phase 3 screens)**
 - `docs/alphalab_ux_mockups.html` (the single consolidated UX mockup — every screen; supersedes the earlier per-topic mockup files)
 
 **Revision history**
-- `docs/CHANGELOG_v1.9.md` — every consistency finding and decision, v1.9.1 through v1.9.23.
+- `docs/CHANGELOG_v1.9.md` — every consistency finding and decision, v1.9.1 through v1.9.38.
 
 ## Revision state
 - v1.9.1 errata (findings 59–75; D68–D69) — merged.
@@ -191,6 +195,17 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   `tools/backup-offsite.ps1` (newest-by-filename-date, SHA-256 verified, fails loudly) and
   `tools/register-nightly-backup.ps1` (an 02:00 **OnDemand** launch — not `--serve`, which would idle) close the
   off-machine and unattended gaps. `FX-RestoreThenContinue` automates the RUNBOOK §4 drill.
+- v1.9.38 Phase-4.5 Signal Library registration (decision **D91**; FR-43..46; proposal **P15**; findings 229-239) - merged.
+  **Docs only; no code, no migration; tests stay 754.** Registers the Signal Library as Phase 4.5 (after
+  Phase 4 replay, before Phase 5; the Phase-3.5 fractional precedent): seven pre-registered cross-sectional
+  signals graded daily by Spearman rank-IC over the Stage-1 pool as-of on adjusted total returns; rolling
+  1y/5y trend with Newey-West bands (lag = horizon) and a pre-registered trend flag stated in significance
+  units; two tables (`signals`, `signal_ic`) recorded in SCHEMA with the EF migration deferred to the 4.5
+  build; descriptive only, never an allocator, gate, sizing, or eligibility input. Phase 6 IModels wrap the
+  same ISignal implementations (`FX-SignalParity`); Phase 5 consumes a per-signal digest line through the
+  evidence-prior seam; Phase 8 fundamental signals register into the same harness (`report_available_date`).
+  The source orientation doc was distributed and deleted; MASTER §24 is the authority. The two post-Phase-8
+  roadmap docs joined the tracked corpus in this pass.
 - The mockups were consolidated into the single `alphalab_ux_mockups.html` in the v1.9.21/v1.9.22 passes
   (the earlier per-topic and v2 files are gone; the consolidated file gained the UX-14 paired-comparison block
   and the slate-grey replay tokens in v1.9.22). SCHEMA received its first post-v1.9.1 edit in v1.9.7

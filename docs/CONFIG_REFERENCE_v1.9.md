@@ -217,6 +217,13 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     "CohortMinStrategies": 3                       // below this live-member count at t the segment renders dimmed (reason 'thin_cohort')
   },
 
+  "SignalLibrary": {                               // D91 - Phase 4.5 signal grading (descriptive only; read by the FR-44 IC engine + FR-46 read-model)
+    "HorizonsDays": [ 21, 63 ],                    // pre-registered grade horizons k, in trading days; adding 126 is open (PROGRESS P15)
+    "RollingWindowsYears": [ 1, 5 ],               // rolling mean rank-IC windows for the trend inference (Newey-West lag = horizon)
+    "TrendDecayZ": null,                           // decaying = the 1y trend significantly negative at this z; value pinned at build checkpoint 4.5.2, before the first grade row is written
+    "TrendGoneZ": null                             // gone = the 1y mean not significantly above zero at this z (stable = otherwise); value pinned at build checkpoint 4.5.2
+  },
+
   "Llm": {                                         // D24/D46
     "Tasks": {
       "news_extraction": { "Model": "claude-haiku-4-5-20251001" },
