@@ -24,10 +24,11 @@ public enum WorkerCommandKind
 }
 
 /// <summary>The parsed command. <see cref="Date"/> is set only for
-/// <see cref="WorkerCommandKind.ReproduceDay"/>; <see cref="Replay"/> only for
+/// <see cref="WorkerCommandKind.ReproduceDay"/>; <see cref="Replay"/>/<see cref="ReportOnly"/> only for
 /// <see cref="WorkerCommandKind.ReplayCalibrate"/>.</summary>
 public sealed record WorkerCommand(
-    WorkerCommandKind Kind, string? Date = null, string? ArenaId = null, ReplayRequest? Replay = null);
+    WorkerCommandKind Kind, string? Date = null, string? ArenaId = null, ReplayRequest? Replay = null,
+    bool ReportOnly = false);
 
 /// <summary>
 /// Pure parsing of the Worker's command line (the <see cref="WorkerModeParser"/> precedent —
@@ -87,7 +88,8 @@ public static class WorkerCommandParser
             var learnThrough = ValueOf(args, "--learn-through");
             if (learnThrough is not null) learnThrough = RequireDate(ReplayCalibrateVerb, "--learn-through", learnThrough);
             return new WorkerCommand(WorkerCommandKind.ReplayCalibrate, null, arena,
-                new ReplayRequest(from, to, ValueOf(args, "--watermark"), learnThrough, args.Contains("--reset")));
+                new ReplayRequest(from, to, ValueOf(args, "--watermark"), learnThrough, args.Contains("--reset")),
+                ReportOnly: args.Contains("--report-only"));
         }
 
         throw new ArgumentException(
