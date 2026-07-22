@@ -59,7 +59,10 @@ public class OpsScriptTests
         // Rule 10: never a silent no-op. An off-site routine that "succeeds" without copying anything
         // is worse than none, because it also removes the operator's reason to look.
         Assert.True(exit != 0, "expected a non-zero exit when there is nothing to copy. Output:\n" + output);
-        Assert.Contains("Nothing to copy off-machine", output, StringComparison.Ordinal);
+        // Assert the reason on NORMALIZED output: the phrase must survive whichever shell ran it.
+        // PowerShell 7 decorates and re-wraps error records, so an un-normalized substring match
+        // passes under Windows PowerShell 5.1 and fails under pwsh purely on console width.
+        Assert.Contains("Nothing to copy off-machine", Normalize(output), StringComparison.Ordinal);
         Assert.Empty(Directory.GetFiles(fixture.Destination));
     }
 
@@ -125,6 +128,18 @@ public class OpsScriptTests
     }
 
     // ---- harness ----
+
+    /// <summary>
+    /// Strip ANSI escape sequences and collapse every whitespace run to a single space, so an
+    /// assertion is about the MESSAGE rather than about the console the shell happened to render it
+    /// on. PowerShell 7 colours error records and hard-wraps them at the terminal width; Windows
+    /// PowerShell 5.1 does neither. Without this, a substring assertion silently depends on which
+    /// shell the probe found — green locally on 5.1, red on a CI runner with pwsh.
+    /// </summary>
+    private static string Normalize(string output) =>
+        System.Text.RegularExpressions.Regex.Replace(
+            System.Text.RegularExpressions.Regex.Replace(output, @"\x1B\[[0-9;]*[a-zA-Z]", string.Empty),
+            @"\s+", " ");
 
     /// <summary>pwsh (cross-platform) first, then Windows PowerShell. Null ⇒ skip: the suite must stay
     /// runnable on a machine with neither.</summary>

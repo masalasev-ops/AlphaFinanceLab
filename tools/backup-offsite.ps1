@@ -27,8 +27,19 @@ param(
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Resolve-AlphaLabConnection.ps1')
 
+# Emit the reason on a PLAIN, UNWRAPPED line before throwing. The thrown error record is not a
+# reliable channel for the reason: PowerShell 7 decorates it with ANSI colour codes and re-wraps it
+# at the console width, so an operator grepping a scheduled-task log - or a test asserting the
+# failure is the RIGHT failure - can find the phrase split across lines. Write-Host writes the string
+# verbatim to stdout. The throw still follows, so the non-zero exit and the stack context survive.
+function Stop-WithReason {
+    param([Parameter(Mandatory)][string]$Reason)
+    Write-Host "BACKUP-OFFSITE FAILED: $Reason"
+    throw $Reason
+}
+
 if ([string]::IsNullOrWhiteSpace($Destination)) {
-    throw "-Destination is required and must not be blank. Refusing to 'succeed' without copying anything."
+    Stop-WithReason "-Destination is required and must not be blank. Refusing to 'succeed' without copying anything."
 }
 
 # 1. Locate the source directory (the same one DbPathResolver.BackupDirectory returns).
@@ -39,7 +50,7 @@ if ([string]::IsNullOrWhiteSpace($BackupDirectory)) {
 }
 
 if (-not (Test-Path -LiteralPath $BackupDirectory)) {
-    throw "No backup directory at '$BackupDirectory'. Launch the Worker at least once (its final step takes the per-launch backup), then re-run."
+    Stop-WithReason "No backup directory at '$BackupDirectory'. Launch the Worker at least once (its final step takes the per-launch backup), then re-run."
 }
 
 # 2. Pick the newest backup BY THE DATE IN THE FILENAME, mirroring LocalBackup.TryParseBackupDate.
@@ -51,7 +62,7 @@ $candidates = Get-ChildItem -LiteralPath $BackupDirectory -Filter 'alphalab-*.db
     Sort-Object { [datetime]::ParseExact(([regex]::Match($_.Name, $pattern)).Groups[1].Value, 'yyyy-MM-dd', $null) }
 
 if (-not $candidates) {
-    throw "No 'alphalab-<yyyy-MM-dd>.db' backup found in '$BackupDirectory'. Nothing to copy off-machine."
+    Stop-WithReason "No 'alphalab-<yyyy-MM-dd>.db' backup found in '$BackupDirectory'. Nothing to copy off-machine."
 }
 $source = $candidates[-1]
 
@@ -72,10 +83,10 @@ $targetItem = Get-Item -LiteralPath $target
 $targetHash = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash
 
 if ($source.Length -ne $targetItem.Length) {
-    throw "VERIFY FAILED: size mismatch (source $($source.Length) bytes, copy $($targetItem.Length) bytes) for '$target'."
+    Stop-WithReason "VERIFY FAILED: size mismatch (source $($source.Length) bytes, copy $($targetItem.Length) bytes) for '$target'."
 }
 if ($sourceHash -ne $targetHash) {
-    throw "VERIFY FAILED: SHA-256 mismatch for '$target' (source $sourceHash, copy $targetHash)."
+    Stop-WithReason "VERIFY FAILED: SHA-256 mismatch for '$target' (source $sourceHash, copy $targetHash)."
 }
 
 Write-Host "Off-site backup VERIFIED." -ForegroundColor Green
