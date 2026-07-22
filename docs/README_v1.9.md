@@ -29,7 +29,7 @@
 | `TEST_PLAN_v1.9.md` | The fixture library + FR-mapped test inventory (§8 = the canonical 39-case Phase-0 inventory a rebuild must reproduce) |
 | `UX_GUIDELINES_v1.9.md` | The fifteen interface rules (UX-1…UX-15) as build specs |
 | `RUNBOOK_v1.9.md` | Operations: daily cycle, catch-up, backups, incident playbook |
-| `DB_RELOCATION.md` | Ops runbook: moving the SQLite database file(s) to another directory/drive — a config edit + file move, guarded by `ConfigConsistencyTests`. The deployed base is a literal absolute path (`E:\AlphaLabDatabase`); the `{Arena.Id}` token stays regardless of base |
+| `DB_RELOCATION.md` | Ops runbook: moving the SQLite database file(s) to another directory/drive — a config edit + file move, guarded by `ConfigConsistencyTests`. The deployed base is a literal absolute path (`E:/AlphaLabDatabase`); separators are normalized to the running OS (v1.9.36), so the same template works on a Linux VM and the `{Arena.Id}` token stays regardless of base |
 | `FUTURE_DB_MIGRATION.md` | Contingency: what changes if SQLite is ever replaced by a server RDBMS — a different job from relocation, kept closed until needed |
 | `REBUILD.md` | Ops runbook: from a fresh clone to a working arena (the *data* bootstrap; sibling to `DB_RELOCATION.md` / `FUTURE_DB_MIGRATION.md`; includes the `--preflight` live-source check) |
 | `CHANGELOG_v1.9.md` | Review-finding → decision → doc-section traceability across all design passes — including the *why* behind every v1.9.7–v1.9.11 change (review prose itself is not retained; findings are folded into the docs) |

@@ -22,13 +22,28 @@ function Resolve-AlphaLabConnectionString {
     return $cs.Replace('{Arena.Id}', $Arena).Replace('{LocalAppData}', $localAppData)
 }
 
+function ConvertTo-AlphaLabNativePath {
+    # Mirrors DbPathResolver.ResolvePath's separator normalization (v1.9.36) so this script and the C#
+    # resolver agree on WHICH FILE they mean. Without it the two diverge on Linux: a backslash template
+    # resolves to a real multi-segment path in C# but to a single filename containing backslashes here,
+    # so migrate.ps1 would snapshot and migrate a different file than the Worker opens - the finding-119
+    # class of bug that sharing this resolver exists to prevent. URI data sources (file:...) are URIs,
+    # not paths - the grammar mandates '/', so they are left alone, exactly as the C# side does.
+    param([Parameter(Mandatory)][string]$Path)
+
+    if ($Path.StartsWith('file:', [StringComparison]::OrdinalIgnoreCase)) { return $Path }
+
+    $sep = [System.IO.Path]::DirectorySeparatorChar
+    return $Path.Replace('\', $sep).Replace('/', $sep)
+}
+
 function Get-AlphaLabDataSourcePath {
     param([Parameter(Mandatory)][string]$ConnectionString)
 
     foreach ($part in $ConnectionString.Split(';')) {
         $kv = $part.Split('=', 2)
         if ($kv.Length -eq 2 -and $kv[0].Trim().ToLowerInvariant() -in @('data source', 'datasource')) {
-            return $kv[1].Trim()
+            return ConvertTo-AlphaLabNativePath -Path ($kv[1].Trim().Trim('"'))
         }
     }
     throw "No 'Data Source' found in connection string: $ConnectionString"

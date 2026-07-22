@@ -23,7 +23,7 @@ change — the arena design (D71) and the entity models are untouched.
 There is a single connection string, `ConnectionStrings:AlphaLab`. Today it is:
 
 ```
-Data Source=E:\AlphaLabDatabase\{Arena.Id}\alphalab.db
+Data Source=E:/AlphaLabDatabase/{Arena.Id}/alphalab.db
 ```
 
 Two tokens are resolved at runtime by the shared C# `DbPathResolver` (and, for tooling, by
@@ -38,15 +38,34 @@ Two tokens are resolved at runtime by the shared C# `DbPathResolver` (and, for t
   new `Arena:Id` in **all three** backend appsettings — a half-applied edit gives them identical
   connection strings that still open different databases. `ConfigConsistencyTests` now guards that the
   three `Arena:Id` agree (finding 148), just as it guards the four template copies.
-- **`{LocalAppData}`** *(optional)* → expanded to your Windows *Local AppData* folder via the
+- **`{LocalAppData}`** *(optional)* → expanded to your *Local AppData* folder via the
   known-folders API, **never** an environment variable (D67 bans env-var reads). Use this token
   instead of a hard drive letter if you want the DB to follow your user profile (portable across
-  machines/users). Example portable form: `Data Source={LocalAppData}\AlphaLab\{Arena.Id}\alphalab.db`.
+  machines/users, and across OSes — it resolves to `%LOCALAPPDATA%` on Windows and `~/.local/share`
+  on Linux). Example portable form: `Data Source={LocalAppData}/AlphaLab/{Arena.Id}/alphalab.db`.
 - **No tokens** → the value is taken as a literal absolute path (this is the current E: form).
 
 Absolute-anchored is required (never a relative path): the Worker, the Api, and the EF design-time
 factory run from three different working directories, so a relative path would mean three different
-databases.
+databases. **This is now enforced, not just documented (v1.9.36):** `DbPathResolver.RequireAbsoluteStorePath`
+throws at startup — for writers *before* the store directory is created, and for the read-only Api on the
+same terms — so a relative base fails loudly instead of silently giving each process its own empty
+database (hard rule 10). `tools/Backfill --preflight` reports the same condition as a `Fail` with the reason.
+
+**Separators are OS-agnostic (v1.9.36).** Write the base with forward slashes. After token
+substitution `DbPathResolver.ResolvePath` rebuilds the `Data Source` with the *running* platform's
+directory separator, so a Windows `\` never survives on Linux and a `/` never survives on Windows —
+one template string is valid everywhere. On this deployment `E:/AlphaLabDatabase/{Arena.Id}/alphalab.db`
+resolves to `E:\AlphaLabDatabase\sp500\alphalab.db`, exactly as the old backslash form did. The
+practical payoff: **relocating to a cloud (Linux) VM is this same §5 procedure with a POSIX base**
+(e.g. `Data Source=/var/lib/alphalab/{Arena.Id}/alphalab.db`, or the `{LocalAppData}` token, which
+resolves to `~/.local/share` there) — a config-value edit in the four spots, with **no code change**.
+
+**Normalizing separators does not make a drive letter portable.** `E:/…` parses identically on both
+platforms, but on Linux it is a *relative* path (there is no `E:` volume), so the four spots **must** be
+repointed as part of the move. The absolute-path guard above is what makes that failure loud: run the
+Worker on Linux against the committed Windows base and it refuses at startup, naming the key — it does
+not quietly create `./E:/AlphaLabDatabase/sp500/alphalab.db` under whatever directory you launched from.
 
 ---
 
@@ -121,9 +140,9 @@ Take a `tools/snapshot-db.ps1` copy first if the DB matters (it is your rollback
 
 | Want | Connection string | Result |
 |------|-------------------|--------|
-| Fixed location on a specific drive (current) | `Data Source=E:\AlphaLabDatabase\{Arena.Id}\alphalab.db` | Always at `E:\AlphaLabDatabase\<arena>\alphalab.db`. Machine-specific. |
-| Follows the Windows user profile (portable) | `Data Source={LocalAppData}\AlphaLab\{Arena.Id}\alphalab.db` | Resolves to `%LOCALAPPDATA%\AlphaLab\<arena>\alphalab.db` on whatever machine runs it. No drive letter to chase. |
-| Any other fixed folder | `Data Source=D:\lab\db\{Arena.Id}\alphalab.db` | Literal path; base is whatever you set. Keep `{Arena.Id}`. |
+| Fixed location on a specific drive (current) | `Data Source=E:/AlphaLabDatabase/{Arena.Id}/alphalab.db` | Always at `E:\AlphaLabDatabase\<arena>\alphalab.db`. Machine-specific. |
+| Follows the user profile (portable) | `Data Source={LocalAppData}/AlphaLab/{Arena.Id}/alphalab.db` | Resolves to `%LOCALAPPDATA%\AlphaLab\<arena>\alphalab.db` on Windows, `~/.local/share/AlphaLab/<arena>/alphalab.db` on Linux. No drive letter to chase. |
+| Any other fixed folder | `Data Source=D:/lab/db/{Arena.Id}/alphalab.db` or `Data Source=/var/lib/alphalab/{Arena.Id}/alphalab.db` | Literal path; base is whatever you set (a drive, or a cloud mount). Keep `{Arena.Id}`. |
 
 Switching *between* these forms is exactly the §5 procedure — it is just a different value for #1–#3.
 

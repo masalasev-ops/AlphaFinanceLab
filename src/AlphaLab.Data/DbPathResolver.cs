@@ -11,6 +11,12 @@ namespace AlphaLab.Data;
 ///                     known-folders API. D67 bans env-var reads, so we NEVER use
 ///                     GetEnvironmentVariable / ExpandEnvironmentVariables here.
 ///
+/// After substitution the DataSource is rebuilt with the RUNNING platform's directory separator
+/// (v1.9.36), so ONE config string is valid on every OS: a Windows '\' never survives on Linux and
+/// a '/' never survives on Windows. That is what makes a cloud (Linux) lift-and-shift a config-value
+/// change with no code change — only the base in the four spots moves. Normalization is pure string
+/// work through SqliteConnectionStringBuilder; it reads no environment and touches no filesystem.
+///
 /// Path resolution is split from directory creation (v1.9.6):
 ///   ResolvePath  — PURE (token replacement only, no filesystem). Readers and tests use
 ///                  this to resolve a connection string without touching disk.
@@ -27,14 +33,19 @@ public static class DbPathResolver
     /// one of the "four edit spots" that must stay identical to the Worker, Api, and Backfill-CLI
     /// appsettings.json ConnectionStrings:AlphaLab, so every process opens the SAME file
     /// (DB_RELOCATION.md; guarded by ConfigConsistencyTests). This deployment uses the E: literal;
-    /// the {LocalAppData} token form is the portable alternative. tools/migrate.ps1 still passes an
-    /// explicit --connection resolved from the Worker appsettings (finding 119), so real migrations
-    /// never depend on this constant — but keeping it equal keeps a bare `dotnet ef` on-target.
+    /// the {LocalAppData} token form is the portable alternative. The FORWARD SLASHES are deliberate
+    /// (v1.9.36) — ResolvePath normalizes them to the running platform's separator, so this one string
+    /// is valid on Windows and Linux alike; do NOT "correct" them back to backslashes, and if you do
+    /// change the form, change all four spots together or ConfigConsistencyTests reddens.
+    /// tools/migrate.ps1 still passes an explicit --connection resolved from the Worker appsettings
+    /// (finding 119), so real migrations never depend on this constant — but keeping it equal keeps a
+    /// bare `dotnet ef` on-target.
     /// </summary>
     public const string DefaultConnectionString =
-        @"Data Source=E:\AlphaLabDatabase\{Arena.Id}\alphalab.db";
+        @"Data Source=E:/AlphaLabDatabase/{Arena.Id}/alphalab.db";
 
-    /// <summary>PURE token replacement. No filesystem access. Returns the resolved connection string.</summary>
+    /// <summary>PURE token replacement + OS separator normalization. No filesystem access. Returns the
+    /// resolved connection string.</summary>
     public static string ResolvePath(string connectionString, string arenaId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
@@ -42,15 +53,81 @@ public static class DbPathResolver
 
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
-        return connectionString
+        var substituted = connectionString
             .Replace("{Arena.Id}", arenaId, StringComparison.Ordinal)
             .Replace("{LocalAppData}", localAppData, StringComparison.Ordinal);
+
+        // One config string, every OS: a template may be written with '/' or '\', and the
+        // expanded {LocalAppData} contributes the running platform's own separator. Rebuild
+        // DataSource with the OS separator so a Windows '\' never survives on Linux (cloud
+        // lift-and-shift) and vice-versa. Still D67-safe (known-folders API only, no env
+        // vars) and PURE (no filesystem access).
+        SqliteConnectionStringBuilder builder;
+        try
+        {
+            builder = new SqliteConnectionStringBuilder(substituted);
+        }
+        catch (Exception ex) when (ex is ArgumentException or FormatException)
+        {
+            // Fail closed with a diagnosis, not a bare 'Keyword not supported' from the builder:
+            // this is almost always a typo in ConnectionStrings:AlphaLab, and the operator needs to
+            // be told WHICH key and WHICH value (hard rule 10 — never silently defaulted).
+            throw new InvalidOperationException(
+                $"ConnectionStrings:AlphaLab is not a valid SQLite connection string after token " +
+                $"substitution: '{substituted}'. Expected a 'Data Source=...' value (see " +
+                $"docs/DB_RELOCATION.md §2 — the four edit spots must agree).", ex);
+        }
+
+        // SQLite URI data sources ("file:...?mode=ro", "file:memdb?cache=shared") are URIs, not paths:
+        // the URI grammar mandates '/', so rewriting separators would corrupt them on Windows. Plain
+        // paths (including ":memory:", which has no separator) take the normalization.
+        var dataSource = builder.DataSource;
+        if (!dataSource.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
+        {
+            builder.DataSource = dataSource
+                .Replace('\\', Path.DirectorySeparatorChar)
+                .Replace('/', Path.DirectorySeparatorChar);
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Fail closed (hard rule 10) unless the resolved store path is ABSOLUTE. The Worker, the Api, and
+    /// the design-time factory run from three different working directories, so a relative Data Source
+    /// silently means three different databases — each freshly created and empty, with no error
+    /// (DB_RELOCATION.md §1). The trap is platform-specific and invisible: a Windows drive path like
+    /// <c>E:/AlphaLabDatabase/sp500/alphalab.db</c> is fully qualified on Windows but RELATIVE on Linux,
+    /// so a cloud lift-and-shift that forgets to repoint the four spots would silently fork the store.
+    /// Checked on the raw DataSource — <see cref="GetDataSourcePath"/> applies Path.GetFullPath, which
+    /// would mask the defect by rooting the relative path at the current directory.
+    /// </summary>
+    public static void RequireAbsoluteStorePath(string resolvedConnectionString)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(resolvedConnectionString);
+
+        var dataSource = new SqliteConnectionStringBuilder(resolvedConnectionString).DataSource;
+        if (dataSource.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
+        {
+            return; // a URI data source carries its own addressing; not a filesystem path to qualify
+        }
+
+        if (!Path.IsPathFullyQualified(dataSource))
+        {
+            throw new InvalidOperationException(
+                $"The resolved store path '{dataSource}' is not absolute on this platform " +
+                $"({(OperatingSystem.IsWindows() ? "Windows" : "POSIX")}). Worker, Api, and the design-time " +
+                "factory run from different working directories, so a relative path would open a DIFFERENT " +
+                "database per process. Set ConnectionStrings:AlphaLab to an absolute base in all four spots " +
+                "(docs/DB_RELOCATION.md §2) — e.g. the {LocalAppData} token, which resolves per-OS.");
+        }
     }
 
     /// <summary>Resolve the connection string, then ensure the store's parent directory exists (writers only).</summary>
     public static string Resolve(string connectionString, string arenaId)
     {
         var resolved = ResolvePath(connectionString, arenaId);
+        RequireAbsoluteStorePath(resolved);   // never create a store under a per-process CWD
         EnsureDirectoryExists(resolved);
         return resolved;
     }

@@ -18,3 +18,19 @@ jobs:
       - name: tools/ci.ps1 (build + tests + guards)
         shell: pwsh
         run: ./tools/ci.ps1
+
+  # Second leg for the v1.9.36 OS-agnostic path claim (finding 218): DbPathResolver promises that ONE
+  # ConnectionStrings:AlphaLab template resolves correctly on every OS, which is what makes a cloud
+  # lift-and-shift a config-value change with no code change. Asserting that only on windows-latest
+  # proves nothing about the half that matters — the resolver's separator normalization and the
+  # absolute-path guard are both platform-conditional. Tests only (no ci.ps1): the guard greps and the
+  # vuln audit are platform-independent and already covered by the Windows leg.
+  tests-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: dotnet test (POSIX path resolution)
+        run: dotnet test AlphaLab.slnx -c Debug --nologo

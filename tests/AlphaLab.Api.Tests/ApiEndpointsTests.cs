@@ -1,6 +1,10 @@
 using System.Net;
 using System.Text.Json;
+using AlphaLab.Data;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace AlphaLab.Api.Tests;
 
@@ -62,6 +66,23 @@ public class ApiEndpointsTests(ApiArenaFactory factory) : IClassFixture<ApiArena
 
         using var doc = JsonDocument.Parse(json);
         Assert.True(doc.RootElement.GetProperty("quarantined").GetBoolean());
+    }
+
+    /// <summary>
+    /// The test host must open the factory's TEMP arena, never the committed production store. This is the
+    /// regression guard for the v1.9.36 Linux leg: the swap used to happen after the composition root (a
+    /// DbContext re-registration), so the host still booted on the committed connection string — invisible
+    /// on Windows, but that path is relative on POSIX and the rule-10 absolute guard failed every API test.
+    /// Asserting the DbContext's own connection string catches a silent fall-back to production config on
+    /// EITHER platform, instead of leaving it to be discovered by an OS-specific CI failure.
+    /// </summary>
+    [Fact]
+    public void TestHost_OpensTheTempArena_NotTheCommittedStore()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var connectionString = scope.ServiceProvider.GetRequiredService<AlphaLabDbContext>().Database.GetConnectionString();
+
+        Assert.Equal(_factory.DbPath, new SqliteConnectionStringBuilder(connectionString).DataSource);
     }
 
     [Fact]

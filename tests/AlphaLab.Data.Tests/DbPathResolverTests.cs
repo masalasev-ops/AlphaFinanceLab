@@ -1,4 +1,5 @@
 using AlphaLab.Data;
+using Microsoft.Data.Sqlite;
 
 namespace AlphaLab.Data.Tests;
 
@@ -60,6 +61,115 @@ public class DbPathResolverTests
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         Assert.Contains(localAppData, resolved);
         Assert.DoesNotContain("{LocalAppData}", resolved);
+    }
+
+    [Fact]
+    public void FR37_ResolvePath_NormalizesSeparatorsToTheRunningOs()
+    {
+        // The property that makes ONE config string valid on every OS: no separator from the other
+        // platform survives resolution.
+        //
+        // Assert on the ResolvePath OUTPUT, never on GetDataSourcePath's — the latter applies
+        // Path.GetFullPath, which on Windows converts '/' to '\' BY ITSELF and would make this test
+        // pass with the normalization deleted. The template deliberately mixes '\' and '/' so that
+        // one of them is foreign on whichever platform runs the suite; a single-separator template
+        // is native somewhere and cannot fail there.
+        const string cs = @"Data Source={LocalAppData}/AlphaLabDatabase\{Arena.Id}/alphalab.db";
+
+        var resolved = DbPathResolver.ResolvePath(cs, "sp500");
+        var dataSource = new SqliteConnectionStringBuilder(resolved).DataSource;
+
+        var foreign = Path.DirectorySeparatorChar == '\\' ? '/' : '\\';
+        Assert.DoesNotContain(foreign.ToString(), dataSource);
+        Assert.EndsWith(Path.Combine("AlphaLabDatabase", "sp500", "alphalab.db"), dataSource);
+        // ...and it is a real absolute path anchored at the known folder, not a filename with separators in it.
+        Assert.True(Path.IsPathFullyQualified(dataSource), $"expected an absolute path, got '{dataSource}'");
+    }
+
+    [Fact]
+    public void FR37_ResolvePath_LeavesUriDataSourceUntouched()
+    {
+        // SQLite URI data sources are URIs, not paths: the grammar mandates '/', so normalizing
+        // separators would corrupt them on Windows (mode/cache query strings included).
+        const string cs = "Data Source=file:/tmp/alphalab/{Arena.Id}/alphalab.db?mode=ro";
+
+        var dataSource = new SqliteConnectionStringBuilder(DbPathResolver.ResolvePath(cs, "sp500")).DataSource;
+
+        Assert.Equal("file:/tmp/alphalab/sp500/alphalab.db?mode=ro", dataSource);
+    }
+
+    [Fact]
+    public void FR37_RequireAbsoluteStorePath_RejectsARelativeStore()
+    {
+        // A relative Data Source means Worker/Api/Backfill each open a DIFFERENT database under their
+        // own working directory - silently, each freshly created and empty (DB_RELOCATION.md §1).
+        // Fail closed (rule 10) rather than let GetFullPath mask it by rooting at the CWD.
+        var resolved = DbPathResolver.ResolvePath("Data Source=alphalab/{Arena.Id}/alphalab.db", "sp500");
+
+        var ex = Assert.Throws<InvalidOperationException>(() => DbPathResolver.RequireAbsoluteStorePath(resolved));
+        Assert.Contains("not absolute", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FR37_TheShippedDefault_IsWindowsAnchored_AndFailsClosedElsewhere()
+    {
+        // The committed four-spots value is `E:/AlphaLabDatabase/{Arena.Id}/alphalab.db`. Separator
+        // normalization (v1.9.36) makes that ONE STRING PARSE the same everywhere - it does NOT make a
+        // Windows drive letter meaningful on POSIX. So the honest contract is platform-conditional, and
+        // this test pins it rather than pretending the committed default is portable:
+        //   Windows -> absolute, the guard passes, the lab opens E:\AlphaLabDatabase\sp500\alphalab.db.
+        //   POSIX   -> `E:/...` is RELATIVE, so the guard THROWS instead of silently giving the Worker,
+        //              the Api, and the Backfill CLI one empty database each under their own CWDs.
+        // That throw is the point: a cloud lift-and-shift that forgets to repoint the four spots fails
+        // loudly (DB_RELOCATION.md §5) instead of forking the store.
+        var resolved = DbPathResolver.ResolvePath(DbPathResolver.DefaultConnectionString, "sp500");
+
+        if (OperatingSystem.IsWindows())
+        {
+            DbPathResolver.RequireAbsoluteStorePath(resolved);   // no throw
+        }
+        else
+        {
+            var ex = Assert.Throws<InvalidOperationException>(
+                () => DbPathResolver.RequireAbsoluteStorePath(resolved));
+            Assert.Contains("not absolute", ex.Message, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void FR37_ThePortableTokenForm_IsAbsoluteOnEveryPlatform()
+    {
+        // The counterpart to the test above, and the actual cloud-move recipe: the {LocalAppData} token
+        // resolves through the known-folders API to an absolute location on BOTH platforms
+        // (%LOCALAPPDATA% on Windows, ~/.local/share on Linux), so this form needs no per-OS edit.
+        var resolved = DbPathResolver.ResolvePath(
+            "Data Source={LocalAppData}/AlphaLabDatabase/{Arena.Id}/alphalab.db", "sp500");
+
+        DbPathResolver.RequireAbsoluteStorePath(resolved);   // no throw, on any OS
+    }
+
+    [Fact]
+    public void FR37_Resolve_RefusesToCreateAStoreUnderTheWorkingDirectory()
+    {
+        // The writer path must refuse BEFORE EnsureDirectoryExists runs - otherwise a relative config
+        // silently creates a stray store beside whatever CWD the process happened to start in.
+        var relative = Path.Combine("alphalab-relative-" + Guid.NewGuid().ToString("N"), "{Arena.Id}");
+
+        Assert.Throws<InvalidOperationException>(
+            () => DbPathResolver.Resolve($"Data Source={relative}/alphalab.db", "sp500"));
+        Assert.False(Directory.Exists(Path.GetFullPath(relative.Replace("{Arena.Id}", "sp500"))));
+    }
+
+    [Fact]
+    public void FR37_ResolvePath_MalformedConnectionString_FailsClosedWithADiagnosis()
+    {
+        // A typo in ConnectionStrings:AlphaLab must name the key and the offending value, not surface
+        // as a bare 'Keyword not supported' from deep inside the SQLite builder.
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => DbPathResolver.ResolvePath("Data Sorce=E:/x/{Arena.Id}/alphalab.db", "sp500"));
+
+        Assert.Contains("ConnectionStrings:AlphaLab", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("DB_RELOCATION", ex.Message, StringComparison.Ordinal);
     }
 
     [Theory]
