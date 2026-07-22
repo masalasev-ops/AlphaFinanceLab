@@ -117,11 +117,13 @@ public static class BackfillArgs
             // P1R-10 (finding 149): reject sp500 at PARSE, not ~300 API calls later. The CLI's membership
             // providers are hardcoded to OEF + Wikipedia S&P 100 (Program.cs), so an sp500 run fetches ~101
             // names and fail-closes at the [495,510] count-sanity gate — a data-shaped error for an
-            // unwired-code cause. Give the real reason up front. The widening is an open proposal (PROGRESS).
+            // unwired-code cause. Give the real reason up front. The FORWARD widening remains an open
+            // proposal (PROGRESS); the Phase-4 replay prerequisite is the SEPARATE '--historical sp500' mode.
             "sp500" => throw new ArgumentException(
-                "--universe sp500 is not wired: the CLI's membership providers are OEF + Wikipedia S&P 100 " +
-                "(Program.cs), so an sp500 run would fail the [495,510] count-sanity gate ~300 API calls in. " +
-                "The S&P 500 widening is a recorded proposal - see PROGRESS. Use 'sp100'."),
+                "--universe sp500 is not wired for the FORWARD bootstrap: the CLI's membership providers are " +
+                "OEF + Wikipedia S&P 100 (Program.cs), so an sp500 run would fail the [495,510] count-sanity " +
+                "gate ~300 API calls in. The forward widening is a recorded proposal - see PROGRESS. Use 'sp100'. " +
+                "(For the Phase-4 replay prerequisite use '--historical sp500 --from d --to d', D70.)"),
             _ => throw new ArgumentException($"Unknown universe '{universe}'. Use 'sp100'.")
         };
         return new BackfillOptions { Universe = universe, AsOf = asOf, BackfillYears = years, DryRun = dryRun, Preflight = preflight, CountBand = countBand };

@@ -43,8 +43,7 @@ public static class PipelineComposition
         // CONFIG binds (finding F): the CONSUMING phase owns the bind, and the BOUND options must be
         // registered BEFORE AddAlphaLabMembership so its TryAddSingleton defaults are no-ops — otherwise
         // Data (D77 gate), Calendar, CorporateActions (findings B/C), Regime (D50) and Costs (D43) would
-        // silently fall back to unbound defaults. UniverseOptions stays unregistered on purpose
-        // (finding F — wiring it is the D70-widening job).
+        // silently fall back to unbound defaults.
         var regimeOptions = Bind<RegimeOptions>(configuration, RegimeOptions.SectionName);
         services.AddSingleton(Bind<DataQualityOptions>(configuration, DataQualityOptions.SectionName));
         services.AddSingleton(Bind<CalendarOptions>(configuration, CalendarOptions.SectionName));
@@ -56,6 +55,19 @@ public static class PipelineComposition
         services.AddSingleton(Bind<GateOptions>(configuration, GateOptions.SectionName));
         services.AddSingleton(Bind<AllocatorOptions>(configuration, AllocatorOptions.SectionName));
         services.AddAlphaLabMembership(regimeOptions);
+
+        // UniverseOptions bind + the rule-22 slice scope (Phase 4 / checkpoint 4.3 — this WAS the
+        // "D70-widening job" finding F deferred). Once the historical S&P 500 membership lands,
+        // MembersAsOf(today) resolves ~500 names; the FORWARD universe must stay the S&P 100 slice
+        // through Phase-4 sign-off, so the membership read is decorated with an intersection against
+        // the pre-ingest slice snapshot while Universe:Bootstrap:Universe == "sp100". The post-sign-off
+        // widen is the config flip; the REPLAY composition re-registers the RAW read (replay never
+        // runs on the slice, rule 22).
+        services.AddSingleton(Bind<UniverseOptions>(configuration, UniverseOptions.SectionName));
+        services.AddScoped<IIndexMembershipRead>(sp => new SliceScopedMembershipRead(
+            new IndexMembershipReadService(sp.GetRequiredService<AlphaLabDbContext>()),
+            sp.GetRequiredService<AlphaLabDbContext>(),
+            sp.GetRequiredService<UniverseOptions>()));
 
         services.AddScoped<Stage1Fetch>();
         services.AddScoped<DailyPipeline>();
