@@ -56,9 +56,13 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
         // are excluded by the predicate. Computed once (it is strategy-invariant).
         var trialsCount = db.TrialsRegistry.Count(t => t.RunKind == runKind);
 
-        var promotable = db.Strategies
-            .Where(s => s.Status == "candidate" || s.Status == "live")
-            .Select(s => s.StrategyId)
+        // Run-kind-scoped status (Phase 4/D37): a replay-retired strategy drops out of the REPLAY
+        // promotable set via its own quarantined records, never via the shared forward column.
+        var effective = EffectiveStatus.Resolve(db, runKind);
+        var promotable = effective
+            .Where(kv => kv.Value is "candidate" or "live")
+            .Select(kv => kv.Key)
+            .OrderBy(id => id, StringComparer.Ordinal)
             .ToList();
 
         var results = new List<MonitorResult>();
@@ -156,8 +160,14 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
 
         if (aggregate == MonitorStatus.Retired)
         {
-            var row = db.Strategies.FirstOrDefault(s => s.StrategyId == strategyId);
-            if (row is not null) row.Status = "retired";
+            // The shared-column mutation is FORWARD-only (D37): a replay auto-retire is fully recorded
+            // by its quarantined overfitting_status 'retired' row (which EffectiveStatus reads) + the
+            // go_live_log demotion below — it must never flip the forward strategy to 'retired'.
+            if (runKind == RunKindLive)
+            {
+                var row = db.Strategies.FirstOrDefault(s => s.StrategyId == strategyId);
+                if (row is not null) row.Status = "retired";
+            }
 
             // The retire is a demotion EVENT in the go-live/retire audit (D31): write the go_live_log row
             // with the dedicated `demoted` column set (verdict 'Revert'). Without it the audit records only

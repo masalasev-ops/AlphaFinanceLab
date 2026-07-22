@@ -1,8 +1,12 @@
 using System.Globalization;
+using System.Text.Json;
 using AlphaLab.Core.Config;
 using AlphaLab.Data;
+using AlphaLab.Data.Entities;
 using AlphaLab.Data.Providers;
 using AlphaLab.Data.Services;
+using AlphaLab.Evaluation.Calibration;
+using AlphaLab.Evaluation.Populations;
 using AlphaLab.Worker.Pipeline;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -19,7 +23,8 @@ public sealed record ReplayRequest(
     string To,
     string? Watermark = null,
     string? LearnThrough = null,
-    bool Reset = false);
+    bool Reset = false,
+    bool WithPlants = true);
 
 /// <summary>What one replay pass did. The committed prefix persists on an early stop (resumable: re-run
 /// the same command — committed days are skipped).</summary>
@@ -107,6 +112,7 @@ public sealed class ReplayRunner(
             RecoverCrashedReplayRuns(db);
             if (request.Reset) DeleteReplayGeneration(db);
             GuardSingleGeneration(db, watermark, request);
+            if (request.WithPlants) SeedPlants(db, request.From);
 
             sessions = new CalendarService(db)
                 .SessionsBetween(ParseDate(request.From), ParseDate(request.To))
@@ -171,6 +177,60 @@ public sealed class ReplayRunner(
         var max = string.CompareOrdinal(barMax, caMax) >= 0 ? barMax : caMax ?? barMax;
         return max ?? throw new InvalidOperationException(
             "The store has no bars — nothing to replay. Run the D70 historical backfill first (fail closed).");
+    }
+
+    /// <summary>Seed the D64 plant cohorts (FR-36): one strategies row + one REPLAY account + one
+    /// replay-column trials row per plant (D37 — replay trials are the separate registry track).
+    /// Idempotent: an existing plant is left untouched (its parameters are frozen in its id). Plants
+    /// are FIXTURES seeded directly (like the dummy roster), not CandidateFactory candidates — the
+    /// unregistered marker in config_json says so permanently (rule 16).</summary>
+    private void SeedPlants(AlphaLabDbContext db, string seededOn)
+    {
+        var calibration = configuration.GetSection(CalibrationOptions.SectionName).Get<CalibrationOptions>() ?? new CalibrationOptions();
+        var populations = configuration.GetSection(PopulationsOptions.SectionName).Get<PopulationsOptions>() ?? new PopulationsOptions();
+        var specs = PlantCohorts.Build(calibration.Plant, PopulationFamilies.ForPhase3(populations));
+
+        var seeded = 0;
+        foreach (var spec in specs)
+        {
+            if (!db.Strategies.Any(s => s.StrategyId == spec.StrategyId))
+            {
+                db.Strategies.Add(new StrategyRow
+                {
+                    StrategyId = spec.StrategyId,
+                    Family = "plant",
+                    ConfigJson = JsonSerializer.Serialize(new
+                    {
+                        plant = true,
+                        kind = spec.Kind.ToString().ToLowerInvariant(),
+                        family = spec.Family,
+                        alpha_ann_pct = spec.AlphaAnnPct,
+                        seed = spec.Seed,
+                        unregistered = true,
+                    }),
+                    ExitPolicyJson = "{}",   // a plant never trades; there is no policy to execute
+                    HoldingHorizonDays = spec.HorizonDays,
+                    CreatedOn = seededOn,
+                    Status = "candidate",
+                });
+                db.TrialsRegistry.Add(new TrialsRegistryRow
+                {
+                    StrategyId = spec.StrategyId, RegisteredOn = seededOn, Kind = "new", RunKind = ReplayKind,
+                });
+                seeded++;
+            }
+            if (!db.Accounts.Any(a => a.StrategyId == spec.StrategyId && a.RunKind == ReplayKind))
+            {
+                db.Accounts.Add(new AccountRow
+                {
+                    StrategyId = spec.StrategyId,
+                    StartingCash = AlphaLab.Strategies.DummyRoster.DefaultStartingCash,
+                    RunKind = ReplayKind,
+                });
+            }
+        }
+        db.SaveChanges();
+        if (seeded > 0) _logger.LogInformation("replay: seeded {Count} D64 plant(s) across {Total} spec(s).", seeded, specs.Count);
     }
 
     // A 'running' replay run is a crash orphan: its Stage-2 rolled back, so marking it failed loses
@@ -262,6 +322,10 @@ public sealed class ReplayRunner(
         // Replay NEVER runs on the S&P 100 slice (rule 22/D70): the RAW as-of read replaces the
         // forward composition's SliceScopedMembershipRead.
         services.AddScoped<IIndexMembershipRead, IndexMembershipReadService>();
+
+        // The D64 plants (FR-36): the equity step joins the atomic replay day via the extension seam.
+        services.AddSingleton(configuration.GetSection(CalibrationOptions.SectionName).Get<CalibrationOptions>() ?? new CalibrationOptions());
+        services.AddScoped<IPipelineDayExtension, PlantEquityStep>();
 
         return services.BuildServiceProvider();
     }

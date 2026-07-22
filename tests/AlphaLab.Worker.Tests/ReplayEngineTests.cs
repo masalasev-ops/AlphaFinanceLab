@@ -25,11 +25,13 @@ namespace AlphaLab.Worker.Tests;
 /// </summary>
 public class ReplayEngineTests
 {
-    private static IConfiguration HarnessConfiguration() =>
+    internal static IConfiguration HarnessConfiguration() =>
         new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Populations:Size"] = "6",
             ["Populations:CostFreeSize"] = "3",
+            // CI-scale plants (FR-36): the same code paths as the full-scale 50-seed cohorts, kept small.
+            ["Calibration:Plant:SeedsPerPlant"] = "2",
         }).Build();
 
     private static ReplayRunner Runner(PipelineHarness h) =>

@@ -69,7 +69,8 @@ public sealed class DailyPipeline(
     ArenaOptions arena,
     WorkerOptions worker,
     TimeProvider clock,
-    ILogger<DailyPipeline> logger)
+    ILogger<DailyPipeline> logger,
+    IEnumerable<IPipelineDayExtension> extensions)
 {
     // The daily fetch window: enough sessions of context that the FR-6 outlier / reconciliation checks
     // have neighbours around the just-closed bar. NOT a config knob (it is an internal fetch bound, not a
@@ -164,6 +165,9 @@ public sealed class DailyPipeline(
 
                 foreach (var account in ledger.GetAccounts(ledgerKind))
                 {
+                    // Plants (FR-36) are equity-only fixtures: PlantEquityStep computes their day below;
+                    // they have no funnel plan, no orders, no book — skipping is by design, not a warning.
+                    if (AlphaLab.Evaluation.Calibration.PlantCohorts.IsPlantId(account.StrategyId)) continue;
                     await RunAccountDayAsync(account, ledgerKind, asOfDate, asOf, watermark, features, broker, ct).ConfigureAwait(false);
                 }
 
@@ -173,6 +177,13 @@ public sealed class DailyPipeline(
                 // the forward one — run_kind is in control_equity's PK). Batched — one bulk insert, no
                 // per-member EF round-trip (§5.2).
                 ComputePopulations(asOfDate, asOf, features, runKindToken);
+
+                // Pipeline day extensions (Phase 4/4.5): none registered forward; the replay composition
+                // registers PlantEquityStep here, inside the atomic day (a throw rolls the day back).
+                foreach (var extension in extensions)
+                {
+                    extension.AfterPopulations(new PipelineDayContext(asOf, asOfDate, watermark, runKindToken, features));
+                }
 
                 PersistQualityFlags(runId, staged, watermark);
 
