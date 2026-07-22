@@ -40,15 +40,22 @@ public sealed class CorporateActionApplier(
     CorporateActionsOptions options)
 {
     /// <summary>
-    /// Apply every corporate action effective on <paramref name="asOf"/> to <paramref name="accountId"/>'s
+    /// Apply every corporate action that became effective since the prior session — the window
+    /// (<paramref name="previousSession"/>, <paramref name="asOf"/>] — to <paramref name="accountId"/>'s
     /// held positions, then run the fail-closed stoppage check over the surviving book.
     ///
     /// Actions are matched to HELD positions only: a dividend or split on a name the account does not
     /// hold has no ledger effect. Each held security's actions are resolved at
     /// <paramref name="watermark"/> and filtered to those whose <see cref="CorporateAction.AppliedOn"/>
-    /// equals <paramref name="asOf"/>.
+    /// falls in the window. The window — not equality with asOf (finding 192) — is what lets an action
+    /// whose effective date is a NON-SESSION day (a weekend split, a holiday merger close) apply on the
+    /// next session instead of never; consecutive sessions partition the date line, so each action still
+    /// applies exactly once. <paramref name="previousSession"/> null (no prior session in the calendar)
+    /// widens the window to everything ≤ asOf — vacuous in practice, since no book exists before the
+    /// first session.
     /// </summary>
-    public CorporateActionOutcome ApplyForAccount(long accountId, RunKind runKind, string asOf, string watermark)
+    public CorporateActionOutcome ApplyForAccount(
+        long accountId, RunKind runKind, string asOf, string watermark, string? previousSession)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(asOf);
         ArgumentException.ThrowIfNullOrWhiteSpace(watermark);
@@ -63,12 +70,14 @@ public sealed class CorporateActionApplier(
 
         foreach (var securityId in heldSecurities)
         {
-            // Resolve this security's actions at the watermark (D76), keep only today's. Ordered by
-            // (effective_date, type) by the read service, so on a shared date "dividend" precedes "split"
-            // lexically — the dividend is paid on the pre-split shares of record, which is the correct order.
+            // Resolve this security's actions at the watermark (D76), keep the (previousSession, asOf]
+            // window (finding 192). Ordered by (effective_date, type) by the read service, so on a shared
+            // date "dividend" precedes "split" lexically — the dividend is paid on the pre-split shares
+            // of record, which is the correct order.
             var todays = actions.GetActionsAsOf(securityId.Value, watermark)
                 .Select(ToDomain)
-                .Where(a => a.AppliedOn == asOf)
+                .Where(a => string.CompareOrdinal(a.AppliedOn, asOf) <= 0
+                            && (previousSession is null || string.CompareOrdinal(a.AppliedOn, previousSession) > 0))
                 .ToList();
 
             var hasTerminalToday = todays.Any(IsTerminal);

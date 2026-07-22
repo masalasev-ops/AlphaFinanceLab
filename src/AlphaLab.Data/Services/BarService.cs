@@ -33,6 +33,13 @@ public interface IBarReadService
     /// security_id (D78). Date-major, served by <c>ix_bars_date</c>; the Phase-2 funnel / Phase-4 replay
     /// read shape ("every name at date D at watermark W"). One row per security.</summary>
     IReadOnlyList<BarRow> GetCrossSection(string date, string watermark);
+
+    /// <summary>The latest stored bar date ≤ <paramref name="upTo"/> with any version visible at
+    /// <paramref name="watermark"/>, or null if none — the incremental-fetch cursor. A single MAX(date)
+    /// query served by the (security_id, date, version) PK, never a full-series materialization
+    /// (finding 193): the old GetSeries("0001-01-01", …) path loaded a security's entire history per
+    /// security per day, which the sp500 widen and multi-day catch-up cannot afford.</summary>
+    string? LastStoredDate(long securityId, string upTo, string watermark);
 }
 
 public sealed class BarIngestionService(AlphaLabDbContext db) : IBarIngestionService
@@ -142,5 +149,21 @@ public sealed class BarReadService(AlphaLabDbContext db) : IBarReadService
             .Select(g => g.OrderByDescending(x => x.Version).First())
             .OrderBy(x => x.SecurityId)
             .ToList();
+    }
+
+    public string? LastStoredDate(long securityId, string upTo, string watermark)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(upTo);
+        ArgumentException.ThrowIfNullOrWhiteSpace(watermark);
+        // Everything stays in SQL — MAX(date) over the PK range, with both comparisons in EF's
+        // translatable string.Compare form (SQLite's BINARY collation is ordinal, so on ISO-8601
+        // strings lexical order == chronological; the GetSeries comment records the same reasoning).
+        // The date's mere existence at the watermark is the question, so no version resolution is
+        // needed: any visible version of a date proves the date is stored.
+        return db.Bars
+            .Where(x => x.SecurityId == securityId
+                        && string.Compare(x.Date, upTo) <= 0
+                        && string.Compare(x.ObservedAt, watermark) <= 0)
+            .Max(x => (string?)x.Date);
     }
 }

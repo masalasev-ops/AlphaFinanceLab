@@ -86,16 +86,25 @@ public sealed class DailyPipeline(
     /// <summary>
     /// Process one trading day. <paramref name="runKind"/> is the runs.run_kind ('live' or 'catchup' —
     /// both are FORWARD, so the ledger writes RunKind.Live for both, D37). Idempotent per day via the
-    /// session-derived watermark + ux_runs_ok_forward; a re-run of an already-'ok' forward day is caught
-    /// by the partial unique index at Stage-2 commit.
+    /// watermark + ux_runs_ok_forward; a re-run of an already-'ok' forward day is caught by the partial
+    /// unique index at Stage-2 commit.
+    ///
+    /// WATERMARK (D92, finding 194): an explicit <paramref name="watermark"/> wins (the replay /
+    /// reproduce seam — a caller that already knows what "now" must mean). Otherwise a 'catchup' day
+    /// stamps the TRUE observation instant — the day is being recovered later, and pretending it was
+    /// observed at {asOf}T22:00:00Z is exactly the PIT fiction replay must not reason over
+    /// (FX-CatchupObservedAt). A 'live' day keeps the session-derived {asOf}T22:00:00Z: the run happens
+    /// the same evening, so the stamp is a bounded approximation of the truth, and it is what keeps a
+    /// same-day re-fetch a value-diff no-op.
     /// </summary>
-    public async Task<DailyRunResult> RunDayAsync(string asOf, string runKind = RunKindLive, CancellationToken ct = default)
+    public async Task<DailyRunResult> RunDayAsync(
+        string asOf, string runKind = RunKindLive, string? watermark = null, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(asOf);
         var asOfDate = ParseDate(asOf);
-        // Session-derived watermark (D47/2.11 convention) — deterministic, NEVER UtcNow, so a re-fetch is
-        // a value-diff no-op and the day is reproducible.
-        var watermark = $"{asOf}T22:00:00Z";
+        watermark ??= string.Equals(runKind, "catchup", StringComparison.Ordinal)
+            ? NowIso()                 // captured ONCE — every write of the day carries the same instant
+            : $"{asOf}T22:00:00Z";
 
         using var arenaScope = logger.BeginArenaScope(arena);
 
@@ -240,11 +249,9 @@ public sealed class DailyPipeline(
         return Iso(cursor);
     }
 
-    private string? LastStoredDate(long securityId, string asOf, string watermark)
-    {
-        var series = barReads.GetSeries(securityId, "0001-01-01", asOf, watermark);
-        return series.Count == 0 ? null : series[^1].Date;
-    }
+    // The incremental-fetch cursor — one MAX(date) query (finding 193), never a full-series scan.
+    private string? LastStoredDate(long securityId, string asOf, string watermark) =>
+        barReads.LastStoredDate(securityId, asOf, watermark);
 
     // ---- Step 2: open the run row (committed in its own small transaction) ----
 
@@ -304,8 +311,11 @@ public sealed class DailyPipeline(
             return;
         }
 
-        // (a) Corporate actions effective today, BEFORE fills/funnel (D53 order).
-        caApplier.ApplyForAccount(account.AccountId, RunKind.Live, asOf, watermark);
+        // (a) Corporate actions effective since the prior session — the (prev, asOf] window, finding 192,
+        // so a weekend/holiday effective date applies on the next session — BEFORE fills/funnel (D53 order).
+        var caPrevSession = calendar.PreviousSession(asOfDate);
+        caApplier.ApplyForAccount(account.AccountId, RunKind.Live, asOf, watermark,
+            caPrevSession is { } cps ? Iso(cps) : null);
 
         // (b) Fill the orders decided on the PRIOR session at today's open (the T+1 half of decide-at-close-T).
         FillPriorOrders(account.AccountId, asOfDate, asOf, features, broker);

@@ -19,9 +19,13 @@ public sealed record CatchupOutcome(int MissedCount, int Processed, bool Stopped
 /// (a failed day left no 'ok' row and rolled back its bars) and resumes exactly there. A FRESH DbContext
 /// per day (a new DI scope) means no cross-day change-tracker state leaks between transactions.
 ///
-/// IDEMPOTENT: the watermark is session-derived (`{as_of}T22:00:00Z`, never UtcNow) and ingestion is
-/// value-diff-append, so a re-fetch is a no-op; `catchup_log`'s PK and `ux_runs_ok_forward` are the
-/// belt-and-braces. No LLM for past days (D47) — structural, there is no IAnalysisProvider until Phase 5.
+/// IDEMPOTENT: ingestion is value-diff-append, so a re-fetch of identical data is a no-op regardless of
+/// the watermark; `catchup_log`'s PK and `ux_runs_ok_forward` are the belt-and-braces. The watermark a
+/// recovered day records is the TRUE observation instant (D92, finding 194) — never the session-derived
+/// `{as_of}T22:00:00Z` fiction — so replay reasons over honest observation dates; a re-run of a failed
+/// day records its own (later) honest instant, which is correct, not a determinism leak: reproduce-day
+/// pins the watermark the committed run actually stored. No LLM for past days (D47) — structural, there
+/// is no IAnalysisProvider until Phase 5.
 ///
 /// run_kind: a session processed on its OWN ET date is 'live'; a session recovered later is 'catchup'
 /// (which also writes catchup_log). Both are FORWARD evidence (the ledger collapses them to RunKind.Live).
@@ -64,7 +68,7 @@ public sealed class CatchupRunner(
             // Fresh scope ⇒ fresh DbContext for this day's transaction.
             using var scope = scopeFactory.CreateScope();
             var pipeline = scope.ServiceProvider.GetRequiredService<DailyPipeline>();
-            var result = await pipeline.RunDayAsync(Iso(day), runKind, cancellationToken);
+            var result = await pipeline.RunDayAsync(Iso(day), runKind, ct: cancellationToken);
 
             if (result.Aborted)
             {

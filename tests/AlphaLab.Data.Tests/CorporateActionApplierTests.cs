@@ -19,6 +19,9 @@ public class CorporateActionApplierTests
     private static readonly SecurityId AaplId = new(Aapl);
     private const string AsOf = "2026-07-16";
     private const string Watermark = "2026-07-16T22:00:00Z";
+    // The session before AsOf: the finding-192 window is (PrevSession, AsOf], so these fixtures apply
+    // exactly what the old ==asOf rule applied, plus anything effective on a non-session gap day.
+    private const string PrevSession = "2026-07-15";
     private static readonly string ObservedEarly = "2026-07-16T20:00:00Z"; // visible at the watermark
 
     private static CorporateActionApplier Applier(AlphaLabDbContext db, CorporateActionsOptions? options = null) => new(
@@ -61,7 +64,7 @@ public class CorporateActionApplierTests
             new CorporateActionIngestion(db).IngestDividends(Aapl,
                 [new DividendEvent(AsOf, Value: 0.24m, UnadjustedValue: 0.25m)], ObservedEarly);
 
-            var outcome = Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark);
+            var outcome = Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark, PrevSession);
 
             var store = new LedgerStore(db);
             // Cash: 100 shares × 0.25 UNADJUSTED (never the split-adjusted 0.24) = 25.00, on the ex-date.
@@ -91,7 +94,7 @@ public class CorporateActionApplierTests
             new CorporateActionIngestion(db).IngestDividends(Aapl,
                 [new DividendEvent("2026-07-10", 0.24m, 0.25m)], ObservedEarly); // ex-date last week
 
-            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark);
+            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark, PrevSession);
 
             Assert.DoesNotContain(new LedgerStore(db).GetCashEvents(account, RunKind.Live),
                 e => e.Type == CashEventType.Dividend);
@@ -113,7 +116,7 @@ public class CorporateActionApplierTests
             new CorporateActionIngestion(db).IngestDividends(Aapl,
                 [new DividendEvent(AsOf, 0.24m, 0.25m)], "2026-07-23T20:00:00Z");
 
-            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark);
+            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark, PrevSession);
 
             Assert.DoesNotContain(new LedgerStore(db).GetCashEvents(account, RunKind.Live),
                 e => e.Type == CashEventType.Dividend);
@@ -134,7 +137,7 @@ public class CorporateActionApplierTests
             new CorporateActionIngestion(db).IngestSplits(Aapl,
                 [new SplitEvent(AsOf, Ratio: 2.0, RawRatio: "2/1")], ObservedEarly);
 
-            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark);
+            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark, PrevSession);
 
             var store = new LedgerStore(db);
             var position = store.GetPosition(account, AaplId)!;
@@ -163,7 +166,7 @@ public class CorporateActionApplierTests
             // SecurityMaster writes the ticker_change corporate_actions row (and moves the alias).
             new SecurityMaster(db).RecordTickerChange(Aapl, "APLX", AsOf, ObservedEarly);
 
-            var outcome = Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark);
+            var outcome = Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark, PrevSession);
 
             var store = new LedgerStore(db);
             var position = store.GetPosition(account, AaplId)!;
@@ -188,7 +191,7 @@ public class CorporateActionApplierTests
             using var db = TestDb.Open(path);
             var account = Seed(db, withBarToday: false); // no asOf bar → the stoppage
 
-            var outcome = Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark);
+            var outcome = Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark, PrevSession);
 
             var frozen = new LedgerStore(db).GetPosition(account, AaplId)!;
             Assert.True(frozen.Frozen);
@@ -211,7 +214,7 @@ public class CorporateActionApplierTests
             new CorporateActionIngestion(db).IngestDividends(Aapl,
                 [new DividendEvent(AsOf, 0.24m, 0.25m)], ObservedEarly);
 
-            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark);
+            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark, PrevSession);
 
             // The dividend still credits, AND the position freezes (the missing bar is unexplained).
             var store = new LedgerStore(db);
@@ -230,7 +233,7 @@ public class CorporateActionApplierTests
             using var db = TestDb.Open(path);
             var account = Seed(db, withBarToday: true); // has a bar today
 
-            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark);
+            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark, PrevSession);
 
             Assert.False(new LedgerStore(db).GetPosition(account, AaplId)!.Frozen);
         }
@@ -292,7 +295,7 @@ public class CorporateActionApplierTests
             AddAction(db, "merger_cash", cash: 54.20m);
             db.SaveChanges();
 
-            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark);
+            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark, PrevSession);
 
             var store = new LedgerStore(db);
             Assert.Null(store.GetPosition(account, AaplId));              // removed
@@ -318,7 +321,7 @@ public class CorporateActionApplierTests
             AddAction(db, "merger_stock", ratio: 0.85, counterparty: Acq);
             db.SaveChanges();
 
-            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark);
+            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark, PrevSession);
 
             var store = new LedgerStore(db);
             Assert.Null(store.GetPosition(account, AaplId));              // target gone
@@ -343,7 +346,7 @@ public class CorporateActionApplierTests
             AddAction(db, "merger_mixed", cash: 10m, ratio: 0.5, counterparty: Acq);
             db.SaveChanges();
 
-            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark);
+            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark, PrevSession);
 
             var store = new LedgerStore(db);
             Assert.Null(store.GetPosition(account, AaplId));
@@ -368,7 +371,7 @@ public class CorporateActionApplierTests
             AddAction(db, "spinoff", ratio: 0.25, counterparty: Acq); // 0.25/1.25 = 20% of basis
             db.SaveChanges();
 
-            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark);
+            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark, PrevSession);
 
             var store = new LedgerStore(db);
             var parent = store.GetPosition(account, AaplId)!;
@@ -398,7 +401,7 @@ public class CorporateActionApplierTests
             AddAction(db, "spinoff", ratio: null, counterparty: Acq); // no ratio → first-print path
             db.SaveChanges();
 
-            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark);
+            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark, PrevSession);
 
             var store = new LedgerStore(db);
             var spin = store.GetPosition(account, AcqId)!;
@@ -423,7 +426,7 @@ public class CorporateActionApplierTests
             AddAction(db, "delist");
             db.SaveChanges();
 
-            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark);
+            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark, PrevSession);
 
             var store = new LedgerStore(db);
             Assert.Null(store.GetPosition(account, AaplId));              // force-exited
@@ -447,7 +450,7 @@ public class CorporateActionApplierTests
             db.SaveChanges();
 
             var options = new CorporateActionsOptions { BankruptcyHaircutPct = 80.0 };
-            Applier(db, options).ApplyForAccount(account, RunKind.Live, AsOf, Watermark);
+            Applier(db, options).ApplyForAccount(account, RunKind.Live, AsOf, Watermark, PrevSession);
 
             var sell = Assert.Single(new LedgerStore(db).GetTrades(account, RunKind.Live));
             Assert.Equal(30.0m, sell.RawFillPrice);                      // 150 × (1 − 0.80)
@@ -468,12 +471,89 @@ public class CorporateActionApplierTests
             var account = Seed(db, shares: 100, basis: 4_000m, withBarToday: true); // still trading
             // No delist action exists — a membership drop would only stamp index_membership.removed_on.
 
-            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark);
+            Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark, PrevSession);
 
             var position = new LedgerStore(db).GetPosition(account, AaplId)!;
             Assert.Equal(100, position.Shares);                          // untouched
             Assert.False(position.Frozen);                               // still printing → not frozen
             Assert.Empty(new LedgerStore(db).GetTrades(account, RunKind.Live)); // never force-exited
+        }
+        finally { TestDb.Delete(path); }
+    }
+
+    // ================= finding 192: the (previousSession, asOf] effective window =================
+
+    // A weekend split around the 2026-07-10 (Fri) → 2026-07-13 (Mon) session boundary. The old
+    // AppliedOn == asOf rule could NEVER apply an action effective Saturday 2026-07-11 — no run ever
+    // has that asOf — so the position would drift unsplit forever.
+    private const string Friday = "2026-07-10", Saturday = "2026-07-11", Monday = "2026-07-13", Tuesday = "2026-07-14";
+    private const string WindowWatermark = "2026-07-14T22:00:00Z";
+    private const string WindowObserved = "2026-07-09T20:00:00Z"; // visible at every session above
+
+    /// <summary>Seed AAPL + a held position + a bar on EACH session the test applies on (the stoppage
+    /// check needs the day's print), and the Saturday-effective 2:1 split.</summary>
+    private static long SeedWeekendSplit(AlphaLabDbContext db)
+    {
+        new SecurityMaster(db).Register("AAPL", "US", "2020-01-01"); // security_id 1
+        var store = new LedgerStore(db);
+        var account = store.OpenAccount(new Account { StrategyId = "bh", StartingCash = 100_000m }, "2026-01-02");
+        store.UpsertPosition(new Position
+        {
+            AccountId = account.AccountId, SecurityId = AaplId, Shares = 100, CostBasis = 10_000m, OpenedOn = "2026-01-02",
+        });
+
+        new BarIngestionService(db).IngestEod(Aapl,
+        [
+            new EodBar(Friday, 149.5, 151.0, 148.0, 150.0, 150.0, 1_000_000),
+            new EodBar(Monday, 74.5, 76.0, 74.0, 75.0, 75.0, 2_000_000),
+            new EodBar(Tuesday, 75.0, 76.5, 74.5, 76.0, 76.0, 2_000_000),
+        ], WindowObserved);
+        new CorporateActionIngestion(db).IngestSplits(Aapl, [new SplitEvent(Saturday, 2.0, "2:1")], WindowObserved);
+        return account.AccountId;
+    }
+
+    [Fact]
+    public void FR9_ActionEffectiveOnNonSessionDay_AppliesNextSession()
+    {
+        var path = TestDb.CreateMigrated();
+        try
+        {
+            using var db = TestDb.Open(path);
+            var account = SeedWeekendSplit(db);
+
+            var outcome = Applier(db).ApplyForAccount(account, RunKind.Live, Monday, WindowWatermark, Friday);
+
+            // Saturday ∈ (Friday, Monday]: the split applies on Monday, the next session.
+            Assert.Contains(outcome.Applied, a => a.Type == CorporateActionType.Split);
+            Assert.Equal(200, new LedgerStore(db).GetPosition(account, AaplId)!.Shares);
+        }
+        finally { TestDb.Delete(path); }
+    }
+
+    [Fact]
+    public void FR9_ActionWindow_NeverDoubleApplies()
+    {
+        var path = TestDb.CreateMigrated();
+        try
+        {
+            using var db = TestDb.Open(path);
+            var account = SeedWeekendSplit(db);
+            var store = new LedgerStore(db);
+
+            // Friday (window (Thu, Fri]): Saturday's split is still in the future — nothing applies.
+            var friday = Applier(db).ApplyForAccount(account, RunKind.Live, Friday, WindowWatermark, "2026-07-09");
+            Assert.DoesNotContain(friday.Applied, a => a.Type == CorporateActionType.Split);
+            Assert.Equal(100, store.GetPosition(account, AaplId)!.Shares);
+
+            // Monday (window (Fri, Mon]): it applies, once.
+            Applier(db).ApplyForAccount(account, RunKind.Live, Monday, WindowWatermark, Friday);
+            Assert.Equal(200, store.GetPosition(account, AaplId)!.Shares);
+
+            // Tuesday (window (Mon, Tue]): Saturday is behind the window — consecutive sessions
+            // partition the date line, so the split can never apply a second time.
+            var tuesday = Applier(db).ApplyForAccount(account, RunKind.Live, Tuesday, WindowWatermark, Monday);
+            Assert.DoesNotContain(tuesday.Applied, a => a.Type == CorporateActionType.Split);
+            Assert.Equal(200, store.GetPosition(account, AaplId)!.Shares);
         }
         finally { TestDb.Delete(path); }
     }
