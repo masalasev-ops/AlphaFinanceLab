@@ -64,3 +64,49 @@ in the shared code checkout and benefits every arena on its next run — arenas 
 calibration, never in logic. Calibration (cost model, covariance, control populations, verdict
 thresholds, replay report) is **arena-scoped and never copied between arenas** — recalibrate each new
 arena from its own data. Full spec: `ARENA_ARCHITECTURE_v1.9.3.md`.
+
+## 8. Phase-4 sign-off: the D70 backfill + `replay-calibrate` (v1.9.39; checkpoint 4.11)
+
+The Phase-4 build (checkpoints 4.1-4.10) ships the machinery; this section is the OPERATOR run that
+earns the DoD. Every step is resumable; nothing here touches forward rows (the replay generation is
+run_kind='replay', quarantined).
+
+1. **Apply the pending migrations, snapshot-first (rule 14).** The live arena still has M4
+   (`Phase35PositionSnapshots`) pending, and Phase 4 adds M5 (`Phase4Replay`):
+   `tools/snapshot-db.ps1 -Arena sp500` then `pwsh tools/migrate.ps1 -Arena sp500`.
+   (M5's D94 precondition fails loudly if any `corporate_actions.processed_on` was ever written —
+   it never was; a failure there means the store is not what we think and needs investigation.)
+2. **The D70 historical backfill** (hours; EODHD spend ~3 calls/name — check the headroom):
+   `dotnet run --project tools/Backfill -- --historical sp500 --from <window-start> --to <window-end>`
+   The window must cover >= Replay.ValidationYears (15y). The fja05680 CSV comes from
+   `Backfill:HistoricalMembershipUrl` (point it at the real URL or a downloaded copy — the committed
+   value is the test fixture). Review the coverage artifact
+   (`docs/calibration/sp500/historical-coverage-*.json`): gate exclusions and TICKER-REUSE SUSPECTS
+   are OUT of the replay universe fail-closed until you resolve them (re-run after fixes — the run is
+   idempotent and the artifact is deterministic, so a re-run is a clean git diff). Commit the artifact.
+   Do NOT re-run the FORWARD bootstrap (`--universe sp100`) after this until the widening lands: the
+   universe-blind reconciler would stamp removed_on on the ~400 non-slice members (P1).
+3. **Snapshot again**, then the full-scale calibration run (hours -> a day; deterministic; resumable —
+   a crash or stop resumes by re-running the same command):
+   `dotnet run --project src/AlphaLab.Worker -- replay-calibrate --from <start> --to <end> [--learn-through <boundary>]`
+   `--learn-through` is the FR-42 learn/validate split (a runtime parameter, deliberately no CONFIG
+   key); the curves build from the learn side, the no-edge breach-rate check reads the validate side.
+4. **Review the archived report** (`docs/calibration/sp500/<date>-calibration.md`): the verification
+   check table must be ALL-GREEN at full scale (Insufficient is only legitimate at CI scale). If the
+   edge-plant survival floor fails: raise the patience via a NEW `Monitor.S6.AutoRetireEvals` config
+   version and re-run — NEVER touch the plant (finding 113). Iterations are recorded as config-row
+   versions + report sections.
+5. **Commit the report** (+ the coverage artifact) and fill the PROGRESS Phase-4 gate box with the
+   measured numbers (detection-speed / days-to-indistinguishability medians, survival fractions, the
+   joint false-alarm fraction with per-signal contributions).
+6. **The D87 sign-off item:** record in PROGRESS whether a verified-depth S&P 400/600 as-of-membership
+   source is confirmed (the S&P 1500 widening target) — else the S&P 500 stands. Verified at sign-off,
+   never silently at the flip.
+7. **After sign-off:** `Replay.PrunePerMemberLedgersAfterSignoff` sanctions pruning the per-member
+   replay ledgers (control_equity + plant equity rows); the runs, power_reports, frozen curves and the
+   report stay. The forward widen (`Universe:Bootstrap:Universe` flip + backfill delta) remains a
+   SEPARATE post-sign-off action.
+
+The walk-forward seeding mode (`IBacktestEngine`) shares the replay generation rules: a seeding run
+over an evaluated generation (or vice versa) needs `--reset` — mixing evaluated and unevaluated days
+in one generation corrupts its cadence bookkeeping.

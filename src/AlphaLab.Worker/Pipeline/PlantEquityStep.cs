@@ -66,15 +66,10 @@ public sealed class PlantEquityStep(
         // txn) and the running bull/bear mix ≤ today for the renormalizer — labels ≤ t only, leak-free.
         var label = db.RegimeLabels.Find(context.AsOf, Replay);
         var plant = calibration.Plant;
-        var multiplier = label?.Trend switch
-        {
-            "bull" => plant.BullMultiplier,
-            "bear" => plant.BearMultiplier,
-            _ => 1.0,
-        };
+        var multiplier = label is null ? 1.0 : plant.MultiplierFor(label.Trend);
         var bulls = db.RegimeLabels.Count(l => l.RunKind == Replay && l.Trend == "bull" && string.Compare(l.AsOf, context.AsOf) <= 0);
         var bears = db.RegimeLabels.Count(l => l.RunKind == Replay && l.Trend == "bear" && string.Compare(l.AsOf, context.AsOf) <= 0);
-        var runningMean = PlantOverlay.RunningMultiplierMean(bulls, bears, plant.BullMultiplier, plant.BearMultiplier);
+        var runningMean = PlantOverlay.RunningMultiplierMean(bulls, bears, plant.MultiplierFor("bull"), plant.MultiplierFor("bear"));
 
         foreach (var spec in specs)
         {
@@ -89,7 +84,7 @@ public sealed class PlantEquityStep(
             var overlay = PlantOverlay.OverlayReturn(
                 spec.Kind, spec.AlphaAnnPct, spec.Key, ordinal,
                 plant.ActiveDayFrac, PlantOverlay.MeanActiveRun(plant.PersistencePhi, spec.HorizonDays),
-                label is null ? 1.0 : multiplier, runningMean);
+                multiplier, runningMean);
 
             var equity = priorEquity * (decimal)(1.0 + memberReturn + overlay);
             ledger.RecordEquityPoint(accountId, context.AsOf, equity, 0m, RunKind.Replay);

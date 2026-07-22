@@ -114,15 +114,18 @@ monitor:
         healthy_percentile_anchor: 95,
         suspect_below_anchor: 25,   # anti-predictive tail (D63): a no-edge strategy sits ~50th pct and must NOT trip Suspect; v5's original 0.25 restored
 
-        # post-calibration: piecewise-linear curves over track-length days,
-        # written as versioned config rows by the Phase-4 calibration job
-        p_edge_curve: "calibrated:phase4", p_noise_curve: "calibrated:phase4",
+        # post-calibration: piecewise-linear curves over track-length days, written as VERSIONED CONFIG
+        # ROWS by the Phase-4 calibration job (D98, v1.9.39) — key names Monitor.S3.PEdgeCurve.{family}
+        # and Monitor.S3.PNoiseCurve.{family}; the monitor reads them AS-OF the run watermark (D96) and
+        # falls back to the flat anchors above when either row is absent (both-rows-or-neither)
+        p_edge_curve: "config row Monitor.S3.PEdgeCurve.{family}", p_noise_curve: "config row Monitor.S3.PNoiseCurve.{family}",
         false_alarm_rate: 0.05,
         population_size: 200, cost_free_population_size: 50 }
   s4: { elevated_neighbor_loss_frac: 0.40 }
   s5: { psi_elevated: 0.10, psi_critical: 0.25 }
   s6: { window_days: 63, band_central_frac: 0.50,
-        elevated_windows: 2, critical_windows: 3, auto_retire_evals: 4 }
+        elevated_windows: 2, critical_windows: 3,   # the escalation ladder LANDED at Phase-4 build (v1.9.39): 2 consecutive inside-band = Warning, 3 = Suspect; sustained negative-t (2) = Suspect
+        auto_retire_evals: 4 }                      # post-freeze this is the VERSIONED CONFIG ROW Monitor.S6.AutoRetireEvals (D98) — the finding-113 patience knob: a survival-floor failure recalibrates THIS, never the plant
   s7: { brier_degradation_elevated: 0.20 }
   s8: { elevated_sustain_windows: 1, critical_simultaneous: 2 }
   mde: { confidence: 0.95, power: 0.80, nw_lag_cap_days: 21 }

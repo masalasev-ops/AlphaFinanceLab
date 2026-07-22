@@ -1,4 +1,4 @@
-# CLAUDE.md — AlphaLab (paper trading research lab)
+﻿# CLAUDE.md — AlphaLab (paper trading research lab)
 
 ## What this is
 Project name: **AlphaLab** (root namespace `AlphaLab.*`, D62).
@@ -14,7 +14,7 @@ envelope, 202+job_id for long-running commands, read-models stamped run_id+water
 money as strings/minor-units (never floats).
 
 ## Documentation map (read the phase's diet per docs/README_v1.9.md §3 — not everything)
-- docs/MASTER_DESIGN_v1.9.md — decisions D1–D91, architecture, golden rules, math appendix, UI boundary (§21–22), the Signal Library (§24)
+- docs/MASTER_DESIGN_v1.9.md — decisions D1–D99, architecture, golden rules, math appendix, UI boundary (§21–22), the Signal Library (§24)
 - docs/ARENA_ARCHITECTURE_v1.9.3.md — multi-arena isolation (D71): one universe per arena, arena-namespaced storage, arena-scoped calibration, the no-merge frontend rule
 - docs/STRATEGY_CATALOG_v1.9.md — IModel contracts + per-strategy acceptance criteria
 - docs/DESIGN_IMPROVEMENTS_v1.9.md — metrics math, costs/sizing, LLM economics, Arena Replay
@@ -33,7 +33,7 @@ money as strings/minor-units (never floats).
 - docs/DESIGN_IMPROVEMENTS_EXPLAINED.md — plain-language "why" companion to DESIGN_IMPROVEMENTS (section numbers match the spec)
 - docs/POST_PHASE8_IMPROVEMENTS.md - post-Phase-8 roadmap: what each improvement is and why it earns its slot (companion: POST_PHASE8_PLAN.md holds the sequence)
 - docs/POST_PHASE8_PLAN.md - post-Phase-8 build sequence: the passes in order + the hooks that exist when post-8 begins (incl. the Phase 4.5 signal digest, D91)
-- docs/CHANGELOG_v1.9.md — every consistency finding + decision (D1–D91), the provenance trace
+- docs/CHANGELOG_v1.9.md — every consistency finding + decision (D1–D99), the provenance trace
 - Navigation (not part of any phase diet): START_HERE.md (entry point), docs/README_v1.9.md (file map + build workflow), docs/MANIFEST.md (package manifest + revision state)
 - Mockups (visual direction for the GUI): docs/alphalab_ux_mockups.html — the single consolidated UX mockup (every screen)
 
