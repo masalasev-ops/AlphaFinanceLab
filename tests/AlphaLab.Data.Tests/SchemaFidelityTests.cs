@@ -96,7 +96,7 @@ public class SchemaFidelityTests
     }
 
     [Fact]
-    public void Schema_ExactlyTheThirtyFourTables_Exist()
+    public void Schema_ExactlyTheThirtyFiveTables_Exist()
     {
         var dbPath = TempDb();
         try
@@ -117,7 +117,10 @@ public class SchemaFidelityTests
             // + the Phase-2 checkpoint-2.2 ledger(8) + the checkpoint-2.8 regime tables(2) = 25, plus
             // the Phase-3 "honest arena" tables(9): control_populations, control_equity, trials_registry,
             // power_reports, go_live_log, allocation_log, overfitting_checks, overfitting_status, and the
-            // D52 journal_entries (needed by the FR-28 CandidateFactory pre-registration) = 34.
+            // D52 journal_entries (needed by the FR-28 CandidateFactory pre-registration) = 34, plus the
+            // Phase-3.5 D90 position_snapshots(1) = 35. D90 records the end-of-day book per account per
+            // session because `positions` is current state that corporate actions rewrite in place, so a
+            // past day's pre-trade book is otherwise unrecoverable and NFR-1 cannot hold (FR-25).
             //
             // STILL deliberately absent, and each for its own reason — this list is the guard
             // against a table appearing before the phase that earns it:
@@ -139,9 +142,9 @@ public class SchemaFidelityTests
                 "cash_events", "catchup_log", "config", "control_equity", "control_populations",
                 "corporate_actions", "data_quality_flags", "decisions", "equity_curve", "go_live_log",
                 "index_membership", "index_membership_log", "jobs", "journal_entries", "overfitting_checks",
-                "overfitting_status", "positions", "power_reports", "regime_episodes", "regime_labels",
-                "runs", "sector_changes", "securities", "strategies", "ticker_history",
-                "trades", "trading_calendar", "trials_registry", "worker_state"
+                "overfitting_status", "position_snapshots", "positions", "power_reports", "regime_episodes",
+                "regime_labels", "runs", "sector_changes", "securities", "strategies",
+                "ticker_history", "trades", "trading_calendar", "trials_registry", "worker_state"
             }, tables);
         }
         finally { TryDelete(dbPath); }

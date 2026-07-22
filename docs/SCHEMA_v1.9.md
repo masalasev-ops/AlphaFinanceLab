@@ -210,6 +210,19 @@ CREATE TABLE equity_curve (
   PRIMARY KEY (account_id, as_of, run_kind)
 );
 
+CREATE TABLE position_snapshots (                   -- the END-OF-DAY BOOK per account per session (D90)
+  account_id  INTEGER NOT NULL REFERENCES accounts(account_id),
+  as_of       TEXT NOT NULL,                       -- the session whose CLOSE this book describes
+  security_id INTEGER NOT NULL REFERENCES securities(security_id),
+  shares      REAL NOT NULL,                       -- a quantity, not money
+  cost_basis  TEXT NOT NULL,                       -- raw-price basis (D30); decimal TEXT (D69)
+  opened_on   TEXT NOT NULL,
+  frozen      INTEGER NOT NULL DEFAULT 0,          -- fail-closed flag (D39/D86), carried verbatim
+  frozen_reason TEXT,
+  run_kind    TEXT NOT NULL DEFAULT 'live',
+  PRIMARY KEY (account_id, as_of, security_id, run_kind)
+);
+
 CREATE TABLE decisions (                            -- "Why this trade" provenance
   decision_id INTEGER PRIMARY KEY,
   account_id INTEGER NOT NULL, as_of TEXT NOT NULL,

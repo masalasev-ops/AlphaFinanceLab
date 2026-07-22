@@ -339,6 +339,15 @@ public sealed class DailyPipeline(
 
         // (e) The day's equity point (idempotent per account/as_of/run_kind).
         ledger.RecordEquityPoint(account.AccountId, asOf, equity, cash, RunKind.Live);
+
+        // (f) The day's END-OF-DAY BOOK (D90). `held` was captured at (c), after corporate actions and
+        // after the T+1 fills, and the funnel does not mutate positions — so it IS the book at this
+        // session's close. Recording it is what makes the NEXT session reproducible: `positions` is
+        // current state that corporate actions rewrite in place (split share counts, merger
+        // conversions, spin-off lines) with no reversible trade row, so without this row a past day's
+        // pre-trade book is unrecoverable and NFR-1 cannot hold for anything the ledger touches.
+        // Inside the Stage-2 transaction, so a rolled-back day writes no snapshot (D59 sole writer).
+        ledger.RecordPositionSnapshot(account.AccountId, asOf, held, RunKind.Live);
     }
 
     private void FillPriorOrders(long accountId, DateOnly asOfDate, string asOf, BarFeatureView features, VirtualBroker broker)

@@ -38,6 +38,7 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
     public DbSet<StrategyRow> Strategies => Set<StrategyRow>();
     public DbSet<AccountRow> Accounts => Set<AccountRow>();
     public DbSet<PositionRow> Positions => Set<PositionRow>();
+    public DbSet<PositionSnapshotRow> PositionSnapshots => Set<PositionSnapshotRow>();
     public DbSet<TradeRow> Trades => Set<TradeRow>();
     public DbSet<CapacityRejectionRow> CapacityRejections => Set<CapacityRejectionRow>();
     public DbSet<CashEventRow> CashEvents => Set<CashEventRow>();
@@ -391,6 +392,23 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
             e.Property(x => x.OpenedOn).HasColumnName("opened_on").IsRequired();
             e.Property(x => x.Frozen).HasColumnName("frozen").IsRequired().HasDefaultValue(false);
             e.Property(x => x.FrozenReason).HasColumnName("frozen_reason");
+        });
+
+        // ---- position_snapshots ---- PK (account_id, as_of, security_id, run_kind): run_kind is IN
+        // the key, so a replay book cannot overwrite the forward one (the equity_curve precedent, D37).
+        modelBuilder.Entity<PositionSnapshotRow>(e =>
+        {
+            e.ToTable("position_snapshots");
+            e.HasKey(x => new { x.AccountId, x.AsOf, x.SecurityId, x.RunKind });
+            e.Property(x => x.AccountId).HasColumnName("account_id");
+            e.Property(x => x.AsOf).HasColumnName("as_of");
+            e.Property(x => x.SecurityId).HasColumnName("security_id");
+            e.Property(x => x.Shares).HasColumnName("shares").IsRequired();   // REAL — a quantity
+            e.Property(x => x.CostBasis).HasColumnName("cost_basis").HasColumnType("TEXT").IsRequired();
+            e.Property(x => x.OpenedOn).HasColumnName("opened_on").IsRequired();
+            e.Property(x => x.Frozen).HasColumnName("frozen").IsRequired().HasDefaultValue(false);
+            e.Property(x => x.FrozenReason).HasColumnName("frozen_reason");
+            e.Property(x => x.RunKind).HasColumnName("run_kind").IsRequired().HasDefaultValue("live");
         });
 
         // ---- trades ---- the one CHECK.

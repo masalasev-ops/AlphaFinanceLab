@@ -273,6 +273,93 @@ public class LedgerStoreTests
         Reason = reason,
     };
 
+    // ---- position_snapshots: the end-of-day book (D90) ----
+
+    [Fact]
+    public void D90_PositionSnapshot_RoundTripsTheWholeBook_IncludingFrozenState()
+    {
+        Run((db, store) =>
+        {
+            var account = store.OpenAccount(new Account { StrategyId = "bh:cw", StartingCash = 100_000m }, "2026-01-02");
+            var book = new List<Position>
+            {
+                new() { AccountId = account.AccountId, SecurityId = Aapl, Shares = 10, CostBasis = 1_234.56m, OpenedOn = "2026-01-02" },
+                new()
+                {
+                    AccountId = account.AccountId, SecurityId = Msft, Shares = 3.5, CostBasis = 987.65m,
+                    OpenedOn = "2025-12-01", Frozen = true, FrozenReason = "bar stoppage, no mapped action",
+                },
+            };
+
+            store.RecordPositionSnapshot(account.AccountId, "2026-01-05", book, RunKind.Live);
+            var restored = store.GetPositionSnapshot(account.AccountId, "2026-01-05", RunKind.Live);
+
+            // Every field must survive: frozen/frozen_reason are rendered verbatim into the funnel's
+            // stage_json, so a lossy snapshot would make a frozen day un-reproducible (FR-25).
+            Assert.Equal(2, restored.Count);
+            Assert.Equal(book[0], restored[0]);
+            Assert.Equal(book[1], restored[1]);
+            Assert.Equal(1_234.56m, restored[0].CostBasis);   // decimal → TEXT, exact (D69)
+        });
+    }
+
+    [Fact]
+    public void D90_PositionSnapshot_IsIdempotentPerDay_AndDropsNamesThatLeftTheBook()
+    {
+        Run((db, store) =>
+        {
+            var account = store.OpenAccount(new Account { StrategyId = "bh:cw", StartingCash = 100_000m }, "2026-01-02");
+            store.RecordPositionSnapshot(account.AccountId, "2026-01-05",
+            [
+                new() { AccountId = account.AccountId, SecurityId = Aapl, Shares = 10, CostBasis = 100m, OpenedOn = "2026-01-02" },
+                new() { AccountId = account.AccountId, SecurityId = Msft, Shares = 5, CostBasis = 50m, OpenedOn = "2026-01-02" },
+            ], RunKind.Live);
+
+            // A recovered day re-runs and closes MSFT. Re-recording must land on the same book (FR-7),
+            // not leave the sold name behind as a phantom holding.
+            store.RecordPositionSnapshot(account.AccountId, "2026-01-05",
+            [
+                new() { AccountId = account.AccountId, SecurityId = Aapl, Shares = 12, CostBasis = 120m, OpenedOn = "2026-01-02" },
+            ], RunKind.Live);
+
+            var restored = store.GetPositionSnapshot(account.AccountId, "2026-01-05", RunKind.Live);
+            Assert.Single(restored);
+            Assert.Equal(Aapl, restored[0].SecurityId);
+            Assert.Equal(12, restored[0].Shares);
+        });
+    }
+
+    [Fact]
+    public void D90_PositionSnapshot_QuarantinesReplayFromForward()
+    {
+        Run((db, store) =>
+        {
+            var account = store.OpenAccount(new Account { StrategyId = "bh:cw", StartingCash = 100_000m }, "2026-01-02");
+            store.RecordPositionSnapshot(account.AccountId, "2026-01-05",
+                [new() { AccountId = account.AccountId, SecurityId = Aapl, Shares = 10, CostBasis = 100m, OpenedOn = "2026-01-02" }],
+                RunKind.Live);
+            store.RecordPositionSnapshot(account.AccountId, "2026-01-05",
+                [new() { AccountId = account.AccountId, SecurityId = Msft, Shares = 99, CostBasis = 999m, OpenedOn = "2026-01-02" }],
+                RunKind.Replay);
+
+            // run_kind is IN the PK (the equity_curve precedent, D37): a replay book cannot overwrite
+            // the forward one, and each reads back its own.
+            Assert.Equal(Aapl, Assert.Single(store.GetPositionSnapshot(account.AccountId, "2026-01-05", RunKind.Live)).SecurityId);
+            Assert.Equal(Msft, Assert.Single(store.GetPositionSnapshot(account.AccountId, "2026-01-05", RunKind.Replay)).SecurityId);
+        });
+    }
+
+    [Fact]
+    public void D90_PositionSnapshot_MissingDay_IsEmptyNotAnError()
+    {
+        Run((db, store) =>
+        {
+            // Inception (or any day before D90 shipped): an empty book, which is exactly what a
+            // reproduction should start from — never a throw, never a silently-substituted later book.
+            Assert.Empty(store.GetPositionSnapshot(1, "2026-01-05", RunKind.Live));
+        });
+    }
+
     private static void Run(Action<AlphaLabDbContext, ILedgerStore> body)
     {
         var path = TestDb.CreateMigrated();

@@ -1,6 +1,6 @@
 # AlphaLab — Complete Design Package (revision v1.9)
 
-This is the **full, self-contained** design package. Design revision v1.9. Build status is live, not pre-implementation: Phase 0 and Phase 1 have shipped and Phase 2 (funnel + ledger) is merged. The full pass-by-pass history (v4/v5/v6 through the v1.9.26 twin-scorer pass, every CHANGELOG finding and decision D1-D89) lives in `docs/CHANGELOG_v1.9.md`; current phase, test count, and the open-item list live in `PROGRESS.md`. Consult those two rather than any count or status quoted inline, which may lag. Every file here is current; nothing external is required.
+This is the **full, self-contained** design package. Design revision v1.9. Build status is live, not pre-implementation: Phase 0 and Phase 1 have shipped and Phase 2 (funnel + ledger) is merged. The full pass-by-pass history (v4/v5/v6 through the v1.9.26 twin-scorer pass, every CHANGELOG finding and decision D1-D90) lives in `docs/CHANGELOG_v1.9.md`; current phase, test count, and the open-item list live in `PROGRESS.md`. Consult those two rather than any count or status quoted inline, which may lag. Every file here is current; nothing external is required.
 
 Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to drive the build).
 
@@ -13,7 +13,7 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `CLAUDE.md` (repo root) — hard rules, solution layout, commands (the constitution the build obeys).
 
 **The design**
-- `docs/MASTER_DESIGN_v1.9.md` — the comprehensive document: decisions D1–D89,
+- `docs/MASTER_DESIGN_v1.9.md` — the comprehensive document: decisions D1–D90,
   architecture, golden rules, math appendix, UI boundary.
 - `docs/ARENA_ARCHITECTURE_v1.9.3.md` — how AlphaLab supports multiple isolated universes
   ("arenas"); decision D71. Additive, no schema change; the S&P 500 build is unaffected.
@@ -179,6 +179,18 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   none survive or <2 names → never NaN), not replay-admissible on its own. STRATEGY_CATALOG §9, CONFIG_REFERENCE
   (Ai NOTE), TEST_PLAN §6 (`D85_*` fixtures + extended `FX-TwinPairing`) updated; the rejected foils
   (pure equal-scoring; a tuned rule — p-hacking) recorded as **P13**; ORIENTATION.md already named the blend.
+- v1.9.37 Phase-3.5 save/continue hardening (decision **D90**; proposal **P14**; findings 219–228) — merged.
+  **Code + scripts + docs; one EF migration (`Phase35PositionSnapshots`, operator step M4); no new config key;
+  tests 721 → 754.** Completes the checkpoint skipped between Phase 3 and Phase 4. `reproduce-day --date`
+  re-runs a committed session from its stored watermark into a rewound throwaway copy and proves the
+  decisions/fills/equity/population draws byte-identical (NFR-1, MASTER §13.5) — read-only against the arena
+  and with no network call, replaying Stage 1 from the store's own versioned bars/actions. That needed **D90**
+  `position_snapshots`: the end-of-day book, written in the same Stage-2 transaction as `equity_curve`, because
+  `positions` is current state that corporate actions rewrite in place with no reversible trade row. `verify-wal`
+  asserts WAL is active AND that a checkpoint completes (reading the pragma, never setting it).
+  `tools/backup-offsite.ps1` (newest-by-filename-date, SHA-256 verified, fails loudly) and
+  `tools/register-nightly-backup.ps1` (an 02:00 **OnDemand** launch — not `--serve`, which would idle) close the
+  off-machine and unattended gaps. `FX-RestoreThenContinue` automates the RUNBOOK §4 drill.
 - The mockups were consolidated into the single `alphalab_ux_mockups.html` in the v1.9.21/v1.9.22 passes
   (the earlier per-topic and v2 files are gone; the consolidated file gained the UX-14 paired-comparison block
   and the slate-grey replay tokens in v1.9.22). SCHEMA received its first post-v1.9.1 edit in v1.9.7
