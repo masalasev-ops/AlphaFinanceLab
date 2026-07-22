@@ -3,6 +3,7 @@ using AlphaLab.Core.Config;
 using AlphaLab.Core.Json;
 using AlphaLab.Data;
 using AlphaLab.Data.Entities;
+using AlphaLab.Data.Services;
 using AlphaLab.Evaluation.Metrics;
 using AlphaLab.Evaluation.Numerics;
 
@@ -34,10 +35,18 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
     private const string RunKindLive = "live";
 
     /// <summary>Evaluate + persist S2/S3/S6 + the aggregate status for every promotable strategy against
-    /// one matched population.</summary>
-    public IReadOnlyList<MonitorResult> Run(string asOf, string benchmarkStrategyId, long? matchedPopulationId, string runKind = RunKindLive)
+    /// one matched population. <paramref name="watermark"/> resolves the CALIBRATED config rows as-of
+    /// the run (D96/D98): when the frozen D56 curves exist at that watermark, S3 judges against the
+    /// trajectory (S3Trajectory); otherwise the flat pre-calibration anchors apply — behaviour-preserving
+    /// until the Phase-4 calibration writes the rows. The S6 auto-retire patience resolves the same way.</summary>
+    public IReadOnlyList<MonitorResult> Run(
+        string asOf, string benchmarkStrategyId, long? matchedPopulationId, string runKind = RunKindLive,
+        string? watermark = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(asOf);
+
+        var (pNoise, pEdge) = LoadCurves("daily", watermark);
+        var autoRetireEvals = ResolveAutoRetirePatience(watermark);
 
         var benchAccount = db.Accounts.FirstOrDefault(a => a.StrategyId == benchmarkStrategyId && a.RunKind == runKind);
         if (benchAccount is null) return [];
@@ -94,7 +103,8 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
                 .Select(ms => SafeAlpha(Tail(ms.Mr, RollingWindowDays), Tail(ms.Br, RollingWindowDays)).Alpha)
                 .ToList();
 
-            results.Add(Evaluate(asOf, strategyId, stratReturns, benchReturns, memberAlphas, memberWindowAlphas, trialsCount, runKind));
+            results.Add(Evaluate(asOf, strategyId, stratReturns, benchReturns, memberAlphas, memberWindowAlphas,
+                trialsCount, runKind, pNoise, pEdge, autoRetireEvals));
         }
 
         return results;
@@ -107,19 +117,45 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
         string asOf, string strategyId,
         IReadOnlyList<double> stratReturns, IReadOnlyList<double> benchReturns,
         IReadOnlyList<double> memberAlphas, IReadOnlyList<double> memberWindowAlphas,
-        int trialsCount, string runKind = RunKindLive)
+        int trialsCount, string runKind = RunKindLive,
+        Calibration.S3Curve? pNoise = null, Calibration.S3Curve? pEdge = null,
+        int autoRetireEvals = AutoRetireConsecutiveSuspect)
     {
         // S2 — deflated Sharpe.
         var rawSharpe = StrategyMetrics.Sharpe(stratReturns, 0.0);
         var deflated = StrategyMetrics.DeflatedSharpeAnnualized(rawSharpe, stratReturns.Count, Math.Max(1, trialsCount));
         var s2 = MonitorSignals.S2(rawSharpe, deflated);
 
-        // S3 — percentile of the strategy's β-adjusted alpha within the matched population.
-        var s3 = memberAlphas.Count > 0
-            ? MonitorSignals.S3(Statistics.PercentileRank(memberAlphas, SafeAlpha(stratReturns, benchReturns).Alpha))
-            : new SignalOutcome("S3", null, "undefined", MonitorStatus.Healthy);
+        // S3 — percentile of the strategy's β-adjusted alpha within the matched population. With the
+        // frozen D56 curves present (D98 rows at this run's watermark), the TRAJECTORY judges at this
+        // strategy's own track length; the flat anchors are the pre-calibration fallback only.
+        SignalOutcome s3;
+        object s3Thresholds;
+        if (memberAlphas.Count == 0)
+        {
+            s3 = new SignalOutcome("S3", null, "undefined", MonitorStatus.Healthy);
+            s3Thresholds = new { undefined = true, n = 0 };
+        }
+        else if (pNoise is not null && pEdge is not null)
+        {
+            var percentile = Statistics.PercentileRank(memberAlphas, SafeAlpha(stratReturns, benchReturns).Alpha);
+            var trackDays = stratReturns.Count;
+            var priorBelow = TrailingStreak(strategyId, "S3", asOf, runKind, MonitorSignals.ContinuesBelowNoiseStreak);
+            s3 = MonitorSignals.S3Trajectory(percentile, trackDays, pNoise.At(trackDays), pEdge.At(trackDays), priorBelow, pNoise.SustainEvals);
+            s3Thresholds = new
+            {
+                p_noise_at = pNoise.At(trackDays), p_edge_at = pEdge.At(trackDays),
+                track_days = trackDays, sustain_evals = pNoise.SustainEvals, n = memberAlphas.Count,
+            };
+        }
+        else
+        {
+            s3 = MonitorSignals.S3(Statistics.PercentileRank(memberAlphas, SafeAlpha(stratReturns, benchReturns).Alpha));
+            s3Thresholds = new { healthy_anchor = MonitorSignals.S3HealthyAnchor, suspect_anchor = MonitorSignals.S3SuspectAnchor, n = memberAlphas.Count };
+        }
 
-        // S6 — rolling 63-day alpha t-stat + inside the population's central 50% band.
+        // S6 — rolling 63-day alpha t-stat + inside the population's central 50% band, with the
+        // Appendix-A escalation streaks (this evaluation + the persisted priors).
         SignalOutcome s6;
         if (stratReturns.Count >= RollingWindowDays && memberWindowAlphas.Count > 0)
         {
@@ -128,7 +164,9 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
             var window = SafeAlpha(ws, wb);
             var lo = Statistics.Percentile(memberWindowAlphas, 25);
             var hi = Statistics.Percentile(memberWindowAlphas, 75);
-            s6 = MonitorSignals.S6(window.T, window.Alpha >= lo && window.Alpha <= hi);
+            var priorInside = TrailingStreak(strategyId, "S6", asOf, runKind, MonitorSignals.ContinuesInsideBandStreak);
+            var priorNegative = TrailingStreak(strategyId, "S6", asOf, runKind, MonitorSignals.ContinuesNegativeTStreak);
+            s6 = MonitorSignals.S6(window.T, window.Alpha >= lo && window.Alpha <= hi, priorInside, priorNegative);
         }
         else
         {
@@ -136,15 +174,17 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
         }
 
         AddCheck(asOf, strategyId, s2, new { elevated_gap_raw_sharpe = MonitorSignals.S2ElevatedGapRawSharpe, raw_sharpe = rawSharpe }, runKind);
-        AddCheck(asOf, strategyId, s3, new { healthy_anchor = MonitorSignals.S3HealthyAnchor, suspect_anchor = MonitorSignals.S3SuspectAnchor, n = memberAlphas.Count }, runKind);
+        AddCheck(asOf, strategyId, s3, s3Thresholds, runKind);
         AddCheck(asOf, strategyId, s6, new { window_days = RollingWindowDays, negative_alpha_t = MonitorSignals.S6NegativeAlphaT }, runKind);
 
         // Aggregate over EXACTLY the monitor signals (the whitelist).
         var aggregate = MonitorSignals.Aggregate([s2.Status, s3.Status, s6.Status]);
 
-        // Auto-retire: four consecutive Suspect evaluations (this one + three priors).
+        // Auto-retire: the sustained-Suspect streak at the CALIBRATED patience (finding 113: a survival-
+        // floor failure recalibrates this value — via a new Monitor.S6.AutoRetireEvals config version —
+        // never the plant).
         if (aggregate == MonitorStatus.Suspect &&
-            TrailingSuspectCount(strategyId, asOf, runKind) >= AutoRetireConsecutiveSuspect - 1)
+            TrailingSuspectCount(strategyId, asOf, runKind) >= autoRetireEvals - 1)
         {
             aggregate = MonitorStatus.Retired;
         }
@@ -205,6 +245,48 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
             Contribution = sig.Contribution,
             RunKind = runKind,
         });
+
+    // The frozen D56 curves as-of the run's watermark (D96/D98). Both must exist to switch S3 to the
+    // trajectory — a half-frozen pair falls back to the flat anchors (fail toward the pre-calibration
+    // behaviour, never a curve judged against a flat opposite).
+    private (Calibration.S3Curve? Noise, Calibration.S3Curve? Edge) LoadCurves(string family, string? watermark)
+    {
+        var config = new ConfigReadService(db);
+        string? Read(string key) => watermark is null ? config.ResolveCurrent(key) : config.ResolveAsOf(key, watermark);
+        var noiseJson = Read(Calibration.CalibratedKeys.PNoiseCurve(family));
+        var edgeJson = Read(Calibration.CalibratedKeys.PEdgeCurve(family));
+        if (noiseJson is null || edgeJson is null) return (null, null);
+        return (Calibration.S3Curve.FromJson(noiseJson), Calibration.S3Curve.FromJson(edgeJson));
+    }
+
+    private int ResolveAutoRetirePatience(string? watermark)
+    {
+        var config = new ConfigReadService(db);
+        var raw = watermark is null
+            ? config.ResolveCurrent(Calibration.CalibratedKeys.S6AutoRetireEvals)
+            : config.ResolveAsOf(Calibration.CalibratedKeys.S6AutoRetireEvals, watermark);
+        return raw is not null && int.TryParse(raw, out var v) && v >= 2 ? v : AutoRetireConsecutiveSuspect;
+    }
+
+    // How many consecutive PRIOR evaluations of one signal continued a streak (matched by contribution
+    // token), most recent first — the persisted-path form of "sustained" (NFR-2: reconstructible).
+    private int TrailingStreak(string strategyId, string signal, string asOf, string runKind, Func<string, bool> continues)
+    {
+        var priors = db.OverfittingChecks
+            .Where(c => c.StrategyId == strategyId && c.Signal == signal && c.RunKind == runKind
+                        && string.Compare(c.AsOf, asOf) < 0)
+            .OrderByDescending(c => c.AsOf)
+            .Select(c => c.Contribution)
+            .ToList();
+
+        var count = 0;
+        foreach (var token in priors)
+        {
+            if (continues(token)) count++;
+            else break;
+        }
+        return count;
+    }
 
     private int TrailingSuspectCount(string strategyId, string asOf, string runKind)
     {

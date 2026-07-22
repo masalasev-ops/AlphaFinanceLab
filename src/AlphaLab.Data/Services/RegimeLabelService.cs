@@ -62,8 +62,8 @@ public sealed class RegimeLabelService(
         ArgumentException.ThrowIfNullOrWhiteSpace(watermark);
         ArgumentException.ThrowIfNullOrWhiteSpace(runKind);
 
-        // 1) Proxy id from the versioned config row (MAX(version)) — never appsettings.
-        var proxyId = ResolveProxySecurityId();
+        // 1) Proxy id from the versioned config row, AS-OF the run's watermark (D96) — never appsettings.
+        var proxyId = ResolveProxySecurityId(watermark);
         if (proxyId is null)
         {
             return NotComputed(
@@ -119,20 +119,9 @@ public sealed class RegimeLabelService(
         return new RegimeLabelResult(true, label, inputsHash, null);
     }
 
-    // ---- proxy id from the append-only versioned config row (the RegimeProxyIngestion precedent) ----
-    private long? ResolveProxySecurityId()
-    {
-        var current = db.Config
-            .Where(c => c.Key == RegimeProxyIngestion.ProxyConfigKey)
-            .AsEnumerable()
-            .OrderByDescending(c => c.Version)
-            .FirstOrDefault();
-
-        if (current is null) return null;
-        return long.TryParse(current.ValueJson, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id)
-            ? id
-            : null;
-    }
+    // ---- proxy id from the append-only versioned config row, as-of the watermark (D96) ----
+    private long? ResolveProxySecurityId(string watermark) =>
+        new ConfigReadService(db).ResolveLongAsOf(RegimeProxyIngestion.ProxyConfigKey, watermark);
 
     private RegimeLabelParams BuildParams() => new(
         trendSmaDays: options.TrendSmaDays,

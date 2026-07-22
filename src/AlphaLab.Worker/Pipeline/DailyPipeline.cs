@@ -234,7 +234,7 @@ public sealed class DailyPipeline(
         var expected = calendar.SessionsBetween(ParseDate(from), asOfDate).Select(Iso).ToList();
 
         var members = membership.MembersAsOf(asOf);
-        var cwProxyId = ResolveConfigLong(CapWeightProxy.ProxySecurityIdConfigKey);
+        var cwProxyId = ResolveConfigLong(CapWeightProxy.ProxySecurityIdConfigKey, watermark);
 
         // The tradeable fetch set = the index roster ∪ the cap-weight ETF proxy (a security we hold+price
         // in the CW account but which may not be an index member).
@@ -253,7 +253,7 @@ public sealed class DailyPipeline(
             securities.Add(new Stage1Target(id, symbol, caReads.GetActionsAsOf(id, watermark), LastStoredDate(id, asOf, watermark)));
         }
 
-        var regimeProxyId = ResolveConfigLong(RegimeProxyIngestion.ProxyConfigKey);
+        var regimeProxyId = ResolveConfigLong(RegimeProxyIngestion.ProxyConfigKey, watermark);
         ProxyTarget? proxy = regimeProxyId is { } pid
             ? new ProxyTarget(pid, db.Securities.Find(pid)?.CurrentSymbol ?? "GSPC", LastStoredDate(pid, asOf, watermark))
             : null;
@@ -352,7 +352,7 @@ public sealed class DailyPipeline(
         }
         else
         {
-            var universe = ResolveUniverse(plan.Universe, asOf);
+            var universe = ResolveUniverse(plan.Universe, asOf, watermark);
             var inputs = new FunnelInputs
             {
                 IndexMembers = universe,
@@ -565,7 +565,7 @@ public sealed class DailyPipeline(
                 .Where(p => p.Family == "daily" && p.CostsOn)
                 .Select(p => (long?)p.PopulationId)
                 .FirstOrDefault();
-            var monitored = new OverfittingMonitor(db, gate).Run(asOf, EvaluationStep.DefaultBenchmarkStrategyId, matchedPopulation, runKindToken);
+            var monitored = new OverfittingMonitor(db, gate).Run(asOf, EvaluationStep.DefaultBenchmarkStrategyId, matchedPopulation, runKindToken, watermark);
 
             // Turnover-match verification (finding 115): re-simulate the daily population's turnover vs each
             // strategy's trades over the recent window, and persist the status-neutral caveat rows.
@@ -643,11 +643,11 @@ public sealed class DailyPipeline(
         return Math.Max(0, calendar.SessionsBetween(ParseDate(opening), asOf).Count - 1);
     }
 
-    private IReadOnlyList<SecurityId> ResolveUniverse(UniverseScope scope, string asOf)
+    private IReadOnlyList<SecurityId> ResolveUniverse(UniverseScope scope, string asOf, string watermark)
     {
         if (scope == UniverseScope.CapWeightProxy)
         {
-            var cw = ResolveConfigLong(CapWeightProxy.ProxySecurityIdConfigKey);
+            var cw = ResolveConfigLong(CapWeightProxy.ProxySecurityIdConfigKey, watermark);
             if (cw is { } id) return [new SecurityId(id)];
             logger.LogWarning("Cap-weight proxy security_id is unresolved ('{Key}' has no config row) — the CW benchmark holds cash this run.", CapWeightProxy.ProxySecurityIdConfigKey);
             return [];
@@ -657,14 +657,11 @@ public sealed class DailyPipeline(
 
     // ---- config + timestamps ----
 
-    private long? ResolveConfigLong(string key)
-    {
-        var current = db.Config.Where(c => c.Key == key).AsEnumerable()
-            .OrderByDescending(c => c.Version).FirstOrDefault();
-        return current is not null && long.TryParse(current.ValueJson, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v)
-            ? v
-            : null;
-    }
+    // Run-scoped config reads resolve AS-OF the run's watermark (D96, resolving P14a): a config row
+    // appended after this session committed is invisible to a re-run of it — which is what keeps
+    // reproduce-day and replay config-faithful once the Phase-4 calibration starts writing rows.
+    private long? ResolveConfigLong(string key, string watermark) =>
+        new ConfigReadService(db).ResolveLongAsOf(key, watermark);
 
     private WorkerStateRow WorkerStateRow() =>
         db.WorkerState.First(w => w.Id == 1);
