@@ -62,6 +62,17 @@ public interface ILedgerStore
     void RecordDecision(long accountId, string asOf, string stageJson, RunKind runKind);
 
     string? GetDecisionJson(long accountId, string asOf, RunKind runKind);
+
+    /// <summary>Persist the END-OF-DAY BOOK for this account/session (D90) — the as-of record that
+    /// makes a past day's pre-trade state recoverable, because `positions` is current state and
+    /// corporate actions rewrite it in place with no reversible log row. Idempotent per
+    /// (account, as_of, run_kind): a re-run of a recovered day rewrites that day's rows rather than
+    /// duplicating them, and a name that left the book does not survive as a stale row.</summary>
+    void RecordPositionSnapshot(long accountId, string asOf, IReadOnlyList<Position> book, RunKind runKind);
+
+    /// <summary>The book at the close of <paramref name="asOf"/> (D90). Empty ⇒ no snapshot for that
+    /// session (before the account's inception, or before D90 shipped).</summary>
+    IReadOnlyList<Position> GetPositionSnapshot(long accountId, string asOf, RunKind runKind);
 }
 
 public sealed class LedgerStore(AlphaLabDbContext db) : ILedgerStore
@@ -311,6 +322,61 @@ public sealed class LedgerStore(AlphaLabDbContext db) : ILedgerStore
         return db.Decisions
             .FirstOrDefault(d => d.AccountId == accountId && d.AsOf == asOf && d.RunKind == token)
             ?.StageJson;
+    }
+
+    public void RecordPositionSnapshot(long accountId, string asOf, IReadOnlyList<Position> book, RunKind runKind)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(asOf);
+        ArgumentNullException.ThrowIfNull(book);
+        var token = LedgerMapping.RunKindToken(runKind);
+
+        // Re-running a recovered day must land on the SAME book, not a second one (the
+        // RecordEquityPoint idempotency contract). A name that left the book between the two runs
+        // must not survive as a stale row, so the day's rows are rewritten wholesale rather than
+        // upserted name-by-name. This is the one exception to "append-only": it rewrites only rows
+        // this very (account, as_of, run_kind) wrote, never another day's book.
+        var stale = db.PositionSnapshots
+            .Where(p => p.AccountId == accountId && p.AsOf == asOf && p.RunKind == token)
+            .ToList();
+        if (stale.Count > 0) db.PositionSnapshots.RemoveRange(stale);
+
+        foreach (var p in book.OrderBy(p => p.SecurityId.Value))
+        {
+            db.PositionSnapshots.Add(new PositionSnapshotRow
+            {
+                AccountId = accountId,
+                AsOf = asOf,
+                SecurityId = p.SecurityId.Value,
+                Shares = p.Shares,
+                CostBasis = p.CostBasis,
+                OpenedOn = p.OpenedOn,
+                Frozen = p.Frozen,
+                FrozenReason = p.FrozenReason,
+                RunKind = token,
+            });
+        }
+        db.SaveChanges();
+    }
+
+    public IReadOnlyList<Position> GetPositionSnapshot(long accountId, string asOf, RunKind runKind)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(asOf);
+        var token = LedgerMapping.RunKindToken(runKind);
+        return db.PositionSnapshots
+            .Where(p => p.AccountId == accountId && p.AsOf == asOf && p.RunKind == token)
+            .OrderBy(p => p.SecurityId)
+            .AsEnumerable()
+            .Select(p => new Position
+            {
+                AccountId = p.AccountId,
+                SecurityId = new SecurityId(p.SecurityId),
+                Shares = p.Shares,
+                CostBasis = p.CostBasis,
+                OpenedOn = p.OpenedOn,
+                Frozen = p.Frozen,
+                FrozenReason = p.FrozenReason,
+            })
+            .ToList();
     }
 
     private PositionRow? Find(long accountId, SecurityId securityId) =>

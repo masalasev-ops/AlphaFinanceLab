@@ -14,7 +14,7 @@ envelope, 202+job_id for long-running commands, read-models stamped run_id+water
 money as strings/minor-units (never floats).
 
 ## Documentation map (read the phase's diet per docs/README_v1.9.md §3 — not everything)
-- docs/MASTER_DESIGN_v1.9.md — decisions D1–D89, architecture, golden rules, math appendix, UI boundary (§21–22)
+- docs/MASTER_DESIGN_v1.9.md — decisions D1–D90, architecture, golden rules, math appendix, UI boundary (§21–22)
 - docs/ARENA_ARCHITECTURE_v1.9.3.md — multi-arena isolation (D71): one universe per arena, arena-namespaced storage, arena-scoped calibration, the no-merge frontend rule
 - docs/STRATEGY_CATALOG_v1.9.md — IModel contracts + per-strategy acceptance criteria
 - docs/DESIGN_IMPROVEMENTS_v1.9.md — metrics math, costs/sizing, LLM economics, Arena Replay
@@ -31,7 +31,7 @@ money as strings/minor-units (never floats).
 - docs/UX_GUIDELINES_v1.9.md — interface rules UX-1..UX-15 as build specs
 - docs/SETUP_v1.9.md — prerequisites, D49 launch tier, secrets, day-zero checklist
 - docs/DESIGN_IMPROVEMENTS_EXPLAINED.md — plain-language "why" companion to DESIGN_IMPROVEMENTS (section numbers match the spec)
-- docs/CHANGELOG_v1.9.md — every consistency finding + decision (D1–D89), the provenance trace
+- docs/CHANGELOG_v1.9.md — every consistency finding + decision (D1–D90), the provenance trace
 - Navigation (not part of any phase diet): START_HERE.md (entry point), docs/README_v1.9.md (file map + build workflow), docs/MANIFEST.md (package manifest + revision state)
 - Mockups (visual direction for the GUI): docs/alphalab_ux_mockups.html — the single consolidated UX mockup (every screen)
 

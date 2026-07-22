@@ -1,9 +1,9 @@
 using AlphaLab.Core.Config;
-using AlphaLab.Data;
 using AlphaLab.Data.Http;
 using AlphaLab.Data.Providers;
 using AlphaLab.Data.Services;
 using AlphaLab.Worker;
+using AlphaLab.Worker.Ops;
 using AlphaLab.Worker.Pipeline;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -26,7 +26,26 @@ var workerOptions = builder.Configuration.GetSection(WorkerOptions.SectionName).
 var connectionString = builder.Configuration.GetConnectionString("AlphaLab")
     ?? throw new InvalidOperationException("ConnectionStrings:AlphaLab is required in appsettings.json.");
 
-builder.Services.AddSingleton(arena);
+// ---- ops verbs (v1.9.37, FR-25): `reproduce-day` and `verify-wal` ----
+// Dispatched BEFORE any hosted service is registered, so they never run SchemaStartup (which SETS
+// journal_mode — a verifier must not repair what it is checking), never start the heartbeat, and
+// never start the OnDemand runner against the live arena. Both verbs are read-only there by
+// construction; reproduce-day does all its writing in a throwaway copy.
+var command = WorkerCommandParser.Parse(args);
+if (command.Kind != WorkerCommandKind.Daily)
+{
+    var commandArena = command.ArenaId is { Length: > 0 } id
+        ? new ArenaOptions { Id = id, DisplayName = arena.DisplayName }
+        : arena;
+    using var opsLoggerFactory = LoggerFactory.Create(b => b.AddSimpleConsole(o =>
+    {
+        o.IncludeScopes = true;
+        o.SingleLine = true;
+    }));
+    return await OpsCommandHost.RunAsync(
+        command, builder.Configuration, commandArena, connectionString, opsLoggerFactory);
+}
+
 builder.Services.AddSingleton(workerOptions);
 
 // Console logging with scopes so the arena tag (FR-37) is visible on every record we emit.
@@ -36,36 +55,11 @@ builder.Logging.AddSimpleConsole(o =>
     o.SingleLine = true;
 });
 
-// The Worker is the sole DB writer (D59): resolve the arena-namespaced path AND ensure its directory.
-builder.Services.AddAlphaLabData(connectionString, arena.Id, ensureDirectory: true);
-
 // ---- D53 staged pipeline wiring (checkpoint 2.10) ----
-// CONFIG binds (finding F): the CONSUMING phase owns the bind. Register the BOUND options BEFORE
-// AddAlphaLabMembership so its TryAddSingleton defaults are no-ops — Data (D77 gate), Calendar,
-// CorporateActions (findings B/C), Regime (D50), and Costs (D43) flow from appsettings instead of
-// unbound defaults. UniverseOptions stays unregistered on purpose (finding F — wiring it is the
-// D70-widening job, not Phase-2 work).
-var regimeOptions = builder.Configuration.GetSection(RegimeOptions.SectionName).Get<RegimeOptions>() ?? new RegimeOptions();
-var dataQualityOptions = builder.Configuration.GetSection(DataQualityOptions.SectionName).Get<DataQualityOptions>() ?? new DataQualityOptions();
-var calendarOptions = builder.Configuration.GetSection(CalendarOptions.SectionName).Get<CalendarOptions>() ?? new CalendarOptions();
-var corporateActionsOptions = builder.Configuration.GetSection(CorporateActionsOptions.SectionName).Get<CorporateActionsOptions>() ?? new CorporateActionsOptions();
-var costsOptions = builder.Configuration.GetSection(CostsOptions.SectionName).Get<CostsOptions>() ?? new CostsOptions();
-// Phase 3 (D36): the random control populations compute inside the daily Stage-2 write (checkpoint 3.3).
-// The Worker is their consuming phase, so it owns the bind (finding F).
-var populationsOptions = builder.Configuration.GetSection(PopulationsOptions.SectionName).Get<PopulationsOptions>() ?? new PopulationsOptions();
-// The 21-day evaluation step (checkpoint 3.4) runs in the pipeline post-commit; the Worker binds the gate.
-var gateOptions = builder.Configuration.GetSection(GateOptions.SectionName).Get<GateOptions>() ?? new GateOptions();
-// The D51 ensemble allocator (checkpoint 3.7) runs in the same evaluation step.
-var allocatorOptions = builder.Configuration.GetSection(AllocatorOptions.SectionName).Get<AllocatorOptions>() ?? new AllocatorOptions();
-
-builder.Services.AddSingleton(dataQualityOptions);
-builder.Services.AddSingleton(calendarOptions);
-builder.Services.AddSingleton(corporateActionsOptions);
-builder.Services.AddSingleton(costsOptions);
-builder.Services.AddSingleton(populationsOptions);
-builder.Services.AddSingleton(gateOptions);
-builder.Services.AddSingleton(allocatorOptions);
-builder.Services.AddAlphaLabMembership(regimeOptions);
+// The arena, the store (sole DB writer D59 — so the directory is ensured), every CONFIG bind, the
+// membership graph, Stage 1 and the orchestrator. Shared with `reproduce-day` (v1.9.37) so a past
+// session is re-run through THIS graph, not a hand-assembled lookalike that could drift from it.
+builder.Services.AddDailyPipelineCore(builder.Configuration, arena, connectionString, ensureDirectory: true);
 
 // EODHD provider (finding D — the Worker needs its OWN Eodhd section; CONFIG previously scoped it to
 // the Backfill CLI). The token is read DEFENSIVELY (hard rule 11 — the gitignored Secrets file only):
@@ -83,11 +77,9 @@ builder.Services.AddScoped<IMarketDataProvider>(sp =>
 builder.Services.AddScoped<IRegimeProxyProvider>(sp =>
     new EodhdGspcRegimeProxyProvider(sp.GetRequiredService<IResilientHttpClient>(), eodhd, sp.GetService<IRawCache>()));
 
-// The D53 orchestrator + its zero-write Stage-1 fetch. TimeProvider is injectable so run timestamps are
-// deterministic under test (never a bare UtcNow in the pipeline body).
+// TimeProvider is injectable so run timestamps are deterministic under test (never a bare UtcNow in
+// the pipeline body); the forward Worker runs on the system clock.
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddScoped<Stage1Fetch>();
-builder.Services.AddScoped<DailyPipeline>();
 
 // Catch-up (D47, checkpoint 2.11): the real resolver (runs + bars + calendar + the ET close-time guard)
 // and the resumable loop that drives DailyPipeline.RunDayAsync per missed session, oldest first.

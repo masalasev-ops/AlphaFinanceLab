@@ -65,6 +65,44 @@ public sealed class PositionRow
     public string? FrozenReason { get; set; }
 }
 
+/// <summary>
+/// position_snapshots — the END-OF-DAY BOOK, one row per held name per account per session (D90).
+/// PK (account_id, as_of, security_id, run_kind); run_kind is IN the key, so a replay book can never
+/// overwrite the forward one (the equity_curve precedent).
+///
+/// WHY IT EXISTS. `positions` is current STATE, not a log: corporate actions rewrite it in place
+/// (a split's share count, a merger's conversion, a spin-off's new line) through UpsertPosition, with
+/// no reversible trade row. So the book as it stood at the start of a past session is not
+/// recoverable from `trades` — and without it, NFR-1's "any historical run is reproducible forever"
+/// (MASTER §13.5) cannot be honoured for anything the ledger touches. This table is the missing
+/// as-of record: bars (D40), corporate_actions (D76) and context packs (D80) are already append-only
+/// and read at a watermark; the book is the one mutable piece that was not.
+///
+/// It is APPEND-ONLY in the same sense equity_curve is: a row is written once per (account, session,
+/// run_kind) inside that day's Stage-2 transaction and never revised afterwards. A day that rolls
+/// back writes no snapshot, exactly as it writes no equity point.
+///
+/// The column set MIRRORS `positions` (plus the snapshot's own as_of/run_kind keys) because the whole
+/// point is to restore a Position verbatim. frozen/frozen_reason are load-bearing, not decoration:
+/// PortfolioPlanner short-circuits Stage 4 on a frozen position and writes FrozenReason verbatim into
+/// stage_json, so a snapshot that dropped them could not reproduce a frozen-position day.
+/// </summary>
+public sealed class PositionSnapshotRow
+{
+    public long AccountId { get; set; }
+    /// <summary>The session whose CLOSE this book describes.</summary>
+    public string AsOf { get; set; } = default!;
+    public long SecurityId { get; set; }
+    /// <summary>REAL — a quantity, not money.</summary>
+    public double Shares { get; set; }
+    /// <summary>Raw-price basis (D30); decimal → TEXT (D69).</summary>
+    public decimal CostBasis { get; set; }
+    public string OpenedOn { get; set; } = default!;
+    public bool Frozen { get; set; }
+    public string? FrozenReason { get; set; }
+    public string RunKind { get; set; } = "live";
+}
+
 /// <summary>trades — the fill log. trade_id is a bare INTEGER PRIMARY KEY (hand-edit, rule 14).
 /// decided_on (close T) and filled_on (open T+1) differ by construction (MASTER §6).</summary>
 public sealed class TradeRow
