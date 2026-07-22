@@ -96,7 +96,7 @@ public class SchemaFidelityTests
     }
 
     [Fact]
-    public void Schema_ExactlyTheThirtyFiveTables_Exist()
+    public void Schema_ExactlyTheThirtySixTables_Exist()
     {
         var dbPath = TempDb();
         try
@@ -120,7 +120,9 @@ public class SchemaFidelityTests
             // D52 journal_entries (needed by the FR-28 CandidateFactory pre-registration) = 34, plus the
             // Phase-3.5 D90 position_snapshots(1) = 35. D90 records the end-of-day book per account per
             // session because `positions` is current state that corporate actions rewrite in place, so a
-            // past day's pre-trade book is otherwise unrecoverable and NFR-1 cannot hold (FR-25).
+            // past day's pre-trade book is otherwise unrecoverable and NFR-1 cannot hold (FR-25). Plus the
+            // Phase-4 M5 replay_regime_outcomes(1) = 36 — the D89/FR-41 per-regime replay decomposition,
+            // run_kind='replay' by construction under the D37 quarantine.
             //
             // STILL deliberately absent, and each for its own reason — this list is the guard
             // against a table appearing before the phase that earns it:
@@ -143,8 +145,8 @@ public class SchemaFidelityTests
                 "corporate_actions", "data_quality_flags", "decisions", "equity_curve", "go_live_log",
                 "index_membership", "index_membership_log", "jobs", "journal_entries", "overfitting_checks",
                 "overfitting_status", "position_snapshots", "positions", "power_reports", "regime_episodes",
-                "regime_labels", "runs", "sector_changes", "securities", "strategies",
-                "ticker_history", "trades", "trading_calendar", "trials_registry", "worker_state"
+                "regime_labels", "replay_regime_outcomes", "runs", "sector_changes", "securities",
+                "strategies", "ticker_history", "trades", "trading_calendar", "trials_registry", "worker_state"
             }, tables);
         }
         finally { TryDelete(dbPath); }

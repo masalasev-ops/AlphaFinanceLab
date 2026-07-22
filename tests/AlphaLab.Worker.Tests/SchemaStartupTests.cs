@@ -90,18 +90,20 @@ public class SchemaStartupTests
             // The happy path: schema is current, so the Worker proceeds to do its actual work.
             Assert.False(lifetime.StopApplicationCalled);
 
-            // 35 tables: Phase-0 infra(5) + Phase-1 data(9) + data_quality_flags(1) + ledger(8) + regime(2)
+            // 36 tables: Phase-0 infra(5) + Phase-1 data(9) + data_quality_flags(1) + ledger(8) + regime(2)
             // + the Phase-3 honest-arena tables(9): control_populations, control_equity, trials_registry,
             // power_reports, go_live_log, allocation_log, overfitting_checks, overfitting_status,
-            // journal_entries + the Phase-3.5 D90 position_snapshots(1).
+            // journal_entries + the Phase-3.5 D90 position_snapshots(1) + the Phase-4 M5
+            // replay_regime_outcomes(1).
             var tables = await UserTablesAsync(dbPath);
-            Assert.Equal(35, tables.Count);
+            Assert.Equal(36, tables.Count);
             Assert.Contains("trades", tables);
             Assert.Contains("equity_curve", tables);
             Assert.Contains("regime_labels", tables);
             Assert.Contains("control_populations", tables);
             Assert.Contains("power_reports", tables);
             Assert.Contains("position_snapshots", tables);
+            Assert.Contains("replay_regime_outcomes", tables);
         }
         finally { TryDelete(dbPath); }
     }

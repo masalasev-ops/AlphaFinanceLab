@@ -5,9 +5,9 @@ namespace AlphaLab.Data.Services;
 
 /// <summary>
 /// Ingests and TYPES the corporate-action feed (FR-3): EODHD dividends and splits become
-/// <c>corporate_actions</c> rows keyed by <c>type</c>. Phase 1 is ingest+type only — <c>processed_on</c>
-/// stays NULL until the ledger applies the action in Phase 2 ("Corporate-action semantics complete").
-/// VERSIONED like bars (D76): the same <c>(security_id, type, effective_date)</c> re-fetched with a
+/// <c>corporate_actions</c> rows keyed by <c>type</c> — ingest+type only; the ledger APPLIES actions
+/// via its own one-transaction-per-day idempotency, never a per-action flag (the processed_on column
+/// was dropped by D94/M5). VERSIONED like bars (D76): the same <c>(security_id, type, effective_date)</c> re-fetched with a
 /// changed value (a restatement) appends a NEW version — never an UPDATE/DELETE — so a correction is
 /// preserved and a replay pinned to an old watermark never sees it. An unchanged re-fetch is a no-op
 /// (idempotent), so re-running a backfill never spawns phantom versions. Dividend cash is the UNADJUSTED
@@ -59,8 +59,7 @@ public sealed class CorporateActionIngestion(AlphaLabDbContext db) : ICorporateA
                     $"Dividend security_id={securityId} ex-date {d.Date}: UnadjustedValue is null - " +
                     "refusing to write split-adjusted cash in its place (fail closed)."),
                 ObservedAt = observedAt,
-                Source = source,
-                ProcessedOn = null        // applied by the ledger in Phase 2
+                Source = source
             });
         }
         db.SaveChanges();
@@ -83,8 +82,7 @@ public sealed class CorporateActionIngestion(AlphaLabDbContext db) : ICorporateA
                 EffectiveDate = s.Date,
                 Ratio = s.Ratio,         // new/old (REAL)
                 ObservedAt = observedAt,
-                Source = source,
-                ProcessedOn = null
+                Source = source
             });
         }
         db.SaveChanges();
@@ -123,7 +121,7 @@ public sealed class CorporateActionIngestion(AlphaLabDbContext db) : ICorporateA
     }
 
     // The value fields that make an action a DIFFERENT observation of the same identity. observed_at /
-    // source / processed_on are provenance, not value, so they never trigger a version.
+    // source are provenance, not value, so they never trigger a version.
     private static bool Differs(CorporateActionRow existing, CorporateActionRow incoming) =>
         existing.ExDate != incoming.ExDate
         || existing.CashPerShare != incoming.CashPerShare

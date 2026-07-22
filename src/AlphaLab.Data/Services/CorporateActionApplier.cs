@@ -30,8 +30,8 @@ public sealed record CorporateActionOutcome(
 /// TRANSACTIONS ARE THE CALLER'S — like every Data service here, it calls SaveChanges (through the
 /// store) but opens no transaction; the pipeline's one-transaction-per-day wraps it, and that
 /// one-transaction-per-day plus `ux_runs_ok_forward` is what makes application idempotent (a day is
-/// applied exactly once). There is no per-action "processed" flag — `corporate_actions.processed_on`
-/// is never written (finding J / 2.7).
+/// applied exactly once). There is no per-action "processed" flag (finding J / 2.7; the always-NULL
+/// `processed_on` column was dropped by D94/M5).
 /// </summary>
 public sealed class CorporateActionApplier(
     ILedgerStore ledger,

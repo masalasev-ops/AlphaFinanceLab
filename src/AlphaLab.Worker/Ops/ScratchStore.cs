@@ -63,15 +63,18 @@ public sealed class ScratchStore : IDisposable
     /// <summary>Tables carried across unchanged, each for a stated reason: watermark-resolved
     /// (bars, corporate_actions), as-of resolved by their own date columns (index_membership,
     /// ticker_history), static reference data (securities, trading_calendar), registries the run reads
-    /// but does not date (strategies, accounts, control_populations, trials_registry), or operator
+    /// but does not date (strategies, accounts, control_populations, trials_registry), operator
     /// state outside the run (config, jobs, journal_entries, api_usage_log, sector_changes,
-    /// index_membership_log). `positions` and `worker_state` are handled specially.</summary>
+    /// index_membership_log), or replay-only under the D37 quarantine (replay_regime_outcomes — a
+    /// FORWARD day neither reads nor writes it, and reproduce-day reproduces forward days; a replay
+    /// re-run manages its own generation via the D95 reset, not this rewind). `positions` and
+    /// `worker_state` are handled specially.</summary>
     private static readonly string[] Untouched =
     [
         "config", "jobs", "securities", "ticker_history", "sector_changes", "bars",
         "corporate_actions", "index_membership_log", "index_membership", "trading_calendar",
         "api_usage_log", "strategies", "accounts", "control_populations", "trials_registry",
-        "journal_entries",
+        "journal_entries", "replay_regime_outcomes",
     ];
 
     /// <summary>Handled by dedicated logic rather than a date filter: `positions` is restored from the

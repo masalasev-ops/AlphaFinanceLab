@@ -77,7 +77,8 @@ public sealed class BarRow
 /// <summary>
 /// corporate_actions — §13.6 semantics. action_id is a bare INTEGER PRIMARY KEY (NO AUTOINCREMENT,
 /// rule 14 hand-edit). type is CHECK-constrained (8 values). cash_per_share is decimal→TEXT (D69);
-/// ratio is REAL. processed_on stays NULL until the ledger applies it (Phase 2).
+/// ratio is REAL. (processed_on — always NULL, never written — was dropped by D94/M5; ledger
+/// idempotency is one-transaction-per-day + ux_runs_ok_forward, never a per-action flag.)
 /// VERSIONED like bars (D76): a value-diff correction of the SAME (security_id, type, effective_date)
 /// appends a NEW row with version = MAX(version)+1 — never an UPDATE/DELETE. observed_at is the
 /// point-in-time key. READ RULE: latest version WHERE observed_at &lt;= run.watermark (so a replay pinned
@@ -103,12 +104,6 @@ public sealed class CorporateActionRow
     public string? NewSymbol { get; set; }
     public string ObservedAt { get; set; } = default!;
     public string Source { get; set; } = "eodhd";
-    /// <summary>ALWAYS NULL, never written. A global column on a per-account operation would make a
-    /// replay skip an action a forward run marked (breaking the quarantine), and D76 forbids UPDATE
-    /// here anyway; ledger idempotency is one-transaction-per-day + ux_runs_ok_forward, not this flag.
-    /// Retained only because dropping it is a migration + a D-number (PROGRESS proposal P5). See the
-    /// SCHEMA note on corporate_actions.processed_on. Do NOT wire anything to read or write it.</summary>
-    public string? ProcessedOn { get; set; }
 }
 
 /// <summary>
@@ -184,11 +179,13 @@ public sealed class DataQualityFlagRow
 }
 
 /// <summary>
-/// regime_labels — daily point-in-time regime labels (D34/D50, §20.1). PK as_of (one label per
-/// session). NOT versioned and carries NO run_kind: the regime is a market-level fact, so it is a
-/// DERIVED table recomputed from the index-proxy series at the run's watermark, with inputs_hash =
-/// hash(proxy security_id, parameter set, watermark) carrying that provenance. trend and vol are
-/// CHECK-constrained to the cross-product tokens; label is their denormalized product ('bull/high_vol').
+/// regime_labels — daily point-in-time regime labels (D34/D50, §20.1). PK (as_of, run_kind) since
+/// D93/M5: the regime is a market-level fact, but a REPLAY recomputes it from a different watermark
+/// over its own window, and with as_of alone in the key that recompute would OVERWRITE the forward
+/// label (P6). run_kind in the key is the equity_curve precedent — the forward and replay labels
+/// coexist, quarantined. NOT versioned: still a DERIVED table, recomputed from the index-proxy series
+/// at the run's watermark, with inputs_hash = hash(proxy security_id, parameter set, watermark)
+/// carrying that provenance. trend and vol are CHECK-constrained; label is their denormalized product.
 /// </summary>
 public sealed class RegimeLabelRow
 {
@@ -201,6 +198,8 @@ public sealed class RegimeLabelRow
     public string Label { get; set; } = default!;
     /// <summary>hash(proxy security_id, parameter set, watermark) — provenance of the PIT computation.</summary>
     public string InputsHash { get; set; } = default!;
+    /// <summary>'live' | 'replay' (D93) — in the PK, so replay never overwrites the forward label.</summary>
+    public string RunKind { get; set; } = "live";
 }
 
 /// <summary>
@@ -209,6 +208,8 @@ public sealed class RegimeLabelRow
 /// end_date NULL = ongoing; a confirmed trend flip closes the current episode (its end_date is set to
 /// the last session of the old trend) and opens a new one. The D45 evidence counter counts these
 /// episodes, so they accrue FORWARD from the first live label — never backfilled across warm-up history.
+/// run_kind (D93/M5): a replay maintains its OWN episode chain over its historical window (FR-41's
+/// replay_regime_outcomes keys to these rows), quarantined from the forward chain per run_kind.
 /// </summary>
 public sealed class RegimeEpisodeRow
 {
@@ -218,4 +219,6 @@ public sealed class RegimeEpisodeRow
     public string StartDate { get; set; } = default!;
     /// <summary>NULL = ongoing.</summary>
     public string? EndDate { get; set; }
+    /// <summary>'live' | 'replay' (D93) — each run kind maintains its own episode chain.</summary>
+    public string RunKind { get; set; } = "live";
 }

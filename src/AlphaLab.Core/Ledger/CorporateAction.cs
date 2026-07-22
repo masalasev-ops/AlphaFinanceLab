@@ -37,7 +37,7 @@ public enum CorporateActionType
 /// <summary>
 /// A corporate action as the LEDGER sees it (§13.6) — the Core mirror of
 /// <c>CorporateActionRow</c>, carrying only what the ledger prices on. The persistence fields
-/// (version, observed_at, source, processed_on) are Data's concern and never reach here; the Data
+/// (version, observed_at, source) are Data's concern and never reach here; the Data
 /// adapter has already resolved the watermark read (D76) before building this.
 ///
 /// <see cref="ActionId"/> travels with it because every forced event is logged to cash_events /
