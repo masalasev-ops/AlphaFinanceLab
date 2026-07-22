@@ -24,7 +24,8 @@ public sealed record ReplayRequest(
     string? Watermark = null,
     string? LearnThrough = null,
     bool Reset = false,
-    bool WithPlants = true);
+    bool WithPlants = true,
+    bool WithEvaluation = true);
 
 /// <summary>What one replay pass did. The committed prefix persists on an early stop (resumable: re-run
 /// the same command — committed days are skipped).</summary>
@@ -124,7 +125,7 @@ public sealed class ReplayRunner(
                 .ToHashSet(StringComparer.Ordinal);
         }
 
-        await using var provider = BuildReplayServices(resolved, watermark);
+        await using var provider = BuildReplayServices(resolved, watermark, request.WithEvaluation);
 
         if (sessions.Count == 0)
         {
@@ -297,12 +298,15 @@ public sealed class ReplayRunner(
     }
 
     // ---- the replay graph: the REAL pipeline over stored history at the frozen watermark ----
-    private ServiceProvider BuildReplayServices(string resolvedConnectionString, string watermark)
+    private ServiceProvider BuildReplayServices(string resolvedConnectionString, string watermark, bool withEvaluation)
     {
         var services = new ServiceCollection();
         services.AddSingleton(loggerFactory);
         services.AddLogging();
 
+        // Registered BEFORE AddDailyPipelineCore so its TryAddSingleton default is a no-op: the
+        // seeding backtest engine (4.10) is the ONLY caller that disables the evaluation cadence.
+        services.AddSingleton(new PipelineEvaluationToggle { Enabled = withEvaluation });
         services.AddDailyPipelineCore(configuration, arena, resolvedConnectionString, ensureDirectory: false);
         services.AddSingleton(configuration.GetSection(WorkerOptions.SectionName).Get<WorkerOptions>() ?? new WorkerOptions());
 

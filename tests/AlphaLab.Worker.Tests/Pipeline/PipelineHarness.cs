@@ -101,6 +101,7 @@ public sealed class PipelineHarness : IDisposable
         services.AddSingleton<TimeProvider>(new FixedTimeProvider(clockNow));
         services.AddScoped<Stage1Fetch>();
         services.AddScoped<DailyPipeline>();
+        services.AddSingleton(new PipelineEvaluationToggle());   // the 4.10 seam: forward = evaluation on
         services.AddScoped<IMissedSessionResolver, MissedSessionResolver>();
         services.AddSingleton<CatchupRunner>();
 

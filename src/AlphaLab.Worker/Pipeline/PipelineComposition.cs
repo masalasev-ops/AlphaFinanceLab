@@ -3,6 +3,7 @@ using AlphaLab.Data;
 using AlphaLab.Data.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace AlphaLab.Worker.Pipeline;
 
@@ -71,6 +72,8 @@ public static class PipelineComposition
 
         services.AddScoped<Stage1Fetch>();
         services.AddScoped<DailyPipeline>();
+        // The evaluation cadence runs by default; ONLY the seeding backtest engine overrides (4.10).
+        services.TryAddSingleton(new PipelineEvaluationToggle());
         return services;
     }
 

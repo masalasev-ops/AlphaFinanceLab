@@ -18,3 +18,14 @@ public interface IPipelineDayExtension
     /// <summary>Runs inside the Stage-2 transaction, after populations. A throw rolls the day back.</summary>
     void AfterPopulations(PipelineDayContext context);
 }
+
+/// <summary>
+/// Whether the day runs the 21-day evaluation cadence (gate → monitor → allocator). Default TRUE
+/// everywhere; ONLY the walk-forward seeding engine (4.10) registers false — the IBacktestEngine is
+/// replay's restricted special case and must never judge promotions (no power_reports, no
+/// go_live_log, no overfitting rows, no allocations). Structural: the cadence simply never fires.
+/// </summary>
+public sealed class PipelineEvaluationToggle
+{
+    public bool Enabled { get; init; } = true;
+}

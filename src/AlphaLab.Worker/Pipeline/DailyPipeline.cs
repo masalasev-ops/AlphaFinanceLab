@@ -70,7 +70,8 @@ public sealed class DailyPipeline(
     WorkerOptions worker,
     TimeProvider clock,
     ILogger<DailyPipeline> logger,
-    IEnumerable<IPipelineDayExtension> extensions)
+    IEnumerable<IPipelineDayExtension> extensions,
+    PipelineEvaluationToggle evaluationToggle)
 {
     // The daily fetch window: enough sessions of context that the FR-6 outlier / reconciliation checks
     // have neighbours around the just-closed bar. NOT a config knob (it is an internal fetch bound, not a
@@ -539,6 +540,10 @@ public sealed class DailyPipeline(
     // evaluation), so a cadence whose evaluation crashed is re-driven on the next launch rather than lost.
     private void RunEvaluationIfDue(string asOf, DateOnly asOfDate, string watermark, string runKindToken)
     {
+        // The seeding backtest engine (4.10) amputates the judging half: no gate, no monitor, no
+        // allocator — the IBacktestEngine never judges promotions (its FX test pins zero such rows).
+        if (!evaluationToggle.Enabled) return;
+
         // Nothing promotable yet ⇒ no evaluation to run; do NOT treat the boundary as missed (that would
         // re-fire every launch, writing nothing). A candidate/live strategy must exist first.
         if (!db.Strategies.Any(s => s.Status == "candidate" || s.Status == "live")) return;
