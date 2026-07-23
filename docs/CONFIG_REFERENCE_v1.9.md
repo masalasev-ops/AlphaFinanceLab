@@ -38,6 +38,7 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     "MembershipCrossCheck": "wikipedia",          // D49 launch: wikipedia; post-upgrade: ivv_csv
     "SectorSource": "ivv_csv",                    // D49 launch; post-upgrade: eodhd
     "HistoricalMembershipSource": "community_csv",// D49/D70 launch: fja05680/sp500; post-upgrade: eodhd
+    "Exclusions": ["SUN"],                        // finding 266 — canonical symbols permanently OUT of the universe. TWO consumers read this ONE list: the historical backfill SKIPS them on ingest (skip-and-record, like a ticker-reuse suspect) and the replay composition DENIES them from the roster (ExclusionScopedMembershipRead). The escape hatch for single-spell symbol reuse the >2y disjoint-spell heuristic cannot see (SUN = old Sunoco's ticker reused by Sunoco LP, whose in-window bars are the wrong company). Case-insensitive. MUST match across the Worker + Backfill appsettings (ConfigConsistencyTests). Default [].
     "Bootstrap": {                                // D65/D70 — the S&P 100 slice (forward universe through Phase 4 sign-off)
       "Universe": "sp100",                        // consumed by the backfill CLI and Stage-1 eligibility until the post-Phase-4 widen
       "MembershipPrimary": "oef_csv",             // iShares OEF holdings CSV (same BlackRock pattern as IVV)

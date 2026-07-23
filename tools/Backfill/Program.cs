@@ -226,7 +226,13 @@ static async Task<int> RunHistoricalAsync(string[] args, IConfiguration config)
         // widen to ~500 names with no error anywhere.
         options = HistoricalBackfillArgs.Parse(
                 args, DateTime.UtcNow.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture))
-            with { ApiPlanLimit = config.GetValue<int?>("Backfill:ApiPlanLimit") };
+            with
+            {
+                ApiPlanLimit = config.GetValue<int?>("Backfill:ApiPlanLimit"),
+                // Universe:Exclusions (finding 266): symbols skipped on ingest — the same list the replay
+                // composition denies from the roster. A future re-run reproduces the exclusion.
+                Exclusions = config.GetSection($"{AlphaLab.Data.UniverseOptions.SectionName}:Exclusions").Get<string[]>() ?? [],
+            };
     }
     catch (ArgumentException ex)
     {

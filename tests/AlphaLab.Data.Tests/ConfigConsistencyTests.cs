@@ -116,6 +116,37 @@ public sealed class ConfigConsistencyTests
             ?? throw new InvalidOperationException($"Arena:Id is null in {appsettingsPath}");
     }
 
+    /// <summary>
+    /// Finding 266: <c>Universe:Exclusions</c> is read by TWO processes for one purpose — the Backfill CLI
+    /// SKIPS the symbols on ingest and the Worker's replay composition DENIES them from the roster
+    /// (<c>ExclusionScopedMembershipRead</c>). If the two lists drift, the backfill could skip a name the
+    /// replay still rosters (or the reverse), and a wrong-company symbol would leak back into replay. This
+    /// locks the two consumers' lists to the same value. (The Api never reads it — it is a read/command
+    /// boundary, so it is deliberately not in scope here.)
+    /// </summary>
+    [Fact]
+    public void Config_UniverseExclusions_AgreeAcrossConsumers()
+    {
+        var repoRoot = FindRepoRoot();
+        var worker = ReadUniverseExclusions(Path.Combine(repoRoot, "src", "AlphaLab.Worker", "appsettings.json"));
+        var backfill = ReadUniverseExclusions(Path.Combine(repoRoot, "tools", "Backfill", "appsettings.json"));
+
+        // Ordered, exact: the ingest-skip and the replay deny-list must agree symbol-for-symbol.
+        Assert.Equal(worker, backfill);
+    }
+
+    private static IReadOnlyList<string> ReadUniverseExclusions(string appsettingsPath)
+    {
+        Assert.True(File.Exists(appsettingsPath), $"missing {appsettingsPath}");
+        using var doc = JsonDocument.Parse(File.ReadAllText(appsettingsPath));
+        if (!doc.RootElement.TryGetProperty("Universe", out var universe) ||
+            !universe.TryGetProperty("Exclusions", out var exclusions))
+        {
+            return [];   // an absent section is the empty-list default — and must be empty on BOTH sides
+        }
+        return exclusions.EnumerateArray().Select(e => e.GetString() ?? string.Empty).ToList();
+    }
+
     private static string FindRepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
