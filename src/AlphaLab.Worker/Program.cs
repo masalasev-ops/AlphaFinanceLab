@@ -39,11 +39,17 @@ if (command.Kind != WorkerCommandKind.Daily)
     var commandArena = command.ArenaId is { Length: > 0 } id
         ? new ArenaOptions { Id = id, DisplayName = arena.DisplayName }
         : arena;
-    using var opsLoggerFactory = LoggerFactory.Create(b => b.AddSimpleConsole(o =>
-    {
-        o.IncludeScopes = true;
-        o.SingleLine = true;
-    }));
+    using var opsLoggerFactory = LoggerFactory.Create(b => b
+        // EF logs every SQL command at Information by default; the appsettings
+        // "Microsoft.EntityFrameworkCore":"Warning" only reaches the resident-host Logging path, NOT this
+        // standalone ops factory. Without this filter a full-scale replay-calibrate emits ~20 GB of
+        // per-query noise and pays the log-formatting cost on every one of millions of reads (finding 267).
+        .AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning)
+        .AddSimpleConsole(o =>
+        {
+            o.IncludeScopes = true;
+            o.SingleLine = true;
+        }));
     return await OpsCommandHost.RunAsync(
         command, builder.Configuration, commandArena, connectionString, opsLoggerFactory);
 }
