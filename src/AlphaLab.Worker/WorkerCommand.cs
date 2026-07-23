@@ -65,7 +65,8 @@ public static class WorkerCommandParser
             var date = ValueOf(args, "--date")
                 ?? throw new ArgumentException(
                     $"{ReproduceDayVerb} requires --date <yyyy-MM-dd>: the session to reproduce.");
-            if (!DateOnly.TryParseExact(date, "yyyy-MM-dd", out _))
+            if (!DateOnly.TryParseExact(date, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None, out _))
             {
                 throw new ArgumentException($"{ReproduceDayVerb}: --date '{date}' is not a yyyy-MM-dd date.");
             }
@@ -100,7 +101,10 @@ public static class WorkerCommandParser
 
     private static string RequireDate(string verb, string flag, string? value)
     {
-        if (value is null || !DateOnly.TryParseExact(value, "yyyy-MM-dd", out _))
+        // InvariantCulture: the provider-less overload validates against the OS calendar — on ar-SA
+        // (Umm al-Qura) a perfectly valid ISO year is out of range and the CLI would reject it.
+        if (value is null || !DateOnly.TryParseExact(value, "yyyy-MM-dd",
+                System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _))
         {
             throw new ArgumentException($"{verb} requires {flag} <yyyy-MM-dd> (got '{value ?? "(none)"}').");
         }

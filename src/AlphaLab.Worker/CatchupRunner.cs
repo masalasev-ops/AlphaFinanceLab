@@ -60,15 +60,26 @@ public sealed class CatchupRunner(
         var todayEt = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(clock.GetUtcNow(), EasternTime.Zone).DateTime);
 
         var processed = 0;
+        var recoveredEarlierThisLaunch = false;
         foreach (var day in missed) // ascending — one atomic transaction per day, in order (D47)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var runKind = day == todayEt ? "live" : "catchup";
 
+            // Same-launch watermark-inversion guard (Phase-4 review): a launch after 22:00 UTC (the
+            // NORMAL evening ET run) that recovers earlier days ingests them at NowIso instants LATER
+            // than today's session-derived {asOf}T22:00:00Z fiction. If today then ran 'live' with that
+            // fiction, every read on today's run — bars, regime proxy, and the corporate-action applier's
+            // (previousSession, asOf] window — would be blind to the rows this very launch just wrote,
+            // and a dividend effective in the recovered window would be missed on its ONLY applicable
+            // day. So when this launch recovered days first, today runs at its TRUE observation instant
+            // too (which sorts after the recovery instants); a pure-live launch keeps the D92 fiction.
+            string? watermark = runKind == "live" && recoveredEarlierThisLaunch ? NowIso() : null;
+
             // Fresh scope ⇒ fresh DbContext for this day's transaction.
             using var scope = scopeFactory.CreateScope();
             var pipeline = scope.ServiceProvider.GetRequiredService<DailyPipeline>();
-            var result = await pipeline.RunDayAsync(Iso(day), runKind, ct: cancellationToken);
+            var result = await pipeline.RunDayAsync(Iso(day), runKind, watermark, ct: cancellationToken);
 
             if (result.Aborted)
             {
@@ -82,6 +93,7 @@ public sealed class CatchupRunner(
                 return new CatchupOutcome(missed.Count, processed, true, result.AbortReason);
             }
             processed++;
+            if (runKind == "catchup") recoveredEarlierThisLaunch = true;
         }
 
         logger.LogInformation("Catch-up complete: {Processed}/{Count} session(s) processed.", processed, missed.Count);
@@ -89,4 +101,6 @@ public sealed class CatchupRunner(
     }
 
     private static string Iso(DateOnly d) => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    private string NowIso() => clock.GetUtcNow().UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
 }

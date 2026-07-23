@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using AlphaLab.Evaluation.Calibration;
+using static System.FormattableString;
 
 namespace AlphaLab.Worker.Ops;
 
@@ -47,7 +48,7 @@ public static class CalibrationReport
         sb.AppendLine($"- Replay run span: {(r.FirstRunId is null ? "(none)" : $"run {r.FirstRunId}..{r.LastRunId}")}");
         sb.AppendLine($"- Seeds per plant: {r.SeedsPerPlant} · population M: {r.PopulationM}");
         sb.AppendLine($"- Generated: {generatedAtIso}");
-        sb.AppendLine($"- Config rows frozen this run: {(r.FrozenConfigKeys.Count == 0 ? "(report-only — none)" : string.Join(", ", r.FrozenConfigKeys))}");
+        sb.AppendLine($"- Config rows frozen this run: {(r.FrozenConfigKeys.Count == 0 ? "(none — report-only, or a verification failure blocked the freeze)" : string.Join(", ", r.FrozenConfigKeys))}");
         sb.AppendLine();
 
         sb.AppendLine("## D56 trajectory curves (S3)");
@@ -68,9 +69,11 @@ public static class CalibrationReport
         else
         {
             Curve(sb, "P_edge(t) — NAIVE constant-drift comparator (prohibited as the calibration plant)", r.NaiveEdge);
+            // Invariant($"…"): the report is archived + SHA-256-hashed into Calibration.ReportRef, so
+            // its bytes must not depend on the operator's locale (Phase-4 review).
             sb.AppendLine(r.SensitivityMaxGapPts is { } gap
-                ? $"Max |realistic − naive| divergence at t ≥ 126d: **{gap:F1} percentile points** " +
-                  $"(threshold {r.SensitivityThresholdPts:F0}). The REALISTIC curves are the frozen ones — always; " +
+                ? Invariant($"Max |realistic − naive| divergence at t ≥ 126d: **{gap:F1} percentile points** ") +
+                  Invariant($"(threshold {r.SensitivityThresholdPts:F0}). The REALISTIC curves are the frozen ones — always; ") +
                   (gap > r.SensitivityThresholdPts
                       ? "the divergence EXCEEDS the threshold, confirming constant drift would have mis-calibrated the monitor."
                       : "the divergence is inside the threshold at this horizon; the realistic plant remains the calibration plant by construction.")
@@ -112,8 +115,8 @@ public static class CalibrationReport
         sb.AppendLine($"- No-edge P_noise breach rate (validate segment): {Fmt(k2.NoEdgeBreachRateValidate, "P1")}");
         if (k2.ValueAdd is { } va)
         {
-            sb.AppendLine($"- Allocator value-add (§1.2): gap {va.GapAnn:P2}/yr, MDE {va.MdeAnn:P2}, {va.Verdict}, T={va.TDays}; " +
-                          $"mean weight edge {va.MeanEdgeWeightPct:F1}% vs anti {va.MeanAntiWeightPct:F1}%");
+            sb.AppendLine(Invariant($"- Allocator value-add (§1.2): gap {va.GapAnn:P2}/yr, MDE {va.MdeAnn:P2}, {va.Verdict}, T={va.TDays}; ") +
+                          Invariant($"mean weight edge {va.MeanEdgeWeightPct:F1}% vs anti {va.MeanAntiWeightPct:F1}%"));
         }
         sb.AppendLine();
         sb.AppendLine("### Per-signal false-alarm contribution (finding 114)");
@@ -144,7 +147,9 @@ public static class CalibrationReport
         sb.AppendLine("|---|---|---|");
         for (var i = 0; i < curve.Knots.Count; i++)
         {
-            var band = i < curve.Band2575.Count ? $"{curve.Band2575[i].Lo:F1}–{curve.Band2575[i].Hi:F1}" : "—";
+            var band = i < curve.Band2575.Count
+                ? Invariant($"{curve.Band2575[i].Lo:F1}–{curve.Band2575[i].Hi:F1}")
+                : "—";
             sb.AppendLine($"| {curve.Knots[i].T} | {curve.Knots[i].P.ToString("F1", CultureInfo.InvariantCulture)} | {band} |");
         }
         sb.AppendLine();

@@ -97,21 +97,29 @@ public sealed class CorporateActionIngestion(AlphaLabDbContext db) : ICorporateA
     /// </summary>
     private int AppendIfNew(CorporateActionRow candidate)
     {
-        var latest = db.CorporateActions
+        var versions = db.CorporateActions
             .Where(c => c.SecurityId == candidate.SecurityId
                         && c.Type == candidate.Type
                         && c.EffectiveDate == candidate.EffectiveDate)
-            .OrderByDescending(c => c.Version)
-            .FirstOrDefault();
+            .ToList();
 
-        if (latest is null)
+        if (versions.Count == 0)
         {
             candidate.Version = 1;
             db.CorporateActions.Add(candidate);
             return 1;
         }
+        var latest = versions.OrderByDescending(c => c.Version).First();
         if (Differs(latest, candidate))
         {
+            // No-backdate guard (mirrors BarIngestionService.IngestEod): a differing observation whose
+            // observed_at is older than what the store already knows must not append a new top version —
+            // it would shadow the newer restatement for every read at a later watermark. A resumed
+            // replay re-staging its frozen vintage is the writer this protects against; its own reads
+            // resolve by watermark, so the skip is lossless.
+            var maxObservedAt = versions.Select(c => c.ObservedAt).OrderBy(s => s, StringComparer.Ordinal).Last();
+            if (string.CompareOrdinal(candidate.ObservedAt, maxObservedAt) < 0) return 0;
+
             // A restatement — append the next version. Never mutate the prior one.
             candidate.Version = latest.Version + 1;
             db.CorporateActions.Add(candidate);

@@ -111,7 +111,8 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
     }
 
     /// <summary>The pure-ish core: compute the three signals from precomputed inputs, persist the rows,
-    /// aggregate over the whitelist, apply the 4-consecutive-Suspect auto-retire, and persist the status.
+    /// aggregate over the whitelist, apply the consecutive-Suspect auto-retire at the CALIBRATED
+    /// patience (<paramref name="autoRetireEvals"/>; Appendix-A default 4), and persist the status.
     /// Saves within the caller's transaction.</summary>
     public MonitorResult Evaluate(
         string asOf, string strategyId,
@@ -221,8 +222,17 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
                 Promoted = null,
                 Demoted = strategyId,
                 Verdict = "Revert",
+                // The trigger records the patience ACTUALLY applied (Phase-4 review): the threshold is
+                // the calibrated Monitor.S6.AutoRetireEvals, so a hardcoded "four_consecutive_suspect"
+                // would misstate the rule in the immutable audit the moment the operator recalibrates.
                 EvidenceJson = JsonSerializer.Serialize(
-                    new { reason = "auto_retire", trigger = "four_consecutive_suspect", s2 = s2.Contribution, s3 = s3.Contribution, s6 = s6.Contribution },
+                    new
+                    {
+                        reason = "auto_retire",
+                        trigger = "consecutive_suspect",
+                        consecutive_suspect_evals = autoRetireEvals,
+                        s2 = s2.Contribution, s3 = s3.Contribution, s6 = s6.Contribution,
+                    },
                     AlphaLabJson.Options),
                 RunKind = runKind,
             });

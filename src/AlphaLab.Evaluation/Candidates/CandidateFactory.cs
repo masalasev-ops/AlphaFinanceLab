@@ -58,6 +58,18 @@ public sealed class CandidateFactory(AlphaLabDbContext db, AlphaLab.Core.Config.
         ArgumentNullException.ThrowIfNull(spec);
         ArgumentException.ThrowIfNullOrWhiteSpace(spec.StrategyId);
 
+        // The 'plant:' prefix is RESERVED for the D64 calibration fixtures (Phase-4 review): a real
+        // candidate named into it would be invisible on every plant-filtered screen while its
+        // strategies/trials/hypothesis rows persist unremovably, its live trials row would inflate the
+        // S2 deflation count for every real strategy — and a later with-plants replay whose seeded id
+        // collided would silently adopt the forward row as a fixture. Refuse at the door.
+        if (Calibration.PlantCohorts.IsPlantId(spec.StrategyId))
+        {
+            throw new ArgumentException(
+                $"Strategy id '{spec.StrategyId}' uses the reserved 'plant:' prefix — plant ids belong to the " +
+                "D64 calibration fixtures and are never admissible candidates.", nameof(spec));
+        }
+
         // The pre-registration gate (D52/rule 16).
         if (hypothesisEntryId is null && !unregistered)
         {

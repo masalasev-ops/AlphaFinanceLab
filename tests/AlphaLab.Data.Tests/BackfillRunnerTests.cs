@@ -181,6 +181,41 @@ public class BackfillRunnerTests
         finally { TestDb.Delete(path); }
     }
 
+    // Phase-4 review: an APPLIED reconcile advances the slice snapshot (previous slice + adds − drops)
+    // so post-snapshot index adds flow into the forward universe instead of vanishing behind the
+    // frozen v1 intersection. No snapshot row (a pre-backfill store) stays a no-op.
+    [Fact]
+    public async Task RefreshMembershipStep_AppliedReconcile_AdvancesTheSliceSnapshot()
+    {
+        var path = TestDb.CreateMigrated();
+        try
+        {
+            using var db = TestDb.Open(path);
+            var http = FullClient();
+            var runner = Runner(db, http, primary: Oef(http), cross: Oef(http)); // identical -> agreement
+
+            // Simulate the post-backfill state: a v1 snapshot exists (stale — it predates the adds).
+            db.Config.Add(new AlphaLab.Data.Entities.ConfigRow
+            {
+                Key = HistoricalBackfillRunner.SliceConfigKey, ValueJson = "[]",
+                Version = 1, ChangedOn = "2020-01-01", Reason = "test: pre-reconcile snapshot",
+            });
+            db.SaveChanges();
+
+            var result = await runner.RefreshMembershipStep(new BackfillOptions { AsOf = AsOf });
+            Assert.True(result.Applied);
+            Assert.NotEmpty(result.Adds);
+
+            var latest = db.Config.Where(c => c.Key == HistoricalBackfillRunner.SliceConfigKey)
+                .AsEnumerable().OrderByDescending(c => c.Version).First();
+            Assert.Equal(2, latest.Version);                     // append-only: v2, never an edit of v1
+            Assert.Equal(AsOf, latest.ChangedOn);                // date-aware reads resolve it from AsOf on
+            var ids = System.Text.Json.JsonSerializer.Deserialize<List<long>>(latest.ValueJson)!;
+            Assert.Equal(result.Adds.Count, ids.Count);          // every applied add flowed into the slice
+        }
+        finally { TestDb.Delete(path); }
+    }
+
     // Agreeing rosters (OEF cross-checked against itself) exercise the APPLY + sector-ingestion path.
     [Fact]
     public async Task RefreshMembershipStep_AgreeingRosters_AppliesMembersAndSectors()

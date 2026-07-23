@@ -92,12 +92,16 @@ public sealed class DailyPipeline(
     /// unique index at Stage-2 commit.
     ///
     /// WATERMARK (D92, finding 194): an explicit <paramref name="watermark"/> wins (the replay /
-    /// reproduce seam — a caller that already knows what "now" must mean). Otherwise a 'catchup' day
-    /// stamps the TRUE observation instant — the day is being recovered later, and pretending it was
-    /// observed at {asOf}T22:00:00Z is exactly the PIT fiction replay must not reason over
-    /// (FX-CatchupObservedAt). A 'live' day keeps the session-derived {asOf}T22:00:00Z: the run happens
-    /// the same evening, so the stamp is a bounded approximation of the truth, and it is what keeps a
-    /// same-day re-fetch a value-diff no-op.
+    /// reproduce seam — a caller that already knows what "now" must mean; a 'replay' day MUST supply it,
+    /// the null path throws — deriving the session fiction under replay would stamp fabricated
+    /// backdated observed_at rows, the exact corruption the ingestion no-backdate guard exists for).
+    /// Otherwise a 'catchup' day stamps the TRUE observation instant — the day is being recovered
+    /// later, and pretending it was observed at {asOf}T22:00:00Z is exactly the PIT fiction replay must
+    /// not reason over (FX-CatchupObservedAt). A 'live' day keeps the session-derived {asOf}T22:00:00Z:
+    /// the run happens the same evening, so the stamp is a bounded approximation of the truth, and it
+    /// is what keeps a same-day re-fetch a value-diff no-op. The one geometry where the fiction lies —
+    /// a mixed launch whose catch-up ingested at instants AFTER 22:00 UTC — is handled by CatchupRunner
+    /// passing today's true instant explicitly (the same-launch inversion guard).
     /// </summary>
     public async Task<DailyRunResult> RunDayAsync(
         string asOf, string runKind = RunKindLive, string? watermark = null, CancellationToken ct = default)
@@ -109,6 +113,10 @@ public sealed class DailyPipeline(
         // artifacts (control_equity, power_reports, overfitting_*, allocation_log) carry.
         var ledgerKind = LedgerMapping.ParseRunKind(runKind);
         var runKindToken = LedgerMapping.RunKindToken(ledgerKind);
+        if (watermark is null && ledgerKind == RunKind.Replay)
+            throw new InvalidOperationException(
+                "A replay day requires an explicit frozen watermark (D95) — deriving one here would " +
+                "fabricate a session-fiction vintage and backdate ingested rows (fail closed).");
         watermark ??= string.Equals(runKind, "catchup", StringComparison.Ordinal)
             ? NowIso()                 // captured ONCE — every write of the day carries the same instant
             : $"{asOf}T22:00:00Z";
@@ -545,8 +553,20 @@ public sealed class DailyPipeline(
         if (!evaluationToggle.Enabled) return;
 
         // Nothing promotable yet ⇒ no evaluation to run; do NOT treat the boundary as missed (that would
-        // re-fire every launch, writing nothing). A candidate/live strategy must exist first.
-        if (!db.Strategies.Any(s => s.Status == "candidate" || s.Status == "live")) return;
+        // re-fire every launch, writing nothing). The guard is RUN-KIND-SCOPED (Phase-4 review): under
+        // replay the forward-evolved column is invisible (EffectiveStatus seeds every non-baseline
+        // strategy 'candidate'), so the trigger asks the question the evaluation itself will answer — a
+        // forward retire must never silently disable a replay generation's cadence. Plants are excluded
+        // from BOTH arms: they are equity-only fixtures, and counting their 'candidate' rows would hold
+        // the forward trigger permanently true after any replay ever seeded them.
+        var anyJudgeable = runKindToken == RunKindLive
+            ? db.Strategies.AsEnumerable().Any(s =>
+                (s.Status == "candidate" || s.Status == "live")
+                && !AlphaLab.Evaluation.Calibration.PlantCohorts.IsPlantId(s.StrategyId))
+            : db.Strategies.AsEnumerable().Any(s =>
+                s.Status != "baseline"
+                && !AlphaLab.Evaluation.Calibration.PlantCohorts.IsPlantId(s.StrategyId));
+        if (!anyJudgeable) return;
 
         // The cadence counts sessions of ITS OWN kind: forward = the committed forward runs; replay =
         // the committed replay runs of the current generation (D95 — a reset clears them with the rest).

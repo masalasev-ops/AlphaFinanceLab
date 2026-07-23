@@ -191,6 +191,75 @@ public class HistoricalBackfillTests
         finally { TestDb.Delete(path); }
     }
 
+    // Phase-4 review: the slice intersection is DATE-AWARE — the version whose changed_on <= the
+    // queried date wins, so a post-snapshot index add flows through at its reconcile date, and a
+    // reproduce-day of an earlier committed session resolves the slice THAT day traded (a date-blind
+    // latest-version read would apply a scope the original run never had — a false NFR-1 FAIL).
+    [Fact]
+    public void FR4_SliceScope_IsDateAware_VersionsResolveAsOfTheQueriedDay()
+    {
+        var path = TestDb.CreateMigrated();
+        try
+        {
+            using var db = TestDb.Open(path);
+            var master = new SecurityMaster(db);
+            var a = master.Register("AAA", "US", "2010-01-01");
+            var b = master.Register("BBB", "US", "2010-01-01");
+            var c = master.Register("CCC", "US", "2010-01-01");
+            foreach (var id in new[] { a, b, c })
+                db.IndexMembership.Add(new IndexMembershipRow { SecurityId = id, AddedOn = "2010-01-01" });
+
+            // v1 (the backfill snapshot) = {AAA, BBB}; v2 (a reconcile that ADDED CCC) ten days later.
+            db.Config.Add(new Data.Entities.ConfigRow
+            {
+                Key = HistoricalBackfillRunner.SliceConfigKey,
+                ValueJson = $"[{a},{b}]", Version = 1, ChangedOn = "2026-07-01", Reason = "test v1",
+            });
+            db.Config.Add(new Data.Entities.ConfigRow
+            {
+                Key = HistoricalBackfillRunner.SliceConfigKey,
+                ValueJson = $"[{a},{b},{c}]", Version = 2, ChangedOn = "2026-07-10", Reason = "test v2 (add)",
+            });
+            db.SaveChanges();
+
+            var scoped = new SliceScopedMembershipRead(new IndexMembershipReadService(db), db, new UniverseOptions());
+
+            // A session between the versions sees v1's scope; after the add, v2's; before v1, the
+            // earliest snapshot bounds it (never the widened raw roster).
+            Assert.Equal(new[] { a, b }.OrderBy(x => x), scoped.MembersAsOf("2026-07-05").OrderBy(x => x));
+            Assert.Equal(new[] { a, b, c }.OrderBy(x => x), scoped.MembersAsOf("2026-07-15").OrderBy(x => x));
+            Assert.Equal(new[] { a, b }.OrderBy(x => x), scoped.MembersAsOf("2026-06-01").OrderBy(x => x));
+        }
+        finally { TestDb.Delete(path); }
+    }
+
+    // Phase-4 review: removed_on is EXCLUSIVE, so a member removed exactly at the window end must
+    // reach 100% coverage with bars through removed_on - 1. The old "< to" comparison counted the
+    // removal day as expected, pinning coverage below 100% forever and re-fetching the name (3 EODHD
+    // calls) on every re-run.
+    [Fact]
+    public async Task D70_Coverage_RemovalAtWindowEnd_ReachesFullCoverage()
+    {
+        var path = TestDb.CreateMigrated();
+        try
+        {
+            using var db = TestDb.Open(path);
+            SeedCalendar(db);
+            var market = new FakeMarket();
+            market.BarsFor["AAA"] = CleanBars(db, From, To);
+            // BBB is removed ON the window-end date (the last snapshot omits it) and trades through
+            // the session before — the delisted-at-window-end shape.
+            market.BarsFor["BBB"] = CleanBars(db, From, "2010-03-30");
+            const string csv = "date,tickers\n2010-01-04,\"AAA,BBB\"\n2010-03-31,\"AAA\"\n";
+
+            var report = await Runner(db, market).RunAsync(Options(), csv);
+
+            var bbb = Assert.Single(report.Coverage, cov => cov.Symbol == "BBB");
+            Assert.Equal(100.0, bbb.CoveragePct);
+        }
+        finally { TestDb.Delete(path); }
+    }
+
     [Fact]
     public async Task FR19_ReplayUniverse_NeverTheSlice()
     {

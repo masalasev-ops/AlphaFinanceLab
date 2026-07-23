@@ -95,18 +95,35 @@ public sealed class CalibrationOrchestrator(
         var verification = new ReplayVerification(db, gate, verdicts, replayOptions).Run(specs, request.LearnThrough, pNoise);
 
         // ---- (6) the archived report ----
-        var generatedAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
+        // ONE captured instant, invariant-formatted: the filename must agree with the "Generated:"
+        // stamp across a midnight straddle, and a culture-sensitive interpolated date would render a
+        // non-Gregorian filename into the frozen ReportRef on e.g. an ar-SA locale (Phase-4 review).
+        var generatedInstant = DateTime.UtcNow;
+        var generatedAt = generatedInstant.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
         var reportDir = Path.Combine(configuration["Calibration:ReportDir"] ?? "docs/calibration", arena.Id);
         Directory.CreateDirectory(reportDir);
-        var reportPath = Path.Combine(reportDir, $"{DateTime.UtcNow:yyyy-MM-dd}-calibration.md");
+        var reportPath = Path.Combine(reportDir,
+            $"{generatedInstant.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}-calibration.md");
 
-        var frozenKeys = reportOnly
-            ? []
-            : new List<string>
-            {
-                CalibratedKeys.PNoiseCurve("daily"), CalibratedKeys.PEdgeCurve("daily"),
-                CalibratedKeys.DetectionPower, CalibratedKeys.S6AutoRetireEvals, CalibratedKeys.ReportRef,
-            };
+        // The freeze is GATED on the verification outcome (Phase-4 review): a generation whose
+        // machinery-verification FAILED must never install its curves as the live MAX(version) — config
+        // is append-only (rule 24), so a poisoned freeze could only be papered over, never removed.
+        // Insufficient checks do not block (finding 245: NoFailures is the CI bar, AllGreen the
+        // full-scale bar); a hard FAIL does. The report is archived either way, and frozenKeys tells
+        // the truth about what this run will actually write.
+        var willFreeze = !reportOnly && verification.NoFailures;
+        // The S6 patience knob is seeded ONCE (D98: "from the FIRST freeze"): a re-run must never
+        // clobber the operator's finding-113 recalibration by re-stamping the Appendix-A default —
+        // that would make the documented raise-patience-and-re-run loop unable to converge.
+        var patienceAlreadySet = new ConfigReadService(db).ResolveCurrent(CalibratedKeys.S6AutoRetireEvals) is not null;
+
+        var frozenKeys = new List<string>();
+        if (willFreeze)
+        {
+            frozenKeys.AddRange([CalibratedKeys.PNoiseCurve("daily"), CalibratedKeys.PEdgeCurve("daily"), CalibratedKeys.DetectionPower]);
+            if (!patienceAlreadySet) frozenKeys.Add(CalibratedKeys.S6AutoRetireEvals);
+            frozenKeys.Add(CalibratedKeys.ReportRef);
+        }
 
         var runIds = db.Runs.Where(r => r.RunKind == Replay && r.Status == "ok").Select(r => (long?)r.RunId).ToList();
         var report = CalibrationReport.Render(new CalibrationReportInputs(
@@ -120,8 +137,17 @@ public sealed class CalibrationOrchestrator(
         var reportSha = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(report)));
         _logger.LogInformation("replay-calibrate: report archived at {Path} (sha256 {Sha}…).", reportPath, reportSha[..12]);
 
+        // A hard verification FAILURE stops the chain BEFORE any config write: the archived report
+        // carries the evidence; nothing of the failed generation becomes live (Phase-4 review).
+        if (!verification.NoFailures)
+        {
+            _logger.LogError("replay-calibrate: verification FAILURES present — read the report's check table at " +
+                             "{Path}. NOTHING was frozen; fix the cause and re-run.", reportPath);
+            return 1;
+        }
+
         // ---- (7) the freeze: ONE transaction, append-only version+1 INSERTs (never UPDATE) ----
-        if (!reportOnly)
+        if (willFreeze)
         {
             using var txn = db.Database.BeginTransaction();
             Freeze(db, CalibratedKeys.PNoiseCurve("daily"), pNoise.ToJson(), generatedAt);
@@ -139,19 +165,17 @@ public sealed class CalibrationOrchestrator(
                     }),
                 vintage,
             }), generatedAt);
-            // The S6 patience knob exists as a row from the first freeze (finding 113: a survival-floor
-            // failure recalibrates THIS — via a new version — never the plant). Initial = the Appendix-A 4.
-            Freeze(db, CalibratedKeys.S6AutoRetireEvals,
-                Evaluation.Monitor.OverfittingMonitor.AutoRetireConsecutiveSuspect.ToString(CultureInfo.InvariantCulture), generatedAt);
+            // The S6 patience knob is seeded from the FIRST freeze only (finding 113 / D98): a
+            // survival-floor failure recalibrates it via a new OPERATOR-written version — this chain
+            // must never re-stamp the Appendix-A default over that. Initial = 4.
+            if (!patienceAlreadySet)
+            {
+                Freeze(db, CalibratedKeys.S6AutoRetireEvals,
+                    Evaluation.Monitor.OverfittingMonitor.AutoRetireConsecutiveSuspect.ToString(CultureInfo.InvariantCulture), generatedAt);
+            }
             Freeze(db, CalibratedKeys.ReportRef, JsonSerializer.Serialize(new { path = reportPath.Replace('\\', '/'), sha256 = reportSha }), generatedAt);
             txn.Commit();
             _logger.LogInformation("replay-calibrate: {Count} calibrated config row(s) frozen (append-only).", frozenKeys.Count);
-        }
-
-        if (!verification.NoFailures)
-        {
-            _logger.LogError("replay-calibrate: verification FAILURES present — read the report's check table.");
-            return 1;
         }
         _logger.LogInformation("replay-calibrate: complete. AllGreen={AllGreen} (Insufficient checks are honest, not green).",
             verification.AllGreen);

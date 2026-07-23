@@ -118,7 +118,7 @@ public sealed class ScratchStore : IDisposable
         using (var db = scratch.OpenContext())
         {
             scratch.Rewind(db, asOf, previousSession);
-            ScratchStoreGuard.Assert(db, asOf);
+            ScratchStoreGuard.Assert(db, asOf, previousSession);
         }
         return scratch;
     }
@@ -174,11 +174,29 @@ public sealed class ScratchStore : IDisposable
             .ExecuteUpdate(s => s.SetProperty(e => e.EndDate, (string?)null));
 
         // A trade is dated twice (decided at close T, filled at open T+1). Either date landing at or
-        // after the target session makes it part of the rewound future.
-        db.Trades
-            .Where(t => string.Compare(t.DecidedOn, asOf) >= 0 || string.Compare(t.FilledOn, asOf) >= 0)
-            .ExecuteDelete();
-        db.CashEvents.Where(c => string.Compare(c.AsOf, asOf) >= 0).ExecuteDelete();
+        // after the target session makes it part of the rewound future. For trades and cash events the
+        // window also reaches BACK across the non-session gap (previousSession, asOf): the applier's
+        // widened (prev, asOf] window (finding 192) dates a weekend/holiday-effective action's cash
+        // event and forced trade at the ACTION's own date — rows the TARGET day's run wrote. An
+        // asOf-bounded rewind keeps them, the re-run re-applies the action, and the double-credit
+        // reports a false NFR-1 divergence forever (Phase-4 review). Consecutive sessions partition the
+        // date line, so "> previousSession" removes exactly the target day's output and nothing of the
+        // committed prior day's.
+        if (previousSession is null)
+        {
+            db.Trades
+                .Where(t => string.Compare(t.DecidedOn, asOf) >= 0 || string.Compare(t.FilledOn, asOf) >= 0)
+                .ExecuteDelete();
+            db.CashEvents.Where(c => string.Compare(c.AsOf, asOf) >= 0).ExecuteDelete();
+        }
+        else
+        {
+            db.Trades
+                .Where(t => string.Compare(t.DecidedOn, previousSession) > 0
+                            || string.Compare(t.FilledOn, previousSession) > 0)
+                .ExecuteDelete();
+            db.CashEvents.Where(c => string.Compare(c.AsOf, previousSession) > 0).ExecuteDelete();
+        }
         db.EquityCurve.Where(e => string.Compare(e.AsOf, asOf) >= 0).ExecuteDelete();
         db.Decisions.Where(d => string.Compare(d.AsOf, asOf) >= 0).ExecuteDelete();
         db.CapacityRejections.Where(c => string.Compare(c.AsOf, asOf) >= 0).ExecuteDelete();
@@ -257,7 +275,7 @@ public sealed class ScratchStore : IDisposable
 /// </summary>
 public static class ScratchStoreGuard
 {
-    public static void Assert(AlphaLabDbContext db, string asOf)
+    public static void Assert(AlphaLabDbContext db, string asOf, string? previousSession = null)
     {
         ArgumentNullException.ThrowIfNull(db);
         ArgumentException.ThrowIfNullOrWhiteSpace(asOf);
@@ -269,13 +287,25 @@ public static class ScratchStoreGuard
             if (count > 0) survivors.Add($"{table} ({count} row(s))");
         }
 
+        // Trades and cash events use the same widened bound as the rewind: rows dated in the
+        // non-session gap (previousSession, asOf) are the target day's own CA-window output (weekend/
+        // holiday-effective actions dated at the action's date) and MUST be gone, or the re-run
+        // double-applies them and the comparison lies (Phase-4 review).
+        var tcBound = previousSession ?? asOf;
+        var tcStrict = previousSession is not null; // '>' past a session bound; '>=' at inception
+
         Check("runs", db.Runs.Count(r => string.Compare(r.AsOf, asOf) >= 0));
         Check("catchup_log", db.CatchupLog.Count(c => string.Compare(c.AsOf, asOf) >= 0));
         Check("regime_labels", db.RegimeLabels.Count(r => string.Compare(r.AsOf, asOf) >= 0));
         Check("regime_episodes", db.RegimeEpisodes.Count(e => string.Compare(e.StartDate, asOf) >= 0));
-        Check("trades", db.Trades.Count(t =>
-            string.Compare(t.DecidedOn, asOf) >= 0 || string.Compare(t.FilledOn, asOf) >= 0));
-        Check("cash_events", db.CashEvents.Count(c => string.Compare(c.AsOf, asOf) >= 0));
+        Check("trades", tcStrict
+            ? db.Trades.Count(t =>
+                string.Compare(t.DecidedOn, tcBound) > 0 || string.Compare(t.FilledOn, tcBound) > 0)
+            : db.Trades.Count(t =>
+                string.Compare(t.DecidedOn, tcBound) >= 0 || string.Compare(t.FilledOn, tcBound) >= 0));
+        Check("cash_events", tcStrict
+            ? db.CashEvents.Count(c => string.Compare(c.AsOf, tcBound) > 0)
+            : db.CashEvents.Count(c => string.Compare(c.AsOf, tcBound) >= 0));
         Check("equity_curve", db.EquityCurve.Count(e => string.Compare(e.AsOf, asOf) >= 0));
         Check("decisions", db.Decisions.Count(d => string.Compare(d.AsOf, asOf) >= 0));
         Check("capacity_rejections", db.CapacityRejections.Count(c => string.Compare(c.AsOf, asOf) >= 0));

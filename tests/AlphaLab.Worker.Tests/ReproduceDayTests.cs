@@ -1,3 +1,4 @@
+using System.Globalization;
 using AlphaLab.Core.Config;
 using AlphaLab.Core.Domain;
 using AlphaLab.Core.Ledger;
@@ -172,6 +173,58 @@ public class ReproduceDayTests
             var restored = db.Positions.Count();
             var expected = db.PositionSnapshots.Count(p => p.AsOf == h.Run1 && p.RunKind == "live");
             Assert.Equal(expected, restored);
+        }
+        finally
+        {
+            foreach (var s in new[] { "", "-wal", "-shm" })
+            {
+                if (File.Exists(scratchPath + s)) File.Delete(scratchPath + s);
+            }
+        }
+    }
+
+    // Phase-4 review: the applier's widened (previousSession, asOf] window (finding 192) writes a
+    // weekend-effective action's cash event dated at the ACTION's date — a non-session date BEFORE
+    // asOf. The rewind must reach back across that gap, or the survivor is re-applied by the re-run
+    // (double credit) and reproduce-day reports a false NFR-1 divergence forever.
+    [Fact]
+    public async Task FR25_ScratchStore_RewindDeletesGapDatedCashEvents_KeepsPriorSessions()
+    {
+        using var h = new PipelineHarness();
+        await h.RunAsync(h.Run1);
+
+        var run1 = DateOnly.ParseExact(h.Run1, "yyyy-MM-dd", CultureInfo.InvariantCulture);
+        Assert.Equal(DayOfWeek.Monday, run1.DayOfWeek); // calendar sanity: the weekend gap exists
+        var friday = run1.AddDays(-3).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var saturday = run1.AddDays(-2).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+        using (var live = h.Open())
+        {
+            // Saturday = what a weekend-effective merger/dividend applied on Run1 writes (AsOf = the
+            // action's date). Friday = the committed PRIOR session's own event — must survive.
+            live.CashEvents.Add(new Data.Entities.CashEventRow
+                { AccountId = 1, AsOf = saturday, Type = "merger_cash", Amount = 10m, RunKind = "live" });
+            live.CashEvents.Add(new Data.Entities.CashEventRow
+                { AccountId = 1, AsOf = friday, Type = "dividend", Amount = 5m, RunKind = "live" });
+            live.SaveChanges();
+        }
+
+        var scratchPath = Path.Combine(Path.GetTempPath(), $"alphalab-gap-{Guid.NewGuid():N}.db");
+        try
+        {
+            using var scratch = ScratchStore.CreateRewound($"Data Source={h.DbPath}", h.Run1, friday, scratchPath);
+            using var db = scratch.OpenContext();
+
+            Assert.Empty(db.CashEvents.Where(c => c.AsOf == saturday)); // the gap row is the target day's own output
+            Assert.Empty(db.CashEvents.Where(c => c.AsOf == h.Run1));
+            Assert.Single(db.CashEvents.Where(c => c.AsOf == friday));  // the prior session's row is untouched
+
+            // And the guard enforces the same widened bound: re-planting the gap row must fail closed.
+            db.CashEvents.Add(new Data.Entities.CashEventRow
+                { AccountId = 1, AsOf = saturday, Type = "merger_cash", Amount = 10m, RunKind = "live" });
+            db.SaveChanges();
+            var ex = Assert.Throws<InvalidOperationException>(() => ScratchStoreGuard.Assert(db, h.Run1, friday));
+            Assert.Contains("cash_events", ex.Message, StringComparison.Ordinal);
         }
         finally
         {

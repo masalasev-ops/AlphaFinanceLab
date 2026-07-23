@@ -288,6 +288,12 @@ public sealed class HistoricalBackfillRunner(
                 coverage.Add(Coverage(symbol, id, expected, storedAfter));
                 Log($"[historical] {symbol} (id={id}): {written} bars, {divs} dividends, {spl} splits " +
                     $"({storedAfter.Count}/{expected.Count} member sessions covered).");
+
+                // One shared context serves all ~500 members; without this, every ingested bar row
+                // stays tracked and each member's SaveChanges walks the whole accumulated set —
+                // a near-O(N^2) DetectChanges shape with multi-GB tracker memory at full scale
+                // (Phase-4 review). Everything is committed by here; detaching loses nothing.
+                db.ChangeTracker.Clear();
             }
 
             var result = new HistoricalCoverageReport(
@@ -362,7 +368,11 @@ public sealed class HistoricalBackfillRunner(
         foreach (var s in spells)
         {
             var lo = string.CompareOrdinal(s.AddedOn, from) > 0 ? s.AddedOn : from;
-            var hiExclusive = s.RemovedOn is { } r && string.CompareOrdinal(r, to) < 0 ? r : null;
+            // "<= 0": removed_on == to still bounds the spell (removed_on is EXCLUSIVE — the removal
+            // date is the first non-member day). The old "< 0" counted `to` as an expected member
+            // session for a name delisted exactly at the window end, so its coverage could never reach
+            // 100% and every re-run re-fetched it (Phase-4 review).
+            var hiExclusive = s.RemovedOn is { } r && string.CompareOrdinal(r, to) <= 0 ? r : null;
             var hi = hiExclusive is { } h
                 ? DateOnly.ParseExact(h, "yyyy-MM-dd", CultureInfo.InvariantCulture).AddDays(-1)
                 : DateOnly.ParseExact(to, "yyyy-MM-dd", CultureInfo.InvariantCulture);
@@ -452,33 +462,46 @@ public sealed class HistoricalBackfillRunner(
 /// Rule 22 / D70 forward-slice preservation: once the historical S&amp;P 500 membership lands,
 /// <c>index_membership.MembersAsOf(today)</c> resolves ~500 names — but the FORWARD universe stays the
 /// S&amp;P 100 slice through Phase-4 sign-off. This decorator intersects the as-of roster with the
-/// pre-ingest slice snapshot (<see cref="HistoricalBackfillRunner.SliceConfigKey"/>) while
+/// slice snapshot (<see cref="HistoricalBackfillRunner.SliceConfigKey"/>) while
 /// <c>Universe:Bootstrap:Universe == "sp100"</c>. The post-sign-off widen is the config flip — the
 /// filter dissolves on any other value. The REPLAY composition (D95) registers the RAW
 /// <see cref="IndexMembershipReadService"/> instead: replay never runs on the slice (rule 22).
 /// A missing snapshot row is pass-through: a store that never ingested historical membership has
 /// nothing to scope away, and fabricating an empty universe would be a silent fail-open in reverse.
+///
+/// The intersection is DATE-AWARE (Phase-4 review): the slice row is versioned — the backfill writes
+/// v1, and every membership reconcile that changes the S&amp;P 100 roster appends the next version —
+/// and this read resolves the version as-of the requested date (changed_on &lt;= date; the row's
+/// changed_on IS a session-comparable date). So a post-snapshot index ADD flows into the forward
+/// universe at its reconcile date instead of vanishing behind a frozen set, and a reproduce-day of an
+/// earlier committed session resolves the slice THAT day saw. A date before the first snapshot uses
+/// v1 — the closest recorded approximation of the pre-snapshot slice scope (bounded to the ~100
+/// names, never the ingested ~500).
 /// </summary>
 public sealed class SliceScopedMembershipRead(
     IIndexMembershipRead inner,
     AlphaLabDbContext db,
     UniverseOptions options) : IIndexMembershipRead
 {
-    private HashSet<long>? _slice;
-    private bool _resolved;
+    private List<(string ChangedOn, HashSet<long> Ids)>? _versions;
 
     public IReadOnlyList<long> MembersAsOf(string date)
     {
         var members = inner.MembersAsOf(date);
         if (!string.Equals(options.Bootstrap.Universe, "sp100", StringComparison.Ordinal)) return members;
 
-        if (!_resolved)
+        _versions ??= db.Config.Where(c => c.Key == HistoricalBackfillRunner.SliceConfigKey).AsEnumerable()
+            .OrderBy(c => c.Version)
+            .Select(c => (c.ChangedOn, JsonSerializer.Deserialize<List<long>>(c.ValueJson)?.ToHashSet() ?? []))
+            .ToList();
+        if (_versions.Count == 0) return members;
+
+        var slice = _versions[0].Ids;
+        foreach (var (changedOn, ids) in _versions)
         {
-            var row = db.Config.Where(c => c.Key == HistoricalBackfillRunner.SliceConfigKey).AsEnumerable()
-                .OrderByDescending(c => c.Version).FirstOrDefault();
-            _slice = row is null ? null : JsonSerializer.Deserialize<List<long>>(row.ValueJson)?.ToHashSet();
-            _resolved = true;
+            if (string.CompareOrdinal(changedOn, date) <= 0) slice = ids;
+            else break;
         }
-        return _slice is null ? members : members.Where(_slice.Contains).ToList();
+        return members.Where(slice.Contains).ToList();
     }
 }

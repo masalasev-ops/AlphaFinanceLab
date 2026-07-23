@@ -20,7 +20,7 @@ public sealed class ReplayReadModelBuilder(AlphaLabDbContext db)
         var runs = db.Runs
             .Where(r => r.RunKind == Replay && r.Status == "ok")
             .OrderBy(r => r.AsOf)
-            .Select(r => new { r.AsOf, r.Watermark })
+            .Select(r => new { r.RunId, r.AsOf, r.Watermark })
             .ToList();
         if (runs.Count == 0) return ReplayReadModel.NoRunYet;
 
@@ -35,8 +35,11 @@ public sealed class ReplayReadModelBuilder(AlphaLabDbContext db)
 
         return new ReplayReadModel
         {
-            // The stamp carries the REPLAY generation's provenance, not a forward run's.
-            Stamp = ReadModelStamps.LatestForward(db),
+            // The stamp carries the REPLAY generation's provenance (rule 20/D60/D66): its latest run's
+            // run_id, the generation's frozen watermark, and the last replayed session — never a
+            // forward run's identity (Phase-4 review: LatestForward here misattributed the quarantined
+            // screen to an unrelated forward run, and served NoRunYet on a replay-only store).
+            Stamp = ReadModelStamp.Stamped(runs[^1].RunId, runs[0].Watermark, runs[^1].AsOf),
             Quarantined = true,
             Rows =
             [

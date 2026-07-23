@@ -56,13 +56,25 @@ public class CatchupObservedAtTests
             Assert.Single(db.CatchupLog.Where(c => c.AsOf == day));
         }
 
-        // The same-evening LIVE day keeps the session-derived stamp (D92's bounded approximation):
-        // the run happens the evening of the session, so {asOf}T22:00:00Z is an honest-enough clock
-        // AND what keeps a same-day re-fetch a value-diff no-op.
+        // The same-evening LIVE day in a MIXED launch runs at its true instant, not the session
+        // fiction (the Phase-4 review's inversion guard): this launch recovered Run1/Run2 at 23:37:41Z,
+        // so a {Run3}T22:00:00Z watermark would sort BEFORE those ingestions and today's run would be
+        // blind to the rows this very launch just wrote — including a corporate action only applicable
+        // in today's (previousSession, asOf] window. A pure-live launch (no recovery) keeps the D92
+        // fiction; that arm is pinned by every direct RunDayAsync test.
         var live = Assert.Single(db.Runs.Where(r => r.AsOf == h.Run3 && r.Status == "ok"));
         Assert.Equal("live", live.RunKind);
-        Assert.Equal($"{h.Run3}T22:00:00Z", live.Watermark);
+        Assert.Equal(honest, live.Watermark);
         Assert.Empty(db.CatchupLog.Where(c => c.AsOf == h.Run3));
+
+        // The load-bearing consequence: every row the recovery ingested is VISIBLE at the live day's
+        // watermark (observed_at <= watermark) — the inversion the guard exists to prevent.
+        foreach (var day in new[] { h.Run1, h.Run2 })
+        {
+            var bar = Assert.Single(db.Bars.Where(b => b.SecurityId == PipelineHarness.MemberA && b.Date == day));
+            Assert.True(string.CompareOrdinal(bar.ObservedAt, live.Watermark) <= 0,
+                $"recovered bar {day} (observed {bar.ObservedAt}) must be visible at the live watermark {live.Watermark}");
+        }
     }
 
     [Fact]

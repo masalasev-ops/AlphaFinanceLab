@@ -224,6 +224,7 @@ public sealed class BackfillRunner(
         if (result.Applied)
         {
             ApplySectorsFrom(primary, o.AsOf);
+            MaintainSliceSnapshot(result, o.AsOf);
             Log($"[membership] applied: +{result.Adds.Count} / -{result.Drops.Count} (primary={result.PrimaryCount}, cross={result.CrosscheckCount}).");
         }
         else
@@ -231,6 +232,36 @@ public sealed class BackfillRunner(
             Log($"[membership] HELD (fail closed): {result.HeldReason}");
         }
         return result;
+    }
+
+    /// <summary>Phase-4 review: the slice snapshot must FOLLOW the reconciled S&amp;P 100 roster — a
+    /// post-snapshot index ADD would otherwise be silently dropped by SliceScopedMembershipRead's
+    /// intersection until the sp500 widen (removals applied, adds vanished: an asymmetric leak). The
+    /// next version = previous slice + applied adds − applied drops; the raw MembersAsOf is unusable
+    /// here because after the historical ingest it resolves the full ~500-name as-of roster.
+    /// Append-only versioned (finding 108); the read resolves the version as-of each session date, so
+    /// reproduce-day of an earlier committed day still sees the slice THAT day traded.</summary>
+    private void MaintainSliceSnapshot(MembershipReconcileResult result, string asOf)
+    {
+        if (result.Adds.Count == 0 && result.Drops.Count == 0) return;
+        var current = db.Config.Where(c => c.Key == HistoricalBackfillRunner.SliceConfigKey).AsEnumerable()
+            .OrderByDescending(c => c.Version).FirstOrDefault();
+        if (current is null) return;   // pre-backfill store: no snapshot exists, the raw read IS the slice
+
+        var ids = System.Text.Json.JsonSerializer.Deserialize<List<long>>(current.ValueJson)?.ToHashSet() ?? [];
+        foreach (var add in result.Adds) ids.Add(add);
+        foreach (var drop in result.Drops) ids.Remove(drop);
+
+        db.Config.Add(new ConfigRow
+        {
+            Key = HistoricalBackfillRunner.SliceConfigKey,
+            ValueJson = System.Text.Json.JsonSerializer.Serialize(ids.OrderBy(x => x).ToList()),
+            Version = current.Version + 1,
+            ChangedOn = asOf,
+            Reason = $"membership reconcile: +{result.Adds.Count}/-{result.Drops.Count} applied to the forward slice (rule 22).",
+        });
+        db.SaveChanges();
+        Log($"[slice] snapshot advanced to v{current.Version + 1} (+{result.Adds.Count}/-{result.Drops.Count}).");
     }
 
     /// <summary>Seed the fja05680 historical S&amp;P 500 roster into <c>index_membership</c> for as-of

@@ -30,6 +30,38 @@ public class CohortMaturationBuilderTests
         }
     }
 
+    // Phase-4 review: plants are calibration fixtures, not admission cohorts. A with-plants replay
+    // seeds them all at one created_on with Status='candidate' and real replay S3 rows — without the
+    // plant filter the replay strip renders a giant synthetic "cohort" drowning the real ones.
+    [Fact]
+    public void FX_CohortCurve_PlantFixtures_NeverBecomeACohort()
+    {
+        using var arena = new EvalArena();
+        using (var db = arena.Open())
+        {
+            // One real strategy with a replay path — the legitimate replay cohort.
+            SeedStrategy(db, "real1", "candidate", "2026-02-01");
+            SeedS3(db, "real1", "replay", 55);
+
+            // Plant fixtures sharing one vintage, with replay S3 paths (the calibration requires them).
+            SeedStrategy(db, "plant:edge:daily:2:0", "candidate", "2015-01-02");
+            SeedStrategy(db, "plant:noedge:daily:0:0", "candidate", "2015-01-02");
+            SeedS3(db, "plant:edge:daily:2:0", "replay", 80);
+            SeedS3(db, "plant:noedge:daily:0:0", "replay", 45);
+
+            db.Runs.Add(new RunRow { AsOf = "2026-03-01", RunKind = "live", Watermark = "w", StartedAt = "t", Status = "ok" });
+            db.SaveChanges();
+        }
+
+        using var read = arena.Open();
+        var model = new CohortMaturationBuilder(read, new KpiOptions(), new GateOptions()).Build();
+
+        var replay = model.Cohorts.Where(c => c.Quarantined).ToList();
+        var real = Assert.Single(replay);            // ONLY the real strategy's cohort exists
+        Assert.Equal(1, real.MemberCount);
+        Assert.DoesNotContain(model.Cohorts, c => c.Label.Contains("2015", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void FX_CohortCurve_AgeAligned_RetiredRetained_ReplayQuarantined_ThinAndSubMdeDimmed()
     {

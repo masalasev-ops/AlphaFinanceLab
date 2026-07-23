@@ -237,6 +237,156 @@ public class ReplayEngineTests
         Assert.Equal(contentA, ReplayContent(h));
     }
 
+    // Phase-4 review: --reset deletes the replay trials rows but keeps the shared strategies rows, so
+    // a trials add gated on the STRATEGIES existence check left every post-reset generation with
+    // trialsCount = 0 (S2 deflation at N=1 instead of N=plants) — and a reset arena silently produced
+    // different calibration artifacts than a fresh one at identical (inputs, watermark, seeds).
+    [Fact]
+    public async Task D95_ResetThenRerun_ReseedsReplayTrials_SameCountAsFreshArena()
+    {
+        using var h = new PipelineHarness();
+
+        var first = await Runner(h).RunAsync(Conn(h), Window(h));
+        Assert.False(first.StoppedEarly);
+        int freshTrials;
+        using (var db = h.Open())
+        {
+            freshTrials = db.TrialsRegistry.Count(t => t.RunKind == "replay");
+            Assert.True(freshTrials > 0, "a plants replay must register replay trials");
+        }
+
+        var again = await Runner(h).RunAsync(Conn(h), Window(h, reset: true));
+        Assert.False(again.StoppedEarly);
+        using (var db = h.Open())
+        {
+            Assert.Equal(freshTrials, db.TrialsRegistry.Count(t => t.RunKind == "replay"));
+        }
+    }
+
+    // Phase-4 review: the one-generation guard must refuse a MODE mix at the same watermark, not just
+    // a vintage mix — interleaved seeding (no plants, no evaluation) and calibration days corrupt the
+    // cadence bookkeeping and punch holes in the plant equity tracks the D56 curves are built from.
+    [Fact]
+    public async Task D95_SeedingThenCalibrate_SameWatermark_RefusesModeMix()
+    {
+        using var h = new PipelineHarness();
+
+        var seeding = await Runner(h).RunAsync(Conn(h),
+            new ReplayRequest(h.Sessions[25], h.Sessions[27], WithPlants: false, WithEvaluation: false));
+        Assert.False(seeding.StoppedEarly);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            Runner(h).RunAsync(Conn(h), Window(h)));
+        Assert.Contains("WITHOUT plants", ex.Message, StringComparison.Ordinal);
+
+        // The reverse order refuses too: a seeding run must not extend an evaluated generation.
+        var calibrated = await Runner(h).RunAsync(Conn(h), Window(h, reset: true));
+        Assert.False(calibrated.StoppedEarly);
+        var ex2 = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            Runner(h).RunAsync(Conn(h),
+                new ReplayRequest(h.Sessions[31], h.Sessions[33], WithPlants: false, WithEvaluation: false)));
+        Assert.Contains("WITH plants", ex2.Message, StringComparison.Ordinal);
+    }
+
+    // Verify-pass completion of the mode guard: a calibration that seeded plants and then aborted
+    // before ANY day committed leaves plant accounts with zero ok runs — a seeding backtest must
+    // still be refused, not slip past the empty-generation early return and interleave.
+    [Fact]
+    public async Task D95_AbortedSeededGeneration_StillRefusesASeedingBacktest()
+    {
+        using var h = new PipelineHarness();
+        using (var db = h.Open())
+        {
+            db.Accounts.Add(new AccountRow
+            {
+                StrategyId = "plant:edge:daily:2:0", StartingCash = 100_000m, RunKind = "replay",
+            });
+            db.SaveChanges();
+        }
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            Runner(h).RunAsync(Conn(h),
+                new ReplayRequest(h.Sessions[25], h.Sessions[27], WithPlants: false, WithEvaluation: false)));
+        Assert.Contains("--reset", ex.Message, StringComparison.Ordinal);
+    }
+
+    // Verify-pass completion of the forward-status decoupling: the evaluation-cadence trigger is
+    // run-kind-scoped, so forward-retiring every real strategy must not silently disable a plantless
+    // replay generation's evaluations (the fifth raw-status consumer).
+    [Fact]
+    public async Task D95_ForwardRetire_NeverDisablesTheReplayEvaluationCadence()
+    {
+        using var h = new PipelineHarness();
+        await h.RunAsync(h.Run1);   // seeds the shared roster rows
+        using (var db = h.Open())
+        {
+            foreach (var s in db.Strategies.Where(s => s.Status == "candidate" || s.Status == "live"))
+            {
+                s.Status = "retired";   // the forward monitor's by-design mutation
+            }
+            db.SaveChanges();
+        }
+
+        var outcome = await Runner(h).RunAsync(Conn(h),
+            new ReplayRequest(h.Sessions[5], h.Sessions[35], WithPlants: false, WithEvaluation: true));
+        Assert.False(outcome.StoppedEarly);
+
+        using (var db = h.Open())
+        {
+            // The replay cadence fired and judged its candidate-based roster despite the forward retires.
+            Assert.True(db.OverfittingStatus.Any(o => o.RunKind == "replay"),
+                "the replay evaluation cadence must run against the seeded-role roster");
+        }
+    }
+
+    // Phase-4 review: zero sessions is a FAILURE (rule 10) — an unseeded calendar or a from/to typo
+    // must not mark a replay job 'done' having done nothing, and must not seed plants either.
+    [Fact]
+    public async Task D95_ZeroSessionWindow_FailsClosed_AndSeedsNothing()
+    {
+        using var h = new PipelineHarness();
+
+        var outcome = await Runner(h).RunAsync(Conn(h), new ReplayRequest("2030-01-06", "2030-01-10"));
+        Assert.True(outcome.StoppedEarly);
+        Assert.Contains("no sessions", outcome.StopReason, StringComparison.Ordinal);
+
+        using var db = h.Open();
+        Assert.Empty(db.Runs.Where(r => r.RunKind == "replay").ToList());
+        Assert.Empty(db.Accounts.Where(a => a.RunKind == "replay").ToList());
+    }
+
+    // Phase-4 review (D59): the replay-calibrate CLI verb dispatches before the host's
+    // StaleRunRecovery guard exists, so ReplayRunner carries its own sole-writer gate — a FRESH
+    // heartbeat under run_in_progress=1 refuses; a stale one is a crash orphan and is cleared.
+    [Fact]
+    public async Task D59_Replay_RefusesWhileAnotherWriterIsLive_ClearsAStaleOne()
+    {
+        using var h = new PipelineHarness();
+
+        using (var db = h.Open())
+        {
+            var state = db.WorkerState.Single(w => w.Id == 1);
+            state.RunInProgress = 1;
+            state.HeartbeatAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ",
+                System.Globalization.CultureInfo.InvariantCulture); // fresh — a live writer
+            db.SaveChanges();
+        }
+        await Assert.ThrowsAsync<OverlappingWriterException>(() => Runner(h).RunAsync(Conn(h), Window(h)));
+
+        using (var db = h.Open())
+        {
+            var state = db.WorkerState.Single(w => w.Id == 1);
+            state.HeartbeatAt = "2020-01-01T00:00:00Z"; // long stale — a crashed writer
+            db.SaveChanges();
+        }
+        var outcome = await Runner(h).RunAsync(Conn(h), Window(h));
+        Assert.False(outcome.StoppedEarly);
+        using (var db = h.Open())
+        {
+            Assert.Equal(0, db.WorkerState.Single(w => w.Id == 1).RunInProgress);
+        }
+    }
+
     [Fact]
     public async Task FX_JobDrain_ReplayExecutor_RunsAQueuedReplayJob()
     {

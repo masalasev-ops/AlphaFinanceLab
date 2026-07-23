@@ -37,7 +37,10 @@ try
 {
     // Config supplies the DEFAULT years; an explicit --years on the command line overrides it (CLI > config).
     var defaultYears = config.GetValue("Backfill:BackfillYears", 20);
-    options = BackfillArgs.Parse(args, DateTime.UtcNow.ToString("yyyy-MM-dd"), defaultYears)
+    // InvariantCulture: this default AsOf reaches persistence (observed_at, api_usage_log, the slice
+    // snapshot's changed_on) — same reasoning as the historical path below (Phase-4 review).
+    options = BackfillArgs.Parse(
+            args, DateTime.UtcNow.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), defaultYears)
         with { ApiPlanLimit = config.GetValue<int?>("Backfill:ApiPlanLimit") };
 }
 catch (ArgumentException ex)
@@ -217,7 +220,12 @@ static async Task<int> RunHistoricalAsync(string[] args, IConfiguration config)
     HistoricalBackfillOptions options;
     try
     {
-        options = HistoricalBackfillArgs.Parse(args, DateTime.UtcNow.ToString("yyyy-MM-dd"))
+        // InvariantCulture is load-bearing (Phase-4 review): on a non-Gregorian default calendar
+        // (ar-SA Umm al-Qura) the bare ToString renders a past-shaped year, MembersAsOf(sliceAsOf)
+        // matches nothing, and the slice snapshot is silently skipped — the forward universe would
+        // widen to ~500 names with no error anywhere.
+        options = HistoricalBackfillArgs.Parse(
+                args, DateTime.UtcNow.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture))
             with { ApiPlanLimit = config.GetValue<int?>("Backfill:ApiPlanLimit") };
     }
     catch (ArgumentException ex)

@@ -26,11 +26,13 @@ var workerOptions = builder.Configuration.GetSection(WorkerOptions.SectionName).
 var connectionString = builder.Configuration.GetConnectionString("AlphaLab")
     ?? throw new InvalidOperationException("ConnectionStrings:AlphaLab is required in appsettings.json.");
 
-// ---- ops verbs (v1.9.37, FR-25): `reproduce-day` and `verify-wal` ----
+// ---- ops verbs (FR-25 + Phase 4): `reproduce-day`, `verify-wal`, `replay-calibrate` ----
 // Dispatched BEFORE any hosted service is registered, so they never run SchemaStartup (which SETS
 // journal_mode — a verifier must not repair what it is checking), never start the heartbeat, and
-// never start the OnDemand runner against the live arena. Both verbs are read-only there by
-// construction; reproduce-day does all its writing in a throwaway copy.
+// never start the OnDemand runner against the live arena. reproduce-day and verify-wal are read-only
+// there by construction (reproduce-day writes only in a throwaway copy). replay-calibrate WRITES
+// quarantined replay rows — because it bypasses the hosted StaleRunRecovery guard, ReplayRunner runs
+// its own sole-writer liveness gate before touching the store (D59; Phase-4 review).
 var command = WorkerCommandParser.Parse(args);
 if (command.Kind != WorkerCommandKind.Daily)
 {

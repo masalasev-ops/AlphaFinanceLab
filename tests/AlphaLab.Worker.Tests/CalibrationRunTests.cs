@@ -86,6 +86,100 @@ public class CalibrationRunTests
         }
     }
 
+    // Phase-4 review: a hard verification FAILURE must stop the chain BEFORE any config write — config
+    // is append-only, so a frozen-then-failed generation could only be papered over, never removed,
+    // and the next forward run would judge S3 against the failed calibration's curves.
+    [Fact]
+    public async Task FX_Calibration_VerificationFailure_ArchivesReportButFreezesNothing()
+    {
+        using var h = new PipelineHarness();
+        var reportDir = Path.Combine(Path.GetTempPath(), "alphalab-cal-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            // Force promotions_le_chance to FAIL: pre-plant replay 'promotions' of every no-edge plant
+            // (2 of 2 promoted >> the binomial chance bound of 1 at the CI scale).
+            var plant = new CalibrationOptions().Plant;
+            plant.SeedsPerPlant = 2;
+            var specs = PlantCohorts.Build(plant,
+                Evaluation.Populations.PopulationFamilies.ForPhase3(new PopulationsOptions { Size = 6, CostFreeSize = 3 }));
+            using (var db = h.Open())
+            {
+                foreach (var id in specs.Where(s => s.Kind == PlantKind.NoEdge).Select(s => s.StrategyId))
+                {
+                    db.GoLiveLog.Add(new Data.Entities.GoLiveLogRow
+                    {
+                        AsOf = h.Sessions[20], Promoted = id, Verdict = "GoLive", EvidenceJson = "{}", RunKind = "replay",
+                    });
+                }
+                db.SaveChanges();
+            }
+
+            var exit = await Orchestrator(reportDir).RunAsync($"Data Source={h.DbPath}", Window(h), reportOnly: false);
+            Assert.Equal(1, exit);
+
+            // The evidence is archived; the store's config is untouched.
+            Assert.Single(Directory.GetFiles(Path.Combine(reportDir, "sp500"), "*-calibration.md"));
+            using (var db = h.Open())
+            {
+                foreach (var key in new[]
+                         {
+                             CalibratedKeys.PNoiseCurve("daily"), CalibratedKeys.PEdgeCurve("daily"),
+                             CalibratedKeys.DetectionPower, CalibratedKeys.S6AutoRetireEvals, CalibratedKeys.ReportRef,
+                         })
+                {
+                    Assert.Empty(db.Config.Where(c => c.Key == key).ToList());
+                }
+            }
+        }
+        finally
+        {
+            try { Directory.Delete(reportDir, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
+    // Phase-4 review: the S6 patience knob is seeded from the FIRST freeze only. A re-run after the
+    // operator's finding-113 raise (a new version of Monitor.S6.AutoRetireEvals) must never re-stamp
+    // the Appendix-A default over it — else the documented recalibration loop can never converge.
+    [Fact]
+    public async Task FX_Calibration_Rerun_NeverRestampsOperatorPatience()
+    {
+        using var h = new PipelineHarness();
+        var reportDir = Path.Combine(Path.GetTempPath(), "alphalab-cal-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var exit = await Orchestrator(reportDir).RunAsync($"Data Source={h.DbPath}", Window(h), reportOnly: false);
+            Assert.Equal(0, exit);
+
+            using (var db = h.Open())
+            {
+                Assert.Equal("4", db.Config.Single(c => c.Key == CalibratedKeys.S6AutoRetireEvals).ValueJson);
+
+                // The RUNBOOK §8.4 operator move: raise the patience via a NEW version (rule 24).
+                db.Config.Add(new Data.Entities.ConfigRow
+                {
+                    Key = CalibratedKeys.S6AutoRetireEvals, ValueJson = "6", Version = 2,
+                    ChangedOn = "2026-07-22T00:00:00Z", Reason = "operator: survival-floor recalibration (finding 113)",
+                });
+                db.SaveChanges();
+            }
+
+            var exit2 = await Orchestrator(reportDir).RunAsync($"Data Source={h.DbPath}", Window(h), reportOnly: false);
+            Assert.Equal(0, exit2);
+
+            using (var db = h.Open())
+            {
+                // No v3 = 4 clobber: the operator's 6 is still the resolved current value.
+                Assert.Equal(2, db.Config.Count(c => c.Key == CalibratedKeys.S6AutoRetireEvals));
+                Assert.Equal("6", new AlphaLab.Data.Services.ConfigReadService(db)
+                    .ResolveCurrent(CalibratedKeys.S6AutoRetireEvals));
+            }
+        }
+        finally
+        {
+            try { Directory.Delete(reportDir, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
     [Fact]
     public async Task FX_Calibration_ReportOnly_WritesNoConfigRows()
     {

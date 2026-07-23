@@ -3,6 +3,7 @@ using AlphaLab.Core.Config;
 using AlphaLab.Data;
 using AlphaLab.Evaluation.Metrics;
 using AlphaLab.Evaluation.Power;
+using static System.FormattableString;
 
 namespace AlphaLab.Evaluation.Calibration;
 
@@ -64,7 +65,7 @@ public sealed class ReplayVerification(
         var checks = new List<VerificationCheck>();
 
         var ids = (
-            edge: PrimaryEdgeIds(specs), allEdge: Ids(specs, PlantKind.Edge),
+            edge: PrimaryEdgeIds(specs), floorEdge: FloorEdgeIds(specs),
             noEdge: Ids(specs, PlantKind.NoEdge), anti: Ids(specs, PlantKind.Anti));
 
         var windowSessions = db.Runs.Count(r => r.RunKind == Replay && r.Status == "ok");
@@ -84,9 +85,12 @@ public sealed class ReplayVerification(
             var n = ids.noEdge.Count;
             var p = (1.0 - gate.Confidence) / 2.0;   // the one-sided false-promotion rate per plant
             var bound = Math.Ceiling(n * p + 2.0 * Math.Sqrt(Math.Max(1e-12, n * p * (1 - p))));
+            // Invariant($"…") on every Detail carrying a formatted number: these strings flow verbatim
+            // into the archived, SHA-256-hashed calibration report — locale-independent by contract
+            // (Phase-4 review).
             checks.Add(new VerificationCheck("promotions_le_chance",
                 promotedNoEdge <= bound ? CheckOutcome.Pass : CheckOutcome.Fail,
-                $"{promotedNoEdge}/{n} no-edge plants promoted; chance bound {bound} at p={p:F4}", promotedNoEdge));
+                Invariant($"{promotedNoEdge}/{n} no-edge plants promoted; chance bound {bound} at p={p:F4}"), promotedNoEdge));
 
             var detectedEdge = PromotedAmong(ids.edge);
             checks.Add(new VerificationCheck("edge_plant_detected",
@@ -98,17 +102,18 @@ public sealed class ReplayVerification(
             jointFalseAlarm = ids.noEdge.Count == 0 ? 0 : alarmed.Count / (double)ids.noEdge.Count;
             checks.Add(new VerificationCheck("joint_false_alarm",
                 jointFalseAlarm <= replay.JointFalseAlarmMaxFrac ? CheckOutcome.Pass : CheckOutcome.Fail,
-                $"{alarmed.Count}/{ids.noEdge.Count} no-edge plants ever Suspect (bound {replay.JointFalseAlarmMaxFrac:P0})",
+                Invariant($"{alarmed.Count}/{ids.noEdge.Count} no-edge plants ever Suspect (bound {replay.JointFalseAlarmMaxFrac:P0})"),
                 jointFalseAlarm));
         }
         var perSignal = FalseAlarmContributions(ids.noEdge);
 
         // ---- anti-predictive detection speed (D63 KPI) ----
         var antiSpeed = MedianSessionsToFirstSuspect(ids.anti);
+        var antiSuspect = SuspectEver(ids.anti);
         checks.Add(antiSpeed is { } speed
             ? new VerificationCheck("anti_detection_speed",
-                SuspectEver(ids.anti).Count * 2 >= ids.anti.Count ? CheckOutcome.Pass : CheckOutcome.Fail,
-                $"median {speed:F0} sessions to first Suspect; {SuspectEver(ids.anti).Count}/{ids.anti.Count} anti plants caught", speed)
+                antiSuspect.Count * 2 >= ids.anti.Count ? CheckOutcome.Pass : CheckOutcome.Fail,
+                Invariant($"median {speed:F0} sessions to first Suspect; {antiSuspect.Count}/{ids.anti.Count} anti plants caught"), speed)
             : new VerificationCheck("anti_detection_speed", CheckOutcome.Insufficient, "no anti plant reached Suspect (short window?)"));
 
         // ---- days-to-indistinguishability (D63 KPI): no-edge plants earn the chip at the honest cadence ----
@@ -151,19 +156,25 @@ public sealed class ReplayVerification(
                 breachRate = breaches / (double)points.Count;
                 checks.Add(new VerificationCheck("noedge_pnoise_breach_validate",
                     breachRate <= 2.0 * builtPNoise.FalseAlarmRate ? CheckOutcome.Pass : CheckOutcome.Fail,
-                    $"{breaches}/{points.Count} validate-period no-edge points below P_noise (target ≈ {builtPNoise.FalseAlarmRate:P0})",
+                    Invariant($"{breaches}/{points.Count} validate-period no-edge points below P_noise (target ≈ {builtPNoise.FalseAlarmRate:P0})"),
                     breachRate));
             }
         }
 
         // ---- edge-plant survival at 5y/10y (finding 113) + every retire logged with its trigger ----
-        var (survival5, survival10) = EdgeSurvival(ids.allEdge, windowSessions);
+        // The floor cohort is the D64 calibration plants ONLY — the primary-alpha daily cohort plus the
+        // finding-199 monthly cohort — never the 2x/4x C-1 sweep levels (Phase-4 review): pooling the
+        // easy-to-survive sweep plants (half the denominator) can hold the fraction above the floor
+        // while the primary cohort fails it, suppressing exactly the S6-patience recalibration the
+        // floor exists to trigger.
+        var (survival5, survival10) = EdgeSurvival(ids.floorEdge, windowSessions);
         checks.Add(survival5 is { } s5
             ? new VerificationCheck("edge_survival_5y",
                 s5 >= replay.EdgePlantSurvivalFloor5y ? CheckOutcome.Pass : CheckOutcome.Fail,
-                $"{s5:P0} of edge plants survive 5y (floor {replay.EdgePlantSurvivalFloor5y:P0}; a floor failure recalibrates S6's patience, never the plant)", s5)
-            : new VerificationCheck("edge_survival_5y", CheckOutcome.Insufficient, $"window {windowSessions} < 5y"));
-        var retiredEdges = RetiredAmong(ids.allEdge);
+                Invariant($"{s5:P0} of D64 edge plants (primary + monthly cohorts; sweep excluded) survive 5y ") +
+                Invariant($"(floor {replay.EdgePlantSurvivalFloor5y:P0}; a floor failure recalibrates S6's patience, never the plant)"), s5)
+            : new VerificationCheck("edge_survival_5y", CheckOutcome.Insufficient, Invariant($"window {windowSessions} < 5y")));
+        var retiredEdges = RetiredAmong(ids.floorEdge);
         var unloggedRetires = retiredEdges.Where(id => !db.GoLiveLog.Any(g => g.RunKind == Replay && g.Demoted == id)).ToList();
         checks.Add(new VerificationCheck("edge_retires_logged",
             unloggedRetires.Count == 0 ? CheckOutcome.Pass : CheckOutcome.Fail,
@@ -181,8 +192,8 @@ public sealed class ReplayVerification(
                 va.TDays < gate.MinTrackDays
                     ? CheckOutcome.Insufficient
                     : va.MeanEdgeWeightPct > va.MeanAntiWeightPct ? CheckOutcome.Pass : CheckOutcome.Fail,
-                $"blend−EW gap {va.GapAnn:P2}/yr (MDE {va.MdeAnn:P2}, {va.Verdict}, T={va.TDays}); " +
-                $"mean weight edge {va.MeanEdgeWeightPct:F1}% vs anti {va.MeanAntiWeightPct:F1}%")
+                Invariant($"blend−EW gap {va.GapAnn:P2}/yr (MDE {va.MdeAnn:P2}, {va.Verdict}, T={va.TDays}); ") +
+                Invariant($"mean weight edge {va.MeanEdgeWeightPct:F1}% vs anti {va.MeanAntiWeightPct:F1}%"))
             : new VerificationCheck("allocator_value_add", CheckOutcome.Insufficient, "no replay allocations ran"));
 
         // ---- the FR-39 cohort seam: plant cohorts have persisted S3 paths to reconstruct from (NFR-2) ----
@@ -207,6 +218,18 @@ public sealed class ReplayVerification(
         if (edges.Count == 0) return [];
         var primaryAlpha = edges.Min(s => s.AlphaAnnPct);   // the sweep levels are multiples of the primary
         return edges.Where(s => s is { Family: "daily" } && s.AlphaAnnPct == primaryAlpha).Select(s => s.StrategyId).ToList();
+    }
+
+    /// <summary>The finding-113 survival-floor cohort: every EDGE plant at the PRIMARY alpha — the
+    /// daily cohort plus the finding-199 monthly (low-turnover) cohort — and never the 2x/4x C-1
+    /// sweep levels, which exist only as detection-power inputs (D89) and would dilute the floor in
+    /// the easy direction.</summary>
+    private static List<string> FloorEdgeIds(IReadOnlyList<PlantSpec> specs)
+    {
+        var edges = specs.Where(s => s.Kind == PlantKind.Edge).ToList();
+        if (edges.Count == 0) return [];
+        var primaryAlpha = edges.Min(s => s.AlphaAnnPct);
+        return edges.Where(s => s.AlphaAnnPct == primaryAlpha).Select(s => s.StrategyId).ToList();
     }
 
     private int PromotedAmong(IReadOnlyCollection<string> ids) =>

@@ -38,6 +38,32 @@ public class CorporateActionVersioningTests
         return path;
     }
 
+    // The Phase-4 review's no-backdate guard (mirrors FR2_BackdatedDifferingReingest in
+    // BarVersioningTests): a resumed replay re-stages v1's cash at its frozen watermark after the v2
+    // restatement landed — the append must be skipped, or v3 = v1's values with a backdated
+    // observed_at would shadow the restatement for every later-watermark read.
+    [Fact]
+    public void D76_BackdatedDifferingReingest_IsSkipped_NeverShadowsRestatement()
+    {
+        var path = SeededDb();
+        try
+        {
+            using var db = TestDb.Open(path);
+            var written = new CorporateActionIngestion(db).IngestDividends(Sec, [V1], ObservedV1);
+            Assert.Equal(0, written);
+            Assert.Equal(2, db.CorporateActions.Count(c => c.SecurityId == Sec && c.EffectiveDate == ExDate));
+
+            var read = new CorporateActionReadService(db);
+            var atLate = read.GetActionsAsOf(Sec, WatermarkLate).Single(c => c.EffectiveDate == ExDate);
+            Assert.Equal(2, atLate.Version);
+            Assert.Equal(0.26m, atLate.CashPerShare); // the restatement still wins at a late watermark
+
+            var atMid = read.GetActionsAsOf(Sec, WatermarkMid).Single(c => c.EffectiveDate == ExDate);
+            Assert.Equal(1, atMid.Version); // and the frozen vintage still resolves v1
+        }
+        finally { TestDb.Delete(path); }
+    }
+
     [Fact]
     public void D76_Restatement_AppendsNewVersion_NeverMutatesPrior()
     {

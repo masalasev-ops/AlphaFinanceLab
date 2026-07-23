@@ -58,6 +58,57 @@ public class ReplayVerificationTests
         Assert.Equal(AllocatorValueAddKpi.EqualWeightId, pair.StrategyB);
     }
 
+    // Phase-4 review: the finding-113 survival floor judges the D64 calibration cohorts (primary daily
+    // + finding-199 monthly), NEVER pooled with the easy 2x/4x C-1 sweep levels. Fixture: SeedsPerPlant=5
+    // -> floor cohort 10 (daily 5 + monthly 5), sweep 10. Retiring 2 primary-daily plants makes the
+    // floor cohort 8/10 = 0.80 (FAIL at the 0.90 floor) while the OLD pooled rate would read
+    // 18/20 = 0.90 and pass — masking exactly the S6-patience recalibration the floor exists to fire.
+    [Fact]
+    public void FX_EdgeSurvivalFloor_JudgesTheD64Cohorts_SweepNeverDilutes()
+    {
+        using var h = new PipelineHarness();
+        var specs = PlantCohorts.Build(new PlantOptions { SeedsPerPlant = 5 },
+            PopulationFamilies.ForPhase3(new PopulationsOptions { Size = 6, CostFreeSize = 3 }));
+
+        using var db = h.Open();
+        // A synthetic 5-year generation: 1260 ok replay run rows (dates only matter ordinally).
+        var start = new DateOnly(2010, 1, 1);
+        for (var i = 0; i < 5 * 252; i++)
+        {
+            db.Runs.Add(new RunRow
+            {
+                AsOf = start.AddDays(i).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                RunKind = "replay", Watermark = "2026-01-01T00:00:00Z",
+                StartedAt = "2026-01-01T00:00:00Z", FinishedAt = "2026-01-01T00:00:01Z", Status = "ok",
+            });
+        }
+
+        var primaryDaily = specs.Where(s => s is { Kind: PlantKind.Edge, Family: "daily" })
+            .GroupBy(s => s.AlphaAnnPct).OrderBy(g => g.Key).First().Select(s => s.StrategyId).Take(2).ToList();
+        foreach (var id in primaryDaily)
+        {
+            db.OverfittingStatus.Add(new OverfittingStatusRow
+            {
+                StrategyId = id, AsOf = start.AddDays(400).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                Status = "retired", TriggerJson = "{}", RunKind = "replay",
+            });
+            db.GoLiveLog.Add(new GoLiveLogRow
+            {
+                AsOf = start.AddDays(400).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                Demoted = id, Verdict = "Revert", EvidenceJson = "{}", RunKind = "replay",
+            });
+        }
+        db.SaveChanges();
+
+        var report = new ReplayVerification(db, new GateOptions(), new VerdictsOptions(), new ReplayOptions())
+            .Run(specs, learnThrough: null, builtPNoise: null);
+
+        var survival = Assert.Single(report.Checks, c => c.Name == "edge_survival_5y");
+        Assert.Equal(CheckOutcome.Fail, survival.Outcome);       // 8/10 < 0.90 — the sweep cannot mask it
+        Assert.Contains("sweep excluded", survival.Detail, StringComparison.Ordinal);
+        Assert.Equal(0.80, report.Kpis.EdgeSurvival5y!.Value, 10);
+    }
+
     [Fact]
     public async Task FX_ReplayPerRegime_RowsPartitionTheWindow_AllQuarantined()
     {
@@ -162,6 +213,30 @@ public class ReplayVerificationTests
             var model = new ReplayReadModelBuilder(db2).Build();
             Assert.True(model.Quarantined);
             Assert.Single(model.Rows);
+
+            // Phase-4 review (rule 20/D60): the stamp is the REPLAY generation's own provenance —
+            // its latest run_id + the frozen watermark — never the forward run's identity.
+            var lastReplay = db2.Runs.Where(r => r.RunKind == "replay" && r.Status == "ok")
+                .OrderByDescending(r => r.AsOf).First();
+            Assert.Equal(lastReplay.RunId, model.Stamp.RunId);
+            Assert.Equal(lastReplay.Watermark, model.Stamp.Watermark);
+            var forwardRun = db2.Runs.Single(r => r.AsOf == h.Run1 && r.RunKind == "live");
+            Assert.NotEqual(forwardRun.RunId, model.Stamp.RunId);
         }
+    }
+
+    // Phase-4 review: a replay-only store (the rebuild path) has a committed generation and NO forward
+    // run — the screen must carry the generation's stamp, never a "no run yet" shell around real rows.
+    [Fact]
+    public async Task Replay_ReadModel_ReplayOnlyStore_IsStampedWithTheGeneration()
+    {
+        using var h = new PipelineHarness();
+        await Runner().RunAsync($"Data Source={h.DbPath}", Window(h));
+
+        using var db = h.Open();
+        var model = new ReplayReadModelBuilder(db).Build();
+        Assert.Single(model.Rows);
+        Assert.NotEqual(AlphaLab.Core.ReadModels.ReadModelStampStatus.NoRunYet, model.Stamp.Status);
+        Assert.NotNull(model.Stamp.Watermark);
     }
 }

@@ -109,16 +109,33 @@ public sealed class ReplayRunner(
                     $"run pwsh tools/migrate.ps1 -Arena {arena.Id} first (snapshot-first, rule 14).");
             }
 
+            // D59/D72 (Phase-4 review): the replay-calibrate CLI verb dispatches BEFORE the Generic
+            // Host exists, so the StaleRunRecovery hosted guard never ran on this path — yet replay
+            // WRITES. Refuse to start against a LIVE writer (fresh heartbeat), exactly as a daily
+            // launch would; clear a genuinely stale (crashed) writer the way StaleRunRecovery does.
+            // The in-host job path runs this too — harmless, the flag is clear between runs.
+            GuardAgainstConcurrentWriter(db);
+
             watermark = request.Watermark ?? ResolveFrozenWatermark(db);
             RecoverCrashedReplayRuns(db);
             if (request.Reset) DeleteReplayGeneration(db);
             GuardSingleGeneration(db, watermark, request);
-            if (request.WithPlants) SeedPlants(db, request.From);
 
+            // Zero sessions is a FAILURE, not a quiet success (rule 10; Phase-4 review): an unseeded
+            // calendar or a from/to typo must not transition a replay job to 'done' having done nothing
+            // — and it must not seed plants into a window that will never run.
             sessions = new CalendarService(db)
                 .SessionsBetween(ParseDate(request.From), ParseDate(request.To))
                 .Select(Iso)
                 .ToList();
+            if (sessions.Count == 0)
+            {
+                return new ReplayOutcome(watermark, 0, 0, 0, true,
+                    $"no sessions in [{request.From}, {request.To}] — calendar unseeded for the window, " +
+                    "or from/to outside the seeded range (fail closed)");
+            }
+
+            if (request.WithPlants) SeedPlants(db, request.From);
             alreadyCommitted = db.Runs
                 .Where(r => r.RunKind == ReplayKind && r.Status == "ok")
                 .Select(r => r.AsOf)
@@ -126,11 +143,6 @@ public sealed class ReplayRunner(
         }
 
         await using var provider = BuildReplayServices(resolved, watermark, request.WithEvaluation);
-
-        if (sessions.Count == 0)
-        {
-            return new ReplayOutcome(watermark, 0, 0, 0, false, "no sessions in the window (calendar unseeded?)");
-        }
 
         _logger.LogInformation(
             "replay: {Count} session(s) {From}..{To} at frozen watermark {Watermark} ({Skip} already committed will be skipped).",
@@ -214,11 +226,17 @@ public sealed class ReplayRunner(
                     CreatedOn = seededOn,
                     Status = "candidate",
                 });
+                seeded++;
+            }
+            // The trials row gets its OWN existence check (Phase-4 review): --reset deletes the replay
+            // trials rows but keeps the shared strategies rows, so gating this add on the strategies
+            // check left every post-reset generation with trialsCount = 0 and an S2 deflation of N=1.
+            if (!db.TrialsRegistry.Any(t => t.StrategyId == spec.StrategyId && t.RunKind == ReplayKind))
+            {
                 db.TrialsRegistry.Add(new TrialsRegistryRow
                 {
                     StrategyId = spec.StrategyId, RegisteredOn = seededOn, Kind = "new", RunKind = ReplayKind,
                 });
-                seeded++;
             }
             if (!db.Accounts.Any(a => a.StrategyId == spec.StrategyId && a.RunKind == ReplayKind))
             {
@@ -234,8 +252,49 @@ public sealed class ReplayRunner(
         if (seeded > 0) _logger.LogInformation("replay: seeded {Count} D64 plant(s) across {Total} spec(s).", seeded, specs.Count);
     }
 
+    /// <summary>The launch-time sole-writer gate for the ops-verb path (mirrors StaleRunRecovery,
+    /// which only guards the hosted path): a FRESH heartbeat under run_in_progress=1 means another
+    /// Worker (daily or replay) is actively writing this arena — refuse (fail closed, D59). A stale
+    /// flag is a crash orphan: mark its run failed and clear it, so the generation guard and this run
+    /// see a clean store.</summary>
+    private void GuardAgainstConcurrentWriter(AlphaLabDbContext db)
+    {
+        var state = db.WorkerState.FirstOrDefault(w => w.Id == 1);
+        if (state is null || state.RunInProgress == 0) return;
+
+        var options = configuration.GetSection(WorkerOptions.SectionName).Get<WorkerOptions>() ?? new WorkerOptions();
+        var liveness = WorkerLivenessEvaluator.Evaluate(
+            state.RunInProgress, state.HeartbeatAt, TimeProvider.System.GetUtcNow(), options.StaleRunThresholdSeconds);
+        if (liveness.IsLive)
+        {
+            _logger.LogCritical(
+                "replay: run_in_progress=1 with a FRESH heartbeat (run_id={RunId}, heartbeat_at={Beat}) — " +
+                "another writer is live. Refusing to start (sole writer, D59).",
+                state.CurrentRunId, state.HeartbeatAt);
+            throw new OverlappingWriterException(state.CurrentRunId, state.HeartbeatAt);
+        }
+
+        var orphanId = state.CurrentRunId;
+        if (orphanId is { } id)
+        {
+            var run = db.Runs.FirstOrDefault(r => r.RunId == id);
+            if (run is { Status: "running" })
+            {
+                run.Status = "failed";
+                run.FinishedAt = TimeProvider.System.GetUtcNow().UtcDateTime
+                    .ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
+            }
+        }
+        state.RunInProgress = 0;
+        state.CurrentRunId = null;
+        db.SaveChanges();
+        _logger.LogWarning("replay: cleared a stale run_in_progress flag from a crashed writer (run_id={RunId}).",
+            orphanId);
+    }
+
     // A 'running' replay run is a crash orphan: its Stage-2 rolled back, so marking it failed loses
-    // nothing and unblocks the generation guard (the StaleRunRecovery idea, replay-scoped).
+    // nothing and unblocks the generation guard (the StaleRunRecovery idea, replay-scoped). This runs
+    // AFTER GuardAgainstConcurrentWriter, so a 'running' row here cannot belong to a live process.
     private void RecoverCrashedReplayRuns(AlphaLabDbContext db)
     {
         var orphans = db.Runs.Where(r => r.RunKind == ReplayKind && r.Status == "running").ToList();
@@ -247,19 +306,56 @@ public sealed class ReplayRunner(
 
     private void GuardSingleGeneration(AlphaLabDbContext db, string watermark, ReplayRequest request)
     {
+        // The mode probe runs even with ZERO committed runs (verify-pass finding): a calibration that
+        // seeded plants and aborted on day 1 leaves plant accounts with no ok run — a seeding backtest
+        // must not slip past the guard and interleave evaluation-free days into that generation.
+        var generationHasPlants = db.Accounts
+            .Where(a => a.RunKind == ReplayKind)
+            .Select(a => a.StrategyId)
+            .AsEnumerable()
+            .Any(PlantCohorts.IsPlantId);
+
         var existing = db.Runs
             .Where(r => r.RunKind == ReplayKind && r.Status == "ok")
             .Select(r => r.Watermark)
             .Distinct()
             .ToList();
-        if (existing.Count == 0) return;
-        if (existing.Count == 1 && string.Equals(existing[0], watermark, StringComparison.Ordinal)) return;
+        if (existing.Count == 0)
+        {
+            if (generationHasPlants && !request.WithPlants)
+            {
+                throw new InvalidOperationException(
+                    "Plant accounts exist from a seeded (but not yet committed) calibration generation, and this " +
+                    "run requests no plants — a seeding backtest must not extend that generation. Pass --reset to " +
+                    "start fresh (replay-scoped tables only).");
+            }
+            return;
+        }
+        if (existing.Count > 1 || !string.Equals(existing[0], watermark, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Committed replay rows exist at watermark(s) [{string.Join(", ", existing)}] but this run resolves " +
+                $"{watermark} — mixed replay vintages would poison the D56 calibration curves (D95, one generation " +
+                "per arena). Pass --reset to delete the old generation (replay-scoped tables only), or pin " +
+                "--watermark to resume the existing one.");
+        }
 
-        throw new InvalidOperationException(
-            $"Committed replay rows exist at watermark(s) [{string.Join(", ", existing)}] but this run resolves " +
-            $"{watermark} — mixed replay vintages would poison the D56 calibration curves (D95, one generation " +
-            "per arena). Pass --reset to delete the old generation (replay-scoped tables only), or pin " +
-            "--watermark to resume the existing one.");
+        // Same watermark: the MODE must match too (Phase-4 review). runs rows carry no mode column, but
+        // plants are seeded at generation start, so the presence of plant accounts IS the generation's
+        // mode marker: a calibration replay (WithPlants) has them, a seeding backtest does not.
+        // Interleaving the two at one watermark skips days wholesale for the other mode — plant equity
+        // tracks get holes and mid-window re-inceptions, and the evaluation cadence counts sessions
+        // that wrote no evaluations — silently corrupting the D56 curves the generation exists to build.
+        if (generationHasPlants != request.WithPlants)
+        {
+            throw new InvalidOperationException(
+                $"The committed replay generation at this watermark was built " +
+                $"{(generationHasPlants ? "WITH plants (a calibration replay)" : "WITHOUT plants (a seeding backtest)")} " +
+                $"but this run requests {(request.WithPlants ? "plants" : "no plants")} — evaluated and seeding days " +
+                "must never interleave in one generation (they corrupt the cadence bookkeeping and the plant equity " +
+                "tracks the D56 curves are built from). Pass --reset to start a fresh generation " +
+                "(replay-scoped tables only).");
+        }
     }
 
     /// <summary>Delete the replay GENERATION: every run_kind='replay' row plus the replay accounts'

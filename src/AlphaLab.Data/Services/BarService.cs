@@ -47,25 +47,46 @@ public sealed class BarIngestionService(AlphaLabDbContext db) : IBarIngestionSer
     public int IngestEod(long securityId, IReadOnlyList<EodBar> bars, string observedAt, string source = "eodhd")
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(observedAt);
+        if (bars.Count == 0) return 0;
         var inserted = 0;
+
+        // ONE range query for the staged span instead of one probe per bar: the D70 historical
+        // backfill stages ~1.9M bars, and a per-bar existence query made ingestion O(bars) round-trips.
+        // All versions land in one dictionary; latest-per-date and max-observed resolve in memory.
+        var minDate = bars.Select(b => b.Date).OrderBy(d => d, StringComparer.Ordinal).First();
+        var maxDate = bars.Select(b => b.Date).OrderBy(d => d, StringComparer.Ordinal).Last();
+        var existingByDate = db.Bars
+            .Where(x => x.SecurityId == securityId
+                        && string.Compare(x.Date, minDate) >= 0
+                        && string.Compare(x.Date, maxDate) <= 0)
+            .AsEnumerable()
+            .GroupBy(x => x.Date, StringComparer.Ordinal)
+            .ToDictionary(
+                g => g.Key,
+                g => (Latest: g.OrderByDescending(x => x.Version).First(),
+                      MaxObservedAt: g.Select(x => x.ObservedAt).OrderBy(s => s, StringComparer.Ordinal).Last()),
+                StringComparer.Ordinal);
 
         foreach (var b in bars)
         {
-            // Latest existing version for this (security, date), if any.
-            var latest = db.Bars
-                .Where(x => x.SecurityId == securityId && x.Date == b.Date)
-                .OrderByDescending(x => x.Version)
-                .FirstOrDefault();
-
-            if (latest is null)
+            if (!existingByDate.TryGetValue(b.Date, out var existing))
             {
                 db.Bars.Add(ToRow(securityId, b, version: 1, observedAt, source));
                 inserted++;
             }
-            else if (Differs(latest, b))
+            else if (Differs(existing.Latest, b))
             {
+                // No-backdate guard: a differing observation whose observed_at is OLDER than what the
+                // store already knows must not append — the new top version would carry a backdated
+                // observed_at and silently shadow the newer knowledge for every read at a later
+                // watermark. The one writer that stages old-watermark values is a resumed replay
+                // re-ingesting its frozen vintage after a correction landed; its own reads resolve the
+                // old version by watermark anyway, so skipping is lossless there and fail-safe
+                // everywhere else.
+                if (string.CompareOrdinal(observedAt, existing.MaxObservedAt) < 0) continue;
+
                 // A correction — append the next version. Never mutate the prior one.
-                db.Bars.Add(ToRow(securityId, b, version: latest.Version + 1, observedAt, source));
+                db.Bars.Add(ToRow(securityId, b, version: existing.Latest.Version + 1, observedAt, source));
                 inserted++;
             }
             // else: identical re-fetch ⇒ idempotent no-op.
