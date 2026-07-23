@@ -9,9 +9,27 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $cs = Resolve-AlphaLabConnectionString -Arena $Arena
+$dbPath = Get-AlphaLabDataSourcePath -ConnectionString $cs
+$snapshotDir = Join-Path (Split-Path -Parent $dbPath) 'snapshots'
 
 # 1. Snapshot the SAME file we are about to migrate, first.
+$snapshotsBefore = @()
+if (Test-Path $snapshotDir) { $snapshotsBefore = @(Get-ChildItem -Path $snapshotDir -File | Select-Object -ExpandProperty Name) }
 & (Join-Path $PSScriptRoot 'snapshot-db.ps1') -Arena $Arena
+
+# 1b. Belt-and-braces snapshot-first guard (finding 265): if the store EXISTS, this run must have just
+# produced a NEW snapshot file, or we refuse to migrate. This holds even if snapshot-db.ps1 is edited,
+# a transient lock confuses its checks, or its output scrolls by unread - the guard inspects the disk,
+# not the script's word. (A genuinely fresh install has no store; dotnet-ef creates it below.)
+if (Test-AlphaLabStoreExists -DbPath $dbPath) {
+    $snapshotsAfter = @()
+    if (Test-Path $snapshotDir) { $snapshotsAfter = @(Get-ChildItem -Path $snapshotDir -File | Select-Object -ExpandProperty Name) }
+    $newSnapshots = @($snapshotsAfter | Where-Object { $snapshotsBefore -notcontains $_ })
+    if ($newSnapshots.Count -eq 0) {
+        throw "Snapshot-first guard: the store exists at '$dbPath' but this run produced no new snapshot in '$snapshotDir' - refusing to migrate (rule 14)."
+    }
+    Write-Host "Snapshot-first guard: $($newSnapshots.Count) new snapshot file(s) verified on disk." -ForegroundColor Green
+}
 
 # 2. Apply migrations to that exact file.
 Push-Location $repoRoot

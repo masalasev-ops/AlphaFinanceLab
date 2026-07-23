@@ -31,9 +31,11 @@ public sealed class TurnoverMatchStep(AlphaLabDbContext db, double tolerancePct)
             populationTurnovers.Add(meanOneWay * MetricsConstants.TradingDaysPerYear);
         }
 
-        var promotable = db.Strategies
-            .Where(s => s.Status == "candidate" || s.Status == "live")
-            .Select(s => s.StrategyId)
+        // Run-kind-scoped status (Phase 4/D37) — a replay-retired strategy drops its caveat rows too.
+        var promotable = EffectiveStatus.Resolve(db, runKind)
+            .Where(kv => kv.Value is "candidate" or "live")
+            .Select(kv => kv.Key)
+            .OrderBy(id => id, StringComparer.Ordinal)
             .ToList();
 
         foreach (var strategyId in promotable)

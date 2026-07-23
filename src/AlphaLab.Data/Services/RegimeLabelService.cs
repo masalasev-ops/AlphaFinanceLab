@@ -26,15 +26,19 @@ public sealed record RegimeLabelResult(bool Computed, RegimeLabelPoint? Label, s
 ///  6. maintain regime_episodes — the maximal-trend-run chain (D45), extended forward one session at a
 ///     time so a confirmed flip closes the current episode and opens the next.
 ///
-/// The label carries NO run_kind and NO run_id: the regime is a market-level fact keyed by as_of. Wiring
-/// this into the D53 staged pipeline (inside the Stage-2 transaction, after membership) is checkpoint 2.10.
+/// The label carries NO run_id, but since D93/M5 it DOES carry run_kind in its key: the regime is a
+/// market-level fact, yet a replay recomputes it from a different watermark over its own window, and
+/// with as_of alone the recompute would overwrite the forward label (P6). Each run kind maintains its
+/// own label rows AND its own episode chain, quarantined. Wiring into the D53 staged pipeline (inside
+/// the Stage-2 transaction, after membership) is checkpoint 2.10.
 /// </summary>
 public interface IRegimeLabelService
 {
     /// <summary>Compute and persist the regime label for <paramref name="asOf"/> at
-    /// <paramref name="watermark"/>. Fails closed (writes nothing, returns a reason) when the proxy is
-    /// unresolved, below warm-up, or has no bar on asOf.</summary>
-    RegimeLabelResult ComputeAndSave(string asOf, string watermark);
+    /// <paramref name="watermark"/> under <paramref name="runKind"/> ('live' | 'replay', D93). Fails
+    /// closed (writes nothing, returns a reason) when the proxy is unresolved, below warm-up, or has
+    /// no bar on asOf.</summary>
+    RegimeLabelResult ComputeAndSave(string asOf, string watermark, string runKind = "live");
 }
 
 public sealed class RegimeLabelService(
@@ -52,13 +56,14 @@ public sealed class RegimeLabelService(
     // Any real ISO date is ≥ this, so GetSeries(from: Epoch, to: asOf) returns the full history ≤ asOf.
     private const string Epoch = "0001-01-01";
 
-    public RegimeLabelResult ComputeAndSave(string asOf, string watermark)
+    public RegimeLabelResult ComputeAndSave(string asOf, string watermark, string runKind = "live")
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(asOf);
         ArgumentException.ThrowIfNullOrWhiteSpace(watermark);
+        ArgumentException.ThrowIfNullOrWhiteSpace(runKind);
 
-        // 1) Proxy id from the versioned config row (MAX(version)) — never appsettings.
-        var proxyId = ResolveProxySecurityId();
+        // 1) Proxy id from the versioned config row, AS-OF the run's watermark (D96) — never appsettings.
+        var proxyId = ResolveProxySecurityId(watermark);
         if (proxyId is null)
         {
             return NotComputed(
@@ -104,30 +109,19 @@ public sealed class RegimeLabelService(
 
         // 5) Provenance + persist the label row.
         var inputsHash = InputsHash(proxyId.Value, prms, watermark);
-        UpsertLabel(label, inputsHash);
+        UpsertLabel(label, inputsHash, runKind);
 
-        // 6) Episode chain (maximal trend runs, forward-only).
+        // 6) Episode chain (maximal trend runs, forward-only) — per run kind (D93).
         var priorSessionDate = trajectory.Count >= 2 ? trajectory[^2].Date : null;
-        MaintainEpisode(asOf, label.TrendToken, priorSessionDate);
+        MaintainEpisode(asOf, label.TrendToken, priorSessionDate, runKind);
 
         db.SaveChanges();
         return new RegimeLabelResult(true, label, inputsHash, null);
     }
 
-    // ---- proxy id from the append-only versioned config row (the RegimeProxyIngestion precedent) ----
-    private long? ResolveProxySecurityId()
-    {
-        var current = db.Config
-            .Where(c => c.Key == RegimeProxyIngestion.ProxyConfigKey)
-            .AsEnumerable()
-            .OrderByDescending(c => c.Version)
-            .FirstOrDefault();
-
-        if (current is null) return null;
-        return long.TryParse(current.ValueJson, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id)
-            ? id
-            : null;
-    }
+    // ---- proxy id from the append-only versioned config row, as-of the watermark (D96) ----
+    private long? ResolveProxySecurityId(string watermark) =>
+        new ConfigReadService(db).ResolveLongAsOf(RegimeProxyIngestion.ProxyConfigKey, watermark);
 
     private RegimeLabelParams BuildParams() => new(
         trendSmaDays: options.TrendSmaDays,
@@ -137,12 +131,13 @@ public sealed class RegimeLabelService(
         volPercentile: options.VolPercentile,
         volLookbackSessions: options.VolLookbackYears * TradingDaysPerYear);
 
-    private void UpsertLabel(RegimeLabelPoint label, string inputsHash)
+    private void UpsertLabel(RegimeLabelPoint label, string inputsHash, string runKind)
     {
-        // regime_labels is a DERIVED table (PK as_of), not append-only bars — a recompute at the same
-        // watermark reproduces the row exactly, and a legitimate re-label replaces it. rule 3's
-        // never-UPDATE applies to bars/corporate_actions, not here.
-        var existing = db.RegimeLabels.FirstOrDefault(x => x.AsOf == label.Date);
+        // regime_labels is a DERIVED table (PK (as_of, run_kind), D93), not append-only bars — a
+        // recompute at the same watermark reproduces the row exactly, and a legitimate re-label
+        // replaces it WITHIN its own run kind (a replay can never touch the forward row — the key
+        // forbids it). rule 3's never-UPDATE applies to bars/corporate_actions, not here.
+        var existing = db.RegimeLabels.FirstOrDefault(x => x.AsOf == label.Date && x.RunKind == runKind);
         if (existing is null)
         {
             db.RegimeLabels.Add(new RegimeLabelRow
@@ -151,7 +146,8 @@ public sealed class RegimeLabelService(
                 Trend = label.TrendToken,
                 Vol = label.VolToken,
                 Label = label.Label,
-                InputsHash = inputsHash
+                InputsHash = inputsHash,
+                RunKind = runKind
             });
         }
         else
@@ -163,20 +159,23 @@ public sealed class RegimeLabelService(
         }
     }
 
-    // Maintain the maximal-trend-run chain (D45). Forward-only: asOf is at or after every recorded
-    // episode's start. Same trend as the current episode ⇒ it extends (no write); a genuine flip closes
-    // the current episode at the prior session and opens a new one. Idempotent on a same-asOf re-run
-    // (an extend is a no-op, and a re-open is blocked because the current episode already covers asOf).
-    private void MaintainEpisode(string asOf, string trendToken, string? priorSessionDate)
+    // Maintain the maximal-trend-run chain (D45), PER RUN KIND (D93): a replay's chain over its
+    // historical window never touches the forward chain. Forward-only within a kind: asOf is at or
+    // after every recorded episode's start. Same trend as the current episode ⇒ it extends (no write);
+    // a genuine flip closes the current episode at the prior session and opens a new one. Idempotent
+    // on a same-asOf re-run (an extend is a no-op, and a re-open is blocked because the current
+    // episode already covers asOf).
+    private void MaintainEpisode(string asOf, string trendToken, string? priorSessionDate, string runKind)
     {
         var latest = db.RegimeEpisodes
+            .Where(x => x.RunKind == runKind)
             .AsEnumerable()
             .OrderByDescending(x => x.StartDate, StringComparer.Ordinal)
             .FirstOrDefault();
 
         if (latest is null)
         {
-            db.RegimeEpisodes.Add(new RegimeEpisodeRow { Label = trendToken, StartDate = asOf, EndDate = null });
+            db.RegimeEpisodes.Add(new RegimeEpisodeRow { Label = trendToken, StartDate = asOf, EndDate = null, RunKind = runKind });
             return;
         }
 
@@ -185,7 +184,7 @@ public sealed class RegimeLabelService(
 
         // Genuine confirmed flip: close the current episode at the last session of the old trend, open the new.
         latest.EndDate = priorSessionDate ?? latest.StartDate;
-        db.RegimeEpisodes.Add(new RegimeEpisodeRow { Label = trendToken, StartDate = asOf, EndDate = null });
+        db.RegimeEpisodes.Add(new RegimeEpisodeRow { Label = trendToken, StartDate = asOf, EndDate = null, RunKind = runKind });
     }
 
     // hash(proxy security_id, parameter set, watermark) — §20.1 provenance. SHA-256 over a canonical

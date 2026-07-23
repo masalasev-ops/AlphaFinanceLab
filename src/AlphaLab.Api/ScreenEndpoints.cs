@@ -62,7 +62,7 @@ public static class ScreenEndpoints
         group.MapGet("/activity", () => TypedResults.Ok(ActivityReadModel.NoRunYet))
             .WithName("GetActivity").WithSummary("Activity feed read-model.");
 
-        group.MapGet("/replay", () => TypedResults.Ok(ReplayReadModel.NoRunYet))
+        group.MapGet("/replay", (ReplayReadModelBuilder b) => TypedResults.Ok(b.Build()))
             .WithName("GetReplay").WithSummary("Quarantined Arena Replay artifacts (always flagged).");
 
         return group;

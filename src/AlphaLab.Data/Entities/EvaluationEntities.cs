@@ -183,4 +183,32 @@ public sealed class JournalEntryRow
     public string? Outcome { get; set; }
     /// <summary>true (INTEGER 1) once linked at candidate creation; immutable thereafter. DEFAULT 0.</summary>
     public bool Locked { get; set; }
+    /// <summary>D89 (v1.9.35): the hypothesis's FOURTH pre-declared field — the expected annualized
+    /// effect the FR-40 detectability-at-admission gate reads. NULL on non-hypothesis kinds and on
+    /// hypotheses locked before M5. REAL.</summary>
+    public double? ExpectedEffectAnn { get; set; }
+}
+
+/// <summary>
+/// replay_regime_outcomes — D89 (v1.9.35), FR-41: replay strategy outcomes decomposed by regime
+/// episode, the forward-provision for the post-Phase-8 multi-regime survival requirement. PK
+/// (strategy_id, regime_episode_id, run_kind); run_kind='replay' by construction under the D37
+/// query-layer quarantine — rows aggregate to the overall replay outcome and NEVER reach a forward
+/// view (FX-ReplayPerRegime). regime_episode_id REFERENCES regime_episodes(episode_id) —
+/// documentary, no EF FK (the journal_entries precedent). power_reports/go_live_log carry run_kind
+/// but do not decompose by regime; they are not overloaded.
+/// </summary>
+public sealed class ReplayRegimeOutcomeRow
+{
+    public string StrategyId { get; set; } = default!;
+    /// <summary>REFERENCES regime_episodes(episode_id) — a REPLAY-chain episode (D93).</summary>
+    public long RegimeEpisodeId { get; set; }
+    /// <summary>DEFAULT 'replay' — replay-only by construction (D37).</summary>
+    public string RunKind { get; set; } = "replay";
+    /// <summary>Per-episode annualized edge summary (REAL, nullable).</summary>
+    public double? EdgeAnn { get; set; }
+    /// <summary>Per-episode median population percentile (REAL, nullable).</summary>
+    public double? MedianPercentile { get; set; }
+    /// <summary>Session count contributing in this episode.</summary>
+    public int NDays { get; set; }
 }

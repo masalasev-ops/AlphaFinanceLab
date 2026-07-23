@@ -397,10 +397,6 @@ namespace AlphaLab.Data.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("observed_at");
 
-                    b.Property<string>("ProcessedOn")
-                        .HasColumnType("TEXT")
-                        .HasColumnName("processed_on");
-
                     b.Property<double?>("Ratio")
                         .HasColumnType("REAL")
                         .HasColumnName("ratio");
@@ -739,6 +735,10 @@ namespace AlphaLab.Data.Migrations
                         .HasColumnType("INTEGER")
                         .HasColumnName("evidence_window_days");
 
+                    b.Property<double?>("ExpectedEffectAnn")
+                        .HasColumnType("REAL")
+                        .HasColumnName("expected_effect_ann");
+
                     b.Property<string>("Kind")
                         .IsRequired()
                         .HasColumnType("TEXT")
@@ -1026,12 +1026,22 @@ namespace AlphaLab.Data.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("label");
 
+                    b.Property<string>("RunKind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("live")
+                        .HasColumnName("run_kind");
+
                     b.Property<string>("StartDate")
                         .IsRequired()
                         .HasColumnType("TEXT")
                         .HasColumnName("start_date");
 
                     b.HasKey("EpisodeId");
+
+                    b.HasIndex("RunKind", "StartDate")
+                        .HasDatabaseName("ix_regime_episodes_kind_start");
 
                     b.ToTable("regime_episodes", (string)null);
                 });
@@ -1041,6 +1051,12 @@ namespace AlphaLab.Data.Migrations
                     b.Property<string>("AsOf")
                         .HasColumnType("TEXT")
                         .HasColumnName("as_of");
+
+                    b.Property<string>("RunKind")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("live")
+                        .HasColumnName("run_kind");
 
                     b.Property<string>("InputsHash")
                         .IsRequired()
@@ -1062,7 +1078,7 @@ namespace AlphaLab.Data.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("vol");
 
-                    b.HasKey("AsOf");
+                    b.HasKey("AsOf", "RunKind");
 
                     b.ToTable("regime_labels", null, t =>
                         {
@@ -1070,6 +1086,39 @@ namespace AlphaLab.Data.Migrations
 
                             t.HasCheckConstraint("ck_regime_labels_vol", "vol IN ('normal_vol','high_vol')");
                         });
+                });
+
+            modelBuilder.Entity("AlphaLab.Data.Entities.ReplayRegimeOutcomeRow", b =>
+                {
+                    b.Property<string>("StrategyId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("strategy_id");
+
+                    b.Property<long>("RegimeEpisodeId")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("regime_episode_id");
+
+                    b.Property<string>("RunKind")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("replay")
+                        .HasColumnName("run_kind");
+
+                    b.Property<double?>("EdgeAnn")
+                        .HasColumnType("REAL")
+                        .HasColumnName("edge_ann");
+
+                    b.Property<double?>("MedianPercentile")
+                        .HasColumnType("REAL")
+                        .HasColumnName("median_percentile");
+
+                    b.Property<int>("NDays")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("n_days");
+
+                    b.HasKey("StrategyId", "RegimeEpisodeId", "RunKind");
+
+                    b.ToTable("replay_regime_outcomes", (string)null);
                 });
 
             modelBuilder.Entity("AlphaLab.Data.Entities.RunRow", b =>

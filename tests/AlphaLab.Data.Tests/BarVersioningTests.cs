@@ -122,6 +122,39 @@ public class BarVersioningTests
         finally { TestDb.Delete(path); }
     }
 
+    // The Phase-4 review's no-backdate guard: a resumed replay re-stages its frozen-vintage (v1)
+    // values after a later correction (v2) landed. The old diff-vs-latest logic appended v3 = v1's
+    // values with a BACKDATED observed_at, silently shadowing v2 for every read at a later watermark.
+    // The guard must skip the append; the replay's own reads still resolve v1 by watermark.
+    [Fact]
+    public void FR2_BackdatedDifferingReingest_IsSkipped_NeverShadowsNewerVersion()
+    {
+        var path = SeededDb();
+        try
+        {
+            using var db = TestDb.Open(path);
+            var ingest = new BarIngestionService(db);
+
+            // Re-ingest v1's values at the OLD observation instant (a replay pinned to its frozen
+            // watermark): differs from latest v2, but observed_at is older than v2's -> must be a no-op.
+            var written = ingest.IngestEod(Sec, [V1], ObservedV1);
+            Assert.Equal(0, written);
+            Assert.Equal(2, db.Bars.Count(b => b.SecurityId == Sec && b.Date == BarDate));
+
+            // The correction is still what a later watermark resolves — v2 was not shadowed.
+            var read = new BarReadService(db);
+            var atLate = read.GetBar(Sec, BarDate, WatermarkLate);
+            Assert.Equal(2, atLate!.Version);
+            Assert.Equal(317.55, atLate.Close);
+
+            // And the replay's own view is untouched: the frozen watermark still resolves v1.
+            var atMid = read.GetBar(Sec, BarDate, WatermarkMid);
+            Assert.Equal(1, atMid!.Version);
+            Assert.Equal(317.31, atMid.Close);
+        }
+        finally { TestDb.Delete(path); }
+    }
+
     [Fact]
     public void FR2_AdjOhl_LeftNull_AdjCloseStored()
     {

@@ -28,6 +28,9 @@ public sealed class StrategiesReadModelBuilder(AlphaLabDbContext db, VerdictsOpt
         var rows = db.Strategies
             .OrderBy(s => s.StrategyId)
             .AsEnumerable()
+            // D64 plants are REPLAY-ONLY fixtures (FR-36): they exist solely inside the quarantined
+            // generation, so the forward leaderboard never lists them (rule 1 / FR-33).
+            .Where(s => !Calibration.PlantCohorts.IsPlantId(s.StrategyId))
             .Select(BuildRow)
             .ToList();
 

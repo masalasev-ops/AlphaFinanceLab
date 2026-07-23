@@ -16,14 +16,18 @@ public sealed record CandidateSpec(
 /// so an unregistered candidate can never masquerade as pre-registered). Every creation increments
 /// trials_registry (the honest deflated-Sharpe count, D17/S2). Writes via the caller's transaction (D59).
 /// </summary>
-public sealed class CandidateFactory(AlphaLabDbContext db)
+public sealed class CandidateFactory(AlphaLabDbContext db, AlphaLab.Core.Config.GateOptions? gate = null)
 {
     /// <summary>The config_json property that flags an unregistered candidate (rule 16).</summary>
     public const string UnregisteredMarkerKey = "unregistered";
 
     /// <summary>Pre-register a hypothesis (journal_entries kind='hypothesis'), LOCKED immediately — a
-    /// pre-registration is immutable except via the outcome-closure flow (D52). Returns its entry_id.</summary>
-    public long RegisterHypothesis(string createdOn, string title, string bodyMd, string metric, int evidenceWindowDays, string? strategyId = null)
+    /// pre-registration is immutable except via the outcome-closure flow (D52). Returns its entry_id.
+    /// <paramref name="expectedEffectAnn"/> is the D89 FOURTH pre-declared field (annualized fraction)
+    /// the FR-40 gate reads at candidate creation; the API requires it on new hypotheses — the null
+    /// default exists only for hypotheses locked before M5, which bypass the gate as legacy.</summary>
+    public long RegisterHypothesis(string createdOn, string title, string bodyMd, string metric, int evidenceWindowDays,
+        string? strategyId = null, double? expectedEffectAnn = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(metric);
         var row = new JournalEntryRow
@@ -36,6 +40,7 @@ public sealed class CandidateFactory(AlphaLabDbContext db)
             EvidenceWindowDays = evidenceWindowDays,
             StrategyId = strategyId,
             Locked = true,
+            ExpectedEffectAnn = expectedEffectAnn,
         };
         db.JournalEntries.Add(row);
         db.SaveChanges();
@@ -52,6 +57,18 @@ public sealed class CandidateFactory(AlphaLabDbContext db)
     {
         ArgumentNullException.ThrowIfNull(spec);
         ArgumentException.ThrowIfNullOrWhiteSpace(spec.StrategyId);
+
+        // The 'plant:' prefix is RESERVED for the D64 calibration fixtures (Phase-4 review): a real
+        // candidate named into it would be invisible on every plant-filtered screen while its
+        // strategies/trials/hypothesis rows persist unremovably, its live trials row would inflate the
+        // S2 deflation count for every real strategy — and a later with-plants replay whose seeded id
+        // collided would silently adopt the forward row as a fixture. Refuse at the door.
+        if (Calibration.PlantCohorts.IsPlantId(spec.StrategyId))
+        {
+            throw new ArgumentException(
+                $"Strategy id '{spec.StrategyId}' uses the reserved 'plant:' prefix — plant ids belong to the " +
+                "D64 calibration fixtures and are never admissible candidates.", nameof(spec));
+        }
 
         // The pre-registration gate (D52/rule 16).
         if (hypothesisEntryId is null && !unregistered)
@@ -84,6 +101,18 @@ public sealed class CandidateFactory(AlphaLabDbContext db)
 
         if (db.Strategies.Any(s => s.StrategyId == spec.StrategyId))
             throw new InvalidOperationException($"Strategy '{spec.StrategyId}' already exists (frozen identity, D17).");
+
+        // The FR-40/D89 detectability-at-admission gate (Phase 4): a REGISTERED candidate whose
+        // pre-declared expected effect cannot clear the detection floor within the horizon is refused
+        // BEFORE any row is written (a DetectabilityRefusedException — the API's 422
+        // `detectability_refused`). An UNREGISTERED candidate has no expected_effect_ann and bypasses
+        // under its permanent marking; a hypothesis locked before M5 (null field) bypasses as legacy;
+        // a factory constructed without GateOptions (pre-Phase-4 call sites, tests) leaves the gate
+        // unassessed. Admission-only — a live strategy is never re-gated (rule 8).
+        if (gate is not null && hypothesis?.ExpectedEffectAnn is { } expectedEffectAnn)
+        {
+            new DetectabilityGate(db, gate).Assess(expectedEffectAnn);
+        }
 
         var configJson = unregistered ? WithUnregisteredMarker(spec.ConfigJson) : spec.ConfigJson;
 

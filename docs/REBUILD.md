@@ -169,13 +169,25 @@ their replay intervals (the reconciler is universe-blind). Do not "helpfully" ad
 The machinery is date-agnostic. Its **contact surface with the outside world** is not, and these are
 what bite a clone taken long after the repo was last touched.
 
-**`sp100` is the only wired universe — `sp500` is rejected at parse.** `tools/Backfill/Program.cs`
+**`sp100` is the only wired FORWARD universe — `sp500` is rejected at parse.** `tools/Backfill/Program.cs`
 hardcodes the OEF (S&P **100**) holdings feed and the Wikipedia S&P 100 cross-check, so only `sp100` is
 actually wired. `--universe sp500` used to be *accepted* (it set the count band `[495,510]`) and then
 fail-close ~300 API calls later with `count sanity breach: primary=101, crosscheck=101, band=[495,510]` —
 a data-shaped error for an unwired-code cause. As of v1.9.11 it is **rejected at parse** with the real
 reason and exits before spending anything (P1R-10). An `ISharesHoldingsOptions.Ivv()` preset exists but is
 unused: wiring it is the S&P 500 widening *mechanism* — a recorded proposal (open in PROGRESS), not a flag you flip today. The widening **target** is now the S&P 1500 by **D87** (contingent on a verified-depth 400/600 history; else S&P 500), and the mid/small-cap feeds it needs are Phase-4 prerequisites.
+
+**The Phase-4 REPLAY prerequisite is the SEPARATE `--historical` mode (v1.9.39, D70/D97):**
+`dotnet run --project tools/Backfill -- --historical sp500 --from <d> --to <d> [--csv <path>]` seeds the
+fja05680 as-of membership (`Backfill:HistoricalMembershipUrl`; the committed value is the test fixture —
+point it at the real CSV for a live run) and backfills bars + corporate actions for every historical
+member whose spell overlaps the window, at the TRUE observation instant (D92). It gates every staged
+series in-memory (a Reject excludes the name fail-closed), flags + excludes ticker-reuse suspects, writes
+the deterministic coverage artifact under `docs/calibration/{arena}/`, and snapshots the current forward
+slice into `Universe.Bootstrap.SliceSecurityIds` FIRST so the forward universe stays the S&P 100 slice
+(rule 22 — `SliceScopedMembershipRead`). It never touches the forward reconciler; conversely, do not
+re-run the forward bootstrap after it until the widening lands (the universe-blind reconciler would stamp
+`removed_on` on the ~400 non-slice members — P1). RUNBOOK §8 owns the full sign-off sequence.
 
 **The arena id is the lab's name, and `sp500` is correct — leave it.** `tools/Backfill/appsettings.json`
 sets `Arena.Id = "sp500"` / `DisplayName = "S&P 500"`, and that is *right* for now: per D70 this arena **is** the

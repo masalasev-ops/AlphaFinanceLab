@@ -6,9 +6,10 @@ namespace AlphaLab.Data.Tests;
 
 /// <summary>
 /// FR-3 corporate-action feed: REAL EODHD dividends + splits (tests/Fixtures/eodhd/div_AAPL.json,
-/// splits_AAPL.json) are ingested and typed into corporate_actions (ingest+type only — processed_on
-/// NULL until Phase 2). End-to-end from the parsers (1.2) through the ingestion service, offline.
-/// Idempotency and the D69 decimal→TEXT round-trip are asserted against real values.
+/// splits_AAPL.json) are ingested and typed into corporate_actions (ingest+type only; the ledger
+/// applies actions via one-transaction-per-day, never a per-action flag — D94/M5 dropped the
+/// always-NULL processed_on column). End-to-end from the parsers (1.2) through the ingestion
+/// service, offline. Idempotency and the D69 decimal→TEXT round-trip are asserted against real values.
 /// </summary>
 public class CorporateActionIngestionTests
 {
@@ -29,7 +30,7 @@ public class CorporateActionIngestionTests
         EodhdMarketDataProvider.ParseSplits(Fixtures.Eodhd("splits_AAPL.json"));
 
     [Fact]
-    public void FR3_IngestRealDividends_TypesRows_UnadjustedCash_ExDate_ProcessedOnNull()
+    public void FR3_IngestRealDividends_TypesRows_UnadjustedCash_ExDate()
     {
         var path = SeededDb();
         try
@@ -43,7 +44,6 @@ public class CorporateActionIngestionTests
             {
                 var divs = db.CorporateActions.Where(c => c.Type == "dividend").ToList();
                 Assert.Equal(80, divs.Count);
-                Assert.All(divs, c => Assert.Null(c.ProcessedOn));
                 Assert.All(divs, c => Assert.Null(c.Ratio));
 
                 // Recent (2026-05-11): unadjusted == adjusted == 0.27.
@@ -61,7 +61,7 @@ public class CorporateActionIngestionTests
     }
 
     [Fact]
-    public void FR3_IngestRealSplits_TypesRows_ParsedRatio_ProcessedOnNull()
+    public void FR3_IngestRealSplits_TypesRows_ParsedRatio()
     {
         var path = SeededDb();
         try
@@ -75,7 +75,6 @@ public class CorporateActionIngestionTests
             {
                 var splits = db.CorporateActions.Where(c => c.Type == "split").ToList();
                 Assert.Equal(5, splits.Count);
-                Assert.All(splits, c => Assert.Null(c.ProcessedOn));
                 Assert.All(splits, c => Assert.Null(c.ExDate));
                 Assert.All(splits, c => Assert.Null(c.CashPerShare));
 

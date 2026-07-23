@@ -105,17 +105,8 @@ public sealed class StoredRegimeProxyProvider(
         return Task.FromResult(series);
     }
 
-    // The current value of an append-only versioned config key is MAX(version) (finding 108).
-    private long? ResolveProxySecurityId()
-    {
-        var current = db.Config
-            .Where(c => c.Key == RegimeProxyIngestion.ProxyConfigKey)
-            .AsEnumerable()
-            .OrderByDescending(c => c.Version)
-            .FirstOrDefault();
-        return current is not null
-            && long.TryParse(current.ValueJson, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v)
-            ? v
-            : null;
-    }
+    // Resolved AS-OF the pinned watermark (D96): a proxy re-pointing appended after the reproduced/
+    // replayed run committed must be invisible to it, exactly like a later bar version.
+    private long? ResolveProxySecurityId() =>
+        new ConfigReadService(db).ResolveLongAsOf(RegimeProxyIngestion.ProxyConfigKey, options.Watermark);
 }

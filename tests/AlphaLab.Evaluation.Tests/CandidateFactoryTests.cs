@@ -20,6 +20,25 @@ public class CandidateFactoryTests
         Assert.Empty(db.TrialsRegistry.ToList());
     }
 
+    // Phase-4 review: the 'plant:' prefix is reserved for the D64 calibration fixtures. A candidate
+    // admitted into it would be invisible on every plant-filtered screen (an unremovable ghost whose
+    // live trials row deflates every real strategy's S2), and an exact-id collision would let a later
+    // replay adopt the forward row as a fixture.
+    [Fact]
+    public void CreateCandidate_PlantPrefix_IsReserved_NothingPersisted()
+    {
+        using var arena = new EvalArena();
+        using var db = arena.Open();
+        var factory = new CandidateFactory(db);
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            factory.CreateCandidate(Spec("plant:my-idea"), hypothesisEntryId: null, unregistered: true, createdOn: "2026-03-10"));
+        Assert.Contains("reserved", ex.Message, StringComparison.Ordinal);
+
+        Assert.Empty(db.Strategies.ToList());
+        Assert.Empty(db.TrialsRegistry.ToList());
+    }
+
     [Fact]
     public void CreateCandidate_WithLockedHypothesis_Succeeds_RegistersTrial_AndLinksTheHypothesis()
     {

@@ -56,9 +56,14 @@ public sealed class EvaluationStep(AlphaLabDbContext db, GateOptions gate)
             .Select(s => s.HoldingHorizonDays)
             .FirstOrDefault() ?? DefaultHorizonDays;
 
+        // Status is run-kind-scoped (Phase 4/D37): forward reads strategies.status verbatim; replay
+        // derives its own promote/retire history from the quarantined records and NEVER consults the
+        // forward column as its own state.
+        var effective = EffectiveStatus.Resolve(db, runKind);
         var promotable = db.Strategies
-            .Where(s => s.Status == "candidate" || s.Status == "live")
-            .Select(s => new { s.StrategyId, s.HoldingHorizonDays, s.Status })
+            .Select(s => new { s.StrategyId, s.HoldingHorizonDays })
+            .AsEnumerable()
+            .Where(s => effective.GetValueOrDefault(s.StrategyId) is "candidate" or "live")
             .ToList();
 
         var results = new List<PairEvaluation>();
@@ -100,9 +105,15 @@ public sealed class EvaluationStep(AlphaLabDbContext db, GateOptions gate)
             // Promotion (D31): a candidate that earns Promoted goes live and the event is logged. The gate
             // only ever PROMOTES here — a Refused verdict is not a kill (D63 reserves fast-kills for the
             // anti-predictive S3/S6 breaches + the trade track); demotion/retire is the monitor's (3.6).
-            if (verdict == PromotionVerdict.Promoted && strat.Status == "candidate")
+            // The strategies.status MUTATION is forward-only (D37): a replay promotion is recorded in its
+            // quarantined go_live_log row — which EffectiveStatus reads as replay-'live' next evaluation —
+            // and never reaches the shared column ("replay is never a promotion input").
+            if (verdict == PromotionVerdict.Promoted && effective.GetValueOrDefault(strat.StrategyId) == "candidate")
             {
-                db.Strategies.First(s => s.StrategyId == strat.StrategyId).Status = "live";
+                if (runKind == RunKindLive)
+                {
+                    db.Strategies.First(s => s.StrategyId == strat.StrategyId).Status = "live";
+                }
                 db.GoLiveLog.Add(new GoLiveLogRow
                 {
                     AsOf = asOf,

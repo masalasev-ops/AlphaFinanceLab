@@ -56,6 +56,9 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
     public DbSet<OverfittingStatusRow> OverfittingStatus => Set<OverfittingStatusRow>();
     public DbSet<JournalEntryRow> JournalEntries => Set<JournalEntryRow>();
 
+    // ---- Phase 4 replay table (D89/FR-41; M5) ----
+    public DbSet<ReplayRegimeOutcomeRow> ReplayRegimeOutcomes => Set<ReplayRegimeOutcomeRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -238,7 +241,7 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
             e.Property(x => x.NewSymbol).HasColumnName("new_symbol");
             e.Property(x => x.ObservedAt).HasColumnName("observed_at").IsRequired();
             e.Property(x => x.Source).HasColumnName("source").IsRequired().HasDefaultValue("eodhd");
-            e.Property(x => x.ProcessedOn).HasColumnName("processed_on");
+            // processed_on dropped by D94/M5 (was ALWAYS NULL, never written — proposal P5 resolved).
             e.HasIndex(x => x.ObservedAt).HasDatabaseName("ix_corporate_actions_observed");
             e.HasIndex(x => new { x.SecurityId, x.Type, x.EffectiveDate, x.Version })
                 .IsUnique()
@@ -314,8 +317,10 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
             e.HasIndex(x => x.RunId).HasDatabaseName("ix_data_quality_flags_run");
         });
 
-        // ---- regime_labels (D34/D50) ---- PK as_of; trend + vol CHECKs. Derived PIT table: no run_kind
-        // (the regime is a market-level fact) and no version (inputs_hash carries the watermark provenance).
+        // ---- regime_labels (D34/D50; D93/M5) ---- PK (as_of, run_kind); trend + vol CHECKs. Derived PIT
+        // table, no version (inputs_hash carries the watermark provenance). run_kind is IN the key so a
+        // replay recompute of a historical session cannot overwrite the forward label (P6 resolved — the
+        // equity_curve precedent).
         modelBuilder.Entity<RegimeLabelRow>(e =>
         {
             e.ToTable("regime_labels", t =>
@@ -323,17 +328,20 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
                 t.HasCheckConstraint("ck_regime_labels_trend", "trend IN ('bull','bear')");
                 t.HasCheckConstraint("ck_regime_labels_vol", "vol IN ('normal_vol','high_vol')");
             });
-            e.HasKey(x => x.AsOf);
+            e.HasKey(x => new { x.AsOf, x.RunKind });
             e.Property(x => x.AsOf).HasColumnName("as_of");
             e.Property(x => x.Trend).HasColumnName("trend").IsRequired();
             e.Property(x => x.Vol).HasColumnName("vol").IsRequired();
             e.Property(x => x.Label).HasColumnName("label").IsRequired();
             e.Property(x => x.InputsHash).HasColumnName("inputs_hash").IsRequired();
+            e.Property(x => x.RunKind).HasColumnName("run_kind").HasDefaultValue("live");
         });
 
-        // ---- regime_episodes (D45) ---- episode_id bare INTEGER PK (NO AUTOINCREMENT — hand-edit). No CHECK
-        // (SCHEMA declares none; label reuses the trend tokens but is unconstrained here, the trades.reason
-        // precedent). end_date nullable = ongoing.
+        // ---- regime_episodes (D45; D93/M5) ---- episode_id bare INTEGER PK (NO AUTOINCREMENT — hand-edit).
+        // No CHECK (SCHEMA declares none; label reuses the trend tokens but is unconstrained here, the
+        // trades.reason precedent). end_date nullable = ongoing. run_kind: each run kind maintains its own
+        // episode chain (a replay's chain over its window never touches the forward chain); the
+        // (run_kind, start_date) index serves the per-kind latest-episode read and FR-41's per-episode joins.
         modelBuilder.Entity<RegimeEpisodeRow>(e =>
         {
             e.ToTable("regime_episodes");
@@ -342,6 +350,8 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
             e.Property(x => x.Label).HasColumnName("label").IsRequired();
             e.Property(x => x.StartDate).HasColumnName("start_date").IsRequired();
             e.Property(x => x.EndDate).HasColumnName("end_date");
+            e.Property(x => x.RunKind).HasColumnName("run_kind").IsRequired().HasDefaultValue("live");
+            e.HasIndex(x => new { x.RunKind, x.StartDate }).HasDatabaseName("ix_regime_episodes_kind_start");
         });
 
         // ================= Phase 2: the ledger (SCHEMA §"STRATEGIES, ACCOUNTS, LEDGER") =========
@@ -629,6 +639,23 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
             e.Property(x => x.EvidenceWindowDays).HasColumnName("evidence_window_days");
             e.Property(x => x.Outcome).HasColumnName("outcome");
             e.Property(x => x.Locked).HasColumnName("locked").IsRequired().HasDefaultValue(false);
+            // D89 (v1.9.35) / M5: the FR-40 gate's pre-declared expected annualized effect. REAL, nullable.
+            e.Property(x => x.ExpectedEffectAnn).HasColumnName("expected_effect_ann");
+        });
+
+        // ---- replay_regime_outcomes (D89/FR-41; M5) ---- PK (strategy_id, regime_episode_id, run_kind);
+        // composite, so no autoincrement question. run_kind DEFAULT 'replay' (replay-only by construction,
+        // D37). regime_episode_id REFERENCES regime_episodes — documentary, no EF FK (house precedent).
+        modelBuilder.Entity<ReplayRegimeOutcomeRow>(e =>
+        {
+            e.ToTable("replay_regime_outcomes");
+            e.HasKey(x => new { x.StrategyId, x.RegimeEpisodeId, x.RunKind });
+            e.Property(x => x.StrategyId).HasColumnName("strategy_id");
+            e.Property(x => x.RegimeEpisodeId).HasColumnName("regime_episode_id");
+            e.Property(x => x.RunKind).HasColumnName("run_kind").HasDefaultValue("replay");
+            e.Property(x => x.EdgeAnn).HasColumnName("edge_ann");
+            e.Property(x => x.MedianPercentile).HasColumnName("median_percentile");
+            e.Property(x => x.NDays).HasColumnName("n_days").IsRequired();
         });
     }
 }

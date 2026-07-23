@@ -110,7 +110,10 @@ public sealed class ReproduceDayRunner(
         using (var scope = provider.CreateScope())
         {
             var pipeline = scope.ServiceProvider.GetRequiredService<DailyPipeline>();
-            var result = await pipeline.RunDayAsync(asOf, runKind, ct).ConfigureAwait(false);
+            // The STORED watermark is passed explicitly (D92): a catchup day's watermark is the true
+            // recovery instant, which no re-derivation can reconstruct — reproducing "against exactly
+            // the data it saw" means reproducing at exactly the watermark it recorded.
+            var result = await pipeline.RunDayAsync(asOf, runKind, watermark, ct).ConfigureAwait(false);
             if (!result.Committed)
             {
                 // The reproduction itself failed closed (a Stage-1 gate reject on replayed data). That is

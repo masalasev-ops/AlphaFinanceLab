@@ -30,13 +30,20 @@ public class MonitorSignalsTests
     }
 
     [Fact]
-    public void S6_IsCappedAtWarning_NeverSuspectOnASingleEvaluation()
+    public void S6_NeverSuspectOnASingleEvaluation_EscalatesOnStreaks()
     {
-        // D63: a single 63-day window trips t < −1 ~16% of the time under the null, so S6 must not be a
-        // single-eval Suspect (it would auto-retire honest no-edge controls). Both triggers ⇒ Warning.
+        // D63 still holds under the Phase-4 escalation: a single 63-day window trips t < −1 ~16% of the
+        // time under the null, so ONE evaluation is never Suspect. The Appendix-A ladder: a single
+        // negative t ⇒ Warning; SUSTAINED (2 consecutive) ⇒ Suspect. Inside-band: one window is normal
+        // (none of the ladder), two consecutive ⇒ elevated Warning, three ⇒ critical Suspect.
         Assert.Equal(MonitorStatus.Warning, MonitorSignals.S6(rollingAlphaT: -1.5, insideCentralBand: true).Status);
-        Assert.Equal(MonitorStatus.Warning, MonitorSignals.S6(rollingAlphaT: 0.2, insideCentralBand: true).Status);
-        Assert.Equal(MonitorStatus.Healthy, MonitorSignals.S6(rollingAlphaT: 0.2, insideCentralBand: false).Status);
+        Assert.Equal(MonitorStatus.Suspect, MonitorSignals.S6(-1.5, insideCentralBand: true, priorConsecutiveNegativeT: 1).Status);
+        Assert.Equal(MonitorStatus.Healthy, MonitorSignals.S6(0.2, insideCentralBand: true).Status);
+        Assert.Equal(MonitorStatus.Warning, MonitorSignals.S6(0.2, insideCentralBand: true, priorConsecutiveInsideBand: 1).Status);
+        Assert.Equal(MonitorStatus.Suspect, MonitorSignals.S6(0.2, insideCentralBand: true, priorConsecutiveInsideBand: 2).Status);
+        Assert.Equal(MonitorStatus.Healthy, MonitorSignals.S6(0.2, insideCentralBand: false).Status);
+        // An outside-band window BREAKS the streak regardless of its depth into it.
+        Assert.Equal(MonitorStatus.Healthy, MonitorSignals.S6(0.2, insideCentralBand: false, priorConsecutiveInsideBand: 5).Status);
     }
 
     [Fact]

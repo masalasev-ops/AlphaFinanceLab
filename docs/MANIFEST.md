@@ -54,7 +54,7 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `docs/alphalab_ux_mockups.html` (the single consolidated UX mockup — every screen; supersedes the earlier per-topic mockup files)
 
 **Revision history**
-- `docs/CHANGELOG_v1.9.md` — every consistency finding and decision, v1.9.1 through v1.9.38.
+- `docs/CHANGELOG_v1.9.md` — every consistency finding and decision, v1.9.1 through v1.9.40.
 
 ## Revision state
 - v1.9.1 errata (findings 59–75; D68–D69) — merged.
@@ -206,6 +206,10 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   evidence-prior seam; Phase 8 fundamental signals register into the same harness (`report_available_date`).
   The source orientation doc was distributed and deleted; MASTER §24 is the authority. The two post-Phase-8
   roadmap docs joined the tracked corpus in this pass.
+- v1.9.39 the Phase-4 build (checkpoints 4.1–4.10 on `feat/phase4-arena-replay`; decisions **D92–D99**;
+  findings 240–247; migration **M5**; 754 → 819 tests) + the doc sweep and the ORIENTATION three-pictures
+  section. v1.9.40 the Phase-4 adversarial-review fix pass (findings **248–262**, all fixed pre-merge with
+  regression tests; 819 → 839 tests) — the review register lives in CHANGELOG v1.9.40.
 - The mockups were consolidated into the single `alphalab_ux_mockups.html` in the v1.9.21/v1.9.22 passes
   (the earlier per-topic and v2 files are gone; the consolidated file gained the UX-14 paired-comparison block
   and the slate-grey replay tokens in v1.9.22). SCHEMA received its first post-v1.9.1 edit in v1.9.7

@@ -106,8 +106,31 @@ public sealed class HistoricalMembershipIngestion(AlphaLabDbContext db) : IHisto
             intervals.Add(new IndexMembershipRow { SecurityId = id, AddedOn = addedOn, RemovedOn = null });
         }
 
-        db.IndexMembership.AddRange(intervals);
+        // IDEMPOTENT upsert by the (security_id, added_on) key (Phase 4 / checkpoint 4.3): a re-run of
+        // the same CSV derives the same intervals and must write nothing; a LONGER CSV may close a
+        // previously-open interval (its removed_on materializes) or open new ones. Blind AddRange
+        // double-inserted the PK on any re-run. index_membership is as-of STATE, not an append-only
+        // log — updating removed_on here is the same mutation the forward reconciler performs.
+        var existing = db.IndexMembership.ToList()
+            .ToDictionary(m => (m.SecurityId, m.AddedOn));
+        var written = 0;
+        foreach (var interval in intervals)
+        {
+            if (existing.TryGetValue((interval.SecurityId, interval.AddedOn), out var row))
+            {
+                if (row.RemovedOn != interval.RemovedOn)
+                {
+                    row.RemovedOn = interval.RemovedOn;
+                    written++;
+                }
+            }
+            else
+            {
+                db.IndexMembership.Add(interval);
+                written++;
+            }
+        }
         db.SaveChanges();
-        return intervals.Count;
+        return written;
     }
 }

@@ -25,6 +25,12 @@ public sealed class CohortMaturationBuilder(AlphaLabDbContext db, KpiOptions kpi
         var strategies = db.Strategies
             .Where(s => s.Status == "candidate" || s.Status == "live" || s.Status == "retired")   // retired retained
             .OrderBy(s => s.StrategyId)
+            .AsEnumerable()
+            // Plants are calibration FIXTURES, not admission cohorts (Phase-4 review): a with-plants
+            // replay seeds ~350 plant strategies sharing ONE created_on vintage — without this filter
+            // the replay strip would render them as a giant synthetic "cohort" drowning the real ones
+            // (the same rule StrategiesReadModelBuilder applies to the leaderboard).
+            .Where(s => !Calibration.PlantCohorts.IsPlantId(s.StrategyId))
             .ToList();
 
         var forward = BuildCohorts(strategies, "live", quarantined: false);

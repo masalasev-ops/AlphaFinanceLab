@@ -41,11 +41,12 @@ public sealed class AllocationStep(AlphaLabDbContext db, GateOptions gate, Alloc
         // Only currently-allocable strategies receive weight. The gate wrote a power_reports row for every
         // candidate/live strategy, but the monitor may have RETIRED one in the same evaluation (S6
         // auto-retire) — a just-retired strategy must not still be allocated (it would escape the
-        // suspect_decay clamp and appear as an allocated, retired row in allocation_log).
-        var allocable = db.Strategies
-            .Where(s => s.Status == "candidate" || s.Status == "live")
-            .Select(s => s.StrategyId)
-            .ToHashSet();
+        // suspect_decay clamp and appear as an allocated, retired row in allocation_log). Status is
+        // run-kind-scoped (Phase 4/D37): a replay allocation honors replay retires, never forward state.
+        var allocable = EffectiveStatus.Resolve(db, runKind)
+            .Where(kv => kv.Value is "candidate" or "live")
+            .Select(kv => kv.Key)
+            .ToHashSet(StringComparer.Ordinal);
 
         var prior = PriorWeights(asOf, runKind);
         var zsum = MdeCalculator.ZSum(gate.Confidence, gate.Power);

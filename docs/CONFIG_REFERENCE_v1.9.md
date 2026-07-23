@@ -184,7 +184,7 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     "RunAfterCloseOffsetMinutes": 150              // trigger = session close (ET) + offset; used only in Scheduled mode
   },
 
-  "Monitor": "see OVERFITTING_MONITOR_v1.9 Appendix A (values land here after Phase-4 calibration; every change = versioned config row)",
+  "Monitor": "see OVERFITTING_MONITOR_v1.9 Appendix A. The Phase-4 calibration (D98, v1.9.39) freezes the calibrated values as VERSIONED CONFIG ROWS (never appsettings keys): Monitor.S3.PNoiseCurve.{family} + Monitor.S3.PEdgeCurve.{family} (piecewise-linear S3Curve JSON — knots on the eval-cadence grid, 25-75% band, sustain_evals, false-alarm rate, the C-2 sampling band, the D64 vintage), Monitor.S6.AutoRetireEvals (the finding-113 patience knob; recalibrate THIS on a survival-floor failure, never the plant), Calibration.DetectionPower (the C-1 curves - the FR-40 gate's empirical floor), and Calibration.ReportRef ({path, sha256} of the archived report). Read AS-OF the run watermark (D96); the flat Appendix-A anchors are the pre-calibration fallback; every change = a new version row",
 
   "Replay": {                                      // D37
     "ValidationYears": 15,
@@ -200,11 +200,12 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
       "AlphaAnnualPct": 2.0,                       // edge plant target (§1.1 realistic prize)
       "AntiAlphaAnnualPct": -2.0,                  // anti-predictive plant (the Suspect fixture)
       "ActiveDayFrac": 0.25,                       // lumpy delivery — edge arrives in streaks
-      "PersistencePhi": 0.9,                       // run persistence, scaled to family horizon
-      "RegimeMultipliers": { "bull": 1.25, "bear": 0.5 },  // renormalized to the target
+      "PersistencePhi": 0.9,                       // run persistence, scaled to family horizon (mean active run = max(1/(1−φ), horizon), v1.9.39)
+      "RegimeMultipliers": { "bull": 1.25, "bear": 0.5 },  // renormalized to the target (v1.9.39: by the RUNNING realized mix ≤ t — PIT-clean)
       "SeedsPerPlant": 50,                         // curves = multi-seed medians + 25–75% bands
       "SensitivityMaxGapPts": 10                   // naive-vs-realistic P_edge divergence trigger
-    }
+    },
+    "ReportDir": "docs/calibration"                // v1.9.39 (D98): `replay-calibrate` archives {Arena.Id}/{date}-calibration.md here; Calibration.ReportRef (a config ROW) cross-references it by path + sha256
   },
 
   "Verdicts": {                                    // D63 — separation state (read-models)
@@ -284,7 +285,8 @@ The backfill CLI is a **separate runnable** with its own `appsettings.json`; it 
     "ApiPlanLimit": 100000,                        // EODHD 100k/day cap; the headroom check (INTEGRATIONS §1, VERIFIED 2026-07-15)
     "RawCacheRoot": "tools/raw-cache",             // dated raw-payload archive root; 30-day retention (v1.9.10 finding 144)
     "WikipediaSp100Url": "https://en.wikipedia.org/wiki/S%26P_100",                                    // S&P 100 cross-check (INTEGRATIONS §7)
-    "HistoricalMembershipUrl": "tests/Fixtures/S_P_500_Historical_Components___Changes__Updated.csv"   // D49/D70 community CSV (a fixture path at launch)
+    "HistoricalMembershipUrl": "tests/Fixtures/S_P_500_Historical_Components___Changes__Updated.csv",  // D49/D70 community CSV (a fixture path at launch; the fja05680 URL or a downloaded copy for the live D70 run) — consumed by `--historical sp500` (v1.9.39); an explicit --csv overrides
+    "CoverageArtifactDir": "docs/calibration"      // v1.9.39 (D97): the historical backfill's durable coverage artifact lands at {dir}/{Arena.Id}/historical-coverage-{from}-{to}.json — deterministic content (a re-run is a clean git diff); committed with the calibration evidence
   }
 }
 ```

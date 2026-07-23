@@ -13,7 +13,9 @@ using Microsoft.Extensions.Configuration;
 // tests), and runs the backfill. All orchestration + write logic lives in AlphaLab.Data.BackfillRunner so
 // the Phase-2 Worker reuses it. The live sp100 run against EODHD/BlackRock is the operator's.
 
-const string Usage = "usage: Backfill --universe sp100 [--as-of yyyy-MM-dd] [--years N] [--dry-run] [--preflight]";
+const string Usage =
+    "usage: Backfill --universe sp100 [--as-of yyyy-MM-dd] [--years N] [--dry-run] [--preflight]\n" +
+    "       Backfill --historical sp500 --from yyyy-MM-dd --to yyyy-MM-dd [--csv path] [--dry-run]   (D70 replay prerequisite)";
 
 // D67: config is EXACTLY appsettings.json + appsettings.Secrets.json (optional) — no env vars, no User Secrets.
 var config = new ConfigurationBuilder()
@@ -22,12 +24,23 @@ var config = new ConfigurationBuilder()
     .AddJsonFile("appsettings.Secrets.json", optional: true, reloadOnChange: false)
     .Build();
 
+// ---- The D70 HISTORICAL mode (Phase 4, checkpoint 4.3): every historical S&P 500 member inside the
+// replay window gets bars + corporate actions, driven by the fja05680 as-of membership. Entirely
+// separate from the forward slice bootstrap below — it never touches the forward reconciler.
+if (args.Contains("--historical"))
+{
+    return await RunHistoricalAsync(args, config);
+}
+
 BackfillOptions options;
 try
 {
     // Config supplies the DEFAULT years; an explicit --years on the command line overrides it (CLI > config).
     var defaultYears = config.GetValue("Backfill:BackfillYears", 20);
-    options = BackfillArgs.Parse(args, DateTime.UtcNow.ToString("yyyy-MM-dd"), defaultYears)
+    // InvariantCulture: this default AsOf reaches persistence (observed_at, api_usage_log, the slice
+    // snapshot's changed_on) — same reasoning as the historical path below (Phase-4 review).
+    options = BackfillArgs.Parse(
+            args, DateTime.UtcNow.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), defaultYears)
         with { ApiPlanLimit = config.GetValue<int?>("Backfill:ApiPlanLimit") };
 }
 catch (ArgumentException ex)
@@ -199,4 +212,128 @@ catch (Exception ex)
     // Defensive: the HTTP layer already redacts query strings, but never surface a raw secret-bearing URL.
     Console.Error.WriteLine($"backfill failed: {ex.Message}");
     return 1;
+}
+
+// ---- the D70 historical mode (composition only; orchestration lives in HistoricalBackfillRunner) ----
+static async Task<int> RunHistoricalAsync(string[] args, IConfiguration config)
+{
+    HistoricalBackfillOptions options;
+    try
+    {
+        // InvariantCulture is load-bearing (Phase-4 review): on a non-Gregorian default calendar
+        // (ar-SA Umm al-Qura) the bare ToString renders a past-shaped year, MembersAsOf(sliceAsOf)
+        // matches nothing, and the slice snapshot is silently skipped — the forward universe would
+        // widen to ~500 names with no error anywhere.
+        options = HistoricalBackfillArgs.Parse(
+                args, DateTime.UtcNow.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture))
+            with { ApiPlanLimit = config.GetValue<int?>("Backfill:ApiPlanLimit") };
+    }
+    catch (ArgumentException ex)
+    {
+        Console.Error.WriteLine($"argument error: {ex.Message}");
+        Console.Error.WriteLine("usage: Backfill --historical sp500 --from yyyy-MM-dd --to yyyy-MM-dd [--csv path] [--dry-run]");
+        return 2;
+    }
+
+    // The as-of membership CSV: an explicit --csv path wins; else Backfill:HistoricalMembershipUrl
+    // (a local path or an http(s) URL — the fja05680 community CSV, INTEGRATIONS §4). Fail closed on
+    // neither: seeding replay membership from nothing is not a guessable default.
+    string csv;
+    var csvSource = options.CsvPath ?? config["Backfill:HistoricalMembershipUrl"];
+    if (string.IsNullOrWhiteSpace(csvSource))
+    {
+        Console.Error.WriteLine(
+            "historical membership source missing: pass --csv <path> or set Backfill:HistoricalMembershipUrl (the fja05680 CSV).");
+        return 2;
+    }
+    if (csvSource.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+    {
+        using var httpClient = new HttpClient();
+        csv = await httpClient.GetStringAsync(csvSource);
+    }
+    else
+    {
+        if (!File.Exists(csvSource))
+        {
+            Console.Error.WriteLine($"historical membership CSV not found: {csvSource}");
+            return 2;
+        }
+        csv = await File.ReadAllTextAsync(csvSource);
+    }
+
+    var arenaId = config["Arena:Id"] ?? "sp500";
+    var connectionString = config.GetConnectionString("AlphaLab")
+        ?? throw new InvalidOperationException("ConnectionStrings:AlphaLab is required in appsettings.json.");
+    var resolved = DbPathResolver.Resolve(connectionString, arenaId);
+    using var db = new AlphaLabDbContext(new DbContextOptionsBuilder<AlphaLabDbContext>().UseSqlite(resolved).Options);
+
+    // Same create-vs-migrate discipline as the forward mode (rule 14 / finding A).
+    var storeExists = File.Exists(new SqliteConnectionStringBuilder(resolved).DataSource);
+    if (storeExists)
+    {
+        var pending = db.Database.GetPendingMigrations().ToList();
+        if (pending.Count > 0)
+        {
+            Console.Error.WriteLine(
+                $"The store has {pending.Count} pending migration(s): {string.Join(", ", pending)}.\n" +
+                $"Run: pwsh tools/migrate.ps1 -Arena {arenaId}  (snapshot-first, rule 14), then re-run.");
+            return 1;
+        }
+    }
+    else
+    {
+        db.Database.Migrate();
+        Console.WriteLine($"[schema] created a new store for arena '{arenaId}'.");
+    }
+
+    var eodhdOptions = new EodhdOptions
+    {
+        BaseUrl = config["Eodhd:BaseUrl"] ?? "https://eodhd.com/api",
+        ExchangeSuffix = config["Eodhd:ExchangeSuffix"] ?? "US",
+        ApiToken = options.DryRun
+            ? string.Empty
+            : config["Secrets:EodhdApiToken"]
+              ?? throw new InvalidOperationException("Secrets:EodhdApiToken is required for a live historical backfill."),
+    };
+    var histHttp = new ResilientHttpClient(new HttpClient());
+    var histCache = new FileRawCache(config["Backfill:RawCacheRoot"] ?? "tools/raw-cache");
+
+    // The TRUE observation instant (D92): a historical backfill observes decades of data NOW.
+    options = options with { ObservedAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture) };
+
+    var runner = new HistoricalBackfillRunner(
+        db,
+        new EodhdMarketDataProvider(histHttp, eodhdOptions, histCache),
+        new DataQualityGate(config.GetSection(DataQualityOptions.SectionName).Get<DataQualityOptions>() ?? new DataQualityOptions()),
+        Console.WriteLine);
+
+    try
+    {
+        var report = await runner.RunAsync(options, csv);
+        if (options.DryRun) return 0;
+
+        // The durable coverage artifact (D97, user note): a committed file with deterministic content
+        // (a re-run over the same store/window/CSV is a clean git diff), at a stable path so reviews
+        // and the calibration report can reference it. Sits with the Phase-4 calibration evidence.
+        var artifactDir = Path.Combine(config["Backfill:CoverageArtifactDir"] ?? "docs/calibration", arenaId);
+        Directory.CreateDirectory(artifactDir);
+        var artifactPath = Path.Combine(artifactDir, $"historical-coverage-{options.From}-{options.To}.json");
+        await File.WriteAllTextAsync(artifactPath, report.ToCanonicalJson());
+        Console.WriteLine($"[artifact] coverage report written: {artifactPath} (sha256 {report.Sha256()[..12]}…).");
+
+        var suspects = report.TickerReuseSuspects.Count;
+        var excluded = report.GateExclusions.Count;
+        if (suspects + excluded + report.Unresolvable.Count > 0)
+        {
+            Console.WriteLine(
+                $"[review] {excluded} gate-excluded, {suspects} ticker-reuse suspect(s), {report.Unresolvable.Count} " +
+                "unresolvable — review the artifact before running replay (excluded names are OUT of the replay universe, fail closed).");
+        }
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"historical backfill failed: {ex.Message}");
+        return 1;
+    }
 }

@@ -33,6 +33,13 @@ public interface IBarReadService
     /// security_id (D78). Date-major, served by <c>ix_bars_date</c>; the Phase-2 funnel / Phase-4 replay
     /// read shape ("every name at date D at watermark W"). One row per security.</summary>
     IReadOnlyList<BarRow> GetCrossSection(string date, string watermark);
+
+    /// <summary>The latest stored bar date ≤ <paramref name="upTo"/> with any version visible at
+    /// <paramref name="watermark"/>, or null if none — the incremental-fetch cursor. A single MAX(date)
+    /// query served by the (security_id, date, version) PK, never a full-series materialization
+    /// (finding 193): the old GetSeries("0001-01-01", …) path loaded a security's entire history per
+    /// security per day, which the sp500 widen and multi-day catch-up cannot afford.</summary>
+    string? LastStoredDate(long securityId, string upTo, string watermark);
 }
 
 public sealed class BarIngestionService(AlphaLabDbContext db) : IBarIngestionService
@@ -40,25 +47,46 @@ public sealed class BarIngestionService(AlphaLabDbContext db) : IBarIngestionSer
     public int IngestEod(long securityId, IReadOnlyList<EodBar> bars, string observedAt, string source = "eodhd")
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(observedAt);
+        if (bars.Count == 0) return 0;
         var inserted = 0;
+
+        // ONE range query for the staged span instead of one probe per bar: the D70 historical
+        // backfill stages ~1.9M bars, and a per-bar existence query made ingestion O(bars) round-trips.
+        // All versions land in one dictionary; latest-per-date and max-observed resolve in memory.
+        var minDate = bars.Select(b => b.Date).OrderBy(d => d, StringComparer.Ordinal).First();
+        var maxDate = bars.Select(b => b.Date).OrderBy(d => d, StringComparer.Ordinal).Last();
+        var existingByDate = db.Bars
+            .Where(x => x.SecurityId == securityId
+                        && string.Compare(x.Date, minDate) >= 0
+                        && string.Compare(x.Date, maxDate) <= 0)
+            .AsEnumerable()
+            .GroupBy(x => x.Date, StringComparer.Ordinal)
+            .ToDictionary(
+                g => g.Key,
+                g => (Latest: g.OrderByDescending(x => x.Version).First(),
+                      MaxObservedAt: g.Select(x => x.ObservedAt).OrderBy(s => s, StringComparer.Ordinal).Last()),
+                StringComparer.Ordinal);
 
         foreach (var b in bars)
         {
-            // Latest existing version for this (security, date), if any.
-            var latest = db.Bars
-                .Where(x => x.SecurityId == securityId && x.Date == b.Date)
-                .OrderByDescending(x => x.Version)
-                .FirstOrDefault();
-
-            if (latest is null)
+            if (!existingByDate.TryGetValue(b.Date, out var existing))
             {
                 db.Bars.Add(ToRow(securityId, b, version: 1, observedAt, source));
                 inserted++;
             }
-            else if (Differs(latest, b))
+            else if (Differs(existing.Latest, b))
             {
+                // No-backdate guard: a differing observation whose observed_at is OLDER than what the
+                // store already knows must not append — the new top version would carry a backdated
+                // observed_at and silently shadow the newer knowledge for every read at a later
+                // watermark. The one writer that stages old-watermark values is a resumed replay
+                // re-ingesting its frozen vintage after a correction landed; its own reads resolve the
+                // old version by watermark anyway, so skipping is lossless there and fail-safe
+                // everywhere else.
+                if (string.CompareOrdinal(observedAt, existing.MaxObservedAt) < 0) continue;
+
                 // A correction — append the next version. Never mutate the prior one.
-                db.Bars.Add(ToRow(securityId, b, version: latest.Version + 1, observedAt, source));
+                db.Bars.Add(ToRow(securityId, b, version: existing.Latest.Version + 1, observedAt, source));
                 inserted++;
             }
             // else: identical re-fetch ⇒ idempotent no-op.
@@ -142,5 +170,21 @@ public sealed class BarReadService(AlphaLabDbContext db) : IBarReadService
             .Select(g => g.OrderByDescending(x => x.Version).First())
             .OrderBy(x => x.SecurityId)
             .ToList();
+    }
+
+    public string? LastStoredDate(long securityId, string upTo, string watermark)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(upTo);
+        ArgumentException.ThrowIfNullOrWhiteSpace(watermark);
+        // Everything stays in SQL — MAX(date) over the PK range, with both comparisons in EF's
+        // translatable string.Compare form (SQLite's BINARY collation is ordinal, so on ISO-8601
+        // strings lexical order == chronological; the GetSeries comment records the same reasoning).
+        // The date's mere existence at the watermark is the question, so no version resolution is
+        // needed: any visible version of a date proves the date is stored.
+        return db.Bars
+            .Where(x => x.SecurityId == securityId
+                        && string.Compare(x.Date, upTo) <= 0
+                        && string.Compare(x.ObservedAt, watermark) <= 0)
+            .Max(x => (string?)x.Date);
     }
 }

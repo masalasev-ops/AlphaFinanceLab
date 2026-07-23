@@ -68,19 +68,18 @@ CREATE TABLE corporate_actions (                   -- §13.6 semantics; versione
   counterparty_security_id INTEGER REFERENCES securities(security_id), -- acquirer / spun-off
   new_symbol   TEXT,                               -- ticker_change
   observed_at  TEXT NOT NULL,                      -- when WE first saw this version (the point-in-time key)
-  source       TEXT NOT NULL DEFAULT 'eodhd',
-  processed_on TEXT                                -- ALWAYS NULL, never written (see the note below)
+  source       TEXT NOT NULL DEFAULT 'eodhd'
 );
 CREATE INDEX ix_corporate_actions_observed ON corporate_actions(observed_at);
--- processed_on: ALWAYS NULL, NEVER WRITTEN. It was conceived as a per-action "applied" flag, but it is
--- a GLOBAL column on a PER-ACCOUNT operation (each arena account applies the same action independently),
--- and stamping it would make a Phase-4 replay skip an action a forward run had marked — breaking the
--- quarantine. D76 also forbids UPDATE on this table (versioned append-only). Ledger idempotency does NOT
--- come from this column: it comes from one-transaction-per-day + the ux_runs_ok_forward partial index
+-- processed_on: DROPPED by D94/M5 (Phase 4; proposal P5 resolved). It was conceived as a per-action
+-- "applied" flag, but it was a GLOBAL column on a PER-ACCOUNT operation (each arena account applies the
+-- same action independently), and stamping it would have made a Phase-4 replay skip an action a forward
+-- run had marked — breaking the quarantine. It was provably ALWAYS NULL (the M5 migration asserts that
+-- precondition and fails loudly otherwise) so the drop loses nothing. Ledger idempotency does NOT come
+-- from any per-action flag: it comes from one-transaction-per-day + the ux_runs_ok_forward partial index
 -- (a day's actions apply exactly once because the day commits atomically and at most one 'ok' forward run
--- exists per as_of). The column is retained only because dropping it is itself a migration + a D-number and
--- the live store already carries it; that removal is logged as a deferral in PROGRESS (proposal P5), not a
--- resolution. Do NOT wire anything to read or write it.
+-- exists per as_of); a non-session effective date applies on the NEXT session via the applier's
+-- (previousSession, asOf] window (finding 192, checkpoint 4.1).
 -- Identity = (security_id, type, effective_date); ex_date is EXCLUDED (splits carry NULL ex_date, which
 -- SQLite treats as distinct in a UNIQUE index; effective_date is NOT NULL and, for dividends, == ex_date).
 CREATE UNIQUE INDEX ux_corporate_actions_identity ON corporate_actions(security_id, type, effective_date, version);
@@ -114,21 +113,29 @@ CREATE TABLE features (
   PRIMARY KEY (security_id, as_of, name)
 );
 
-CREATE TABLE regime_labels (                        -- PIT labels (D34/D50)
-  as_of   TEXT PRIMARY KEY,
+CREATE TABLE regime_labels (                        -- PIT labels (D34/D50); run_kind since D93/M5
+  as_of   TEXT NOT NULL,
   trend   TEXT NOT NULL CHECK (trend IN ('bull','bear')),
   vol     TEXT NOT NULL CHECK (vol IN ('normal_vol','high_vol')),
   label   TEXT NOT NULL,                            -- denormalized cross product, e.g. 'bull/high_vol' (D50)
-  inputs_hash TEXT NOT NULL                         -- provenance of the PIT computation
+  inputs_hash TEXT NOT NULL,                        -- provenance of the PIT computation
+  run_kind TEXT NOT NULL DEFAULT 'live',            -- D93 (P6 resolved): 'live' | 'replay'
+  PRIMARY KEY (as_of, run_kind)
 );
 -- Episodes (D45) run on the trend component; regime-halt guardrails may key on either component (D50).
+-- D93 (M5, Phase 4; resolves proposal P6): run_kind is IN the PK (the equity_curve precedent) because a
+-- replay recomputes the label from a different watermark over its own window — with as_of alone, that
+-- recompute would OVERWRITE the forward label. Each run kind keeps its own rows and its own episode chain.
 
-CREATE TABLE regime_episodes (                      -- D45
+CREATE TABLE regime_episodes (                      -- D45; run_kind since D93/M5
   episode_id INTEGER PRIMARY KEY,
   label      TEXT NOT NULL,
   start_date TEXT NOT NULL,
-  end_date   TEXT                                   -- NULL = ongoing
+  end_date   TEXT,                                  -- NULL = ongoing
+  run_kind   TEXT NOT NULL DEFAULT 'live'           -- D93: each run kind maintains its own chain
 );
+CREATE INDEX ix_regime_episodes_kind_start ON regime_episodes(run_kind, start_date);
+-- The per-kind latest-episode read + FR-41's per-episode joins are served by the index.
 
 CREATE TABLE factor_returns (                       -- French library (D41)
   date TEXT NOT NULL, factor TEXT NOT NULL,         -- MKT_RF,SMB,HML,UMD,RMW,CMA,RF
@@ -290,7 +297,7 @@ CREATE TABLE go_live_log (
 -- decomposed by regime episode; keyed to regime_episodes(episode_id); run_kind='replay' by construction
 -- under the D37 quarantine (never a forward view); rows aggregate to the overall replay outcome.
 -- power_reports/go_live_log carry run_kind but do not decompose by regime, so they are not overloaded.
--- Recorded now; EF migration lands with the Phase-4 build.
+-- EF migration LANDED with the Phase-4 build (M5, checkpoint 4.2).
 CREATE TABLE replay_regime_outcomes (               -- D89 (v1.9.35), FR-41
   strategy_id TEXT NOT NULL,
   regime_episode_id INTEGER NOT NULL REFERENCES regime_episodes(episode_id),
@@ -447,7 +454,7 @@ CREATE TABLE journal_entries (                     -- D52
   evidence_window_days INTEGER,                    -- pre-declared window
   outcome     TEXT CHECK (outcome IN ('confirmed','refuted','inconclusive')),
   locked      INTEGER NOT NULL DEFAULT 0,          -- 1 once linked at candidate creation
-  expected_effect_ann REAL                         -- D89 (v1.9.35): pre-declared expected annualized effect; the FR-40 detectability-at-admission gate reads it; EF migration lands with the Phase-4 build
+  expected_effect_ann REAL                         -- D89 (v1.9.35): pre-declared expected annualized effect; the FR-40 detectability-at-admission gate reads it; EF migration LANDED with the Phase-4 build (M5, checkpoint 4.2)
 );
 -- RULE (D52): a locked hypothesis row is immutable except via the outcome-closure
 -- flow. CandidateFactory requires a linked hypothesis OR an 'unregistered' marker
