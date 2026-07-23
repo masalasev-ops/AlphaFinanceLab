@@ -76,6 +76,16 @@ run_kind='replay', quarantined).
    `tools/snapshot-db.ps1 -Arena sp500` then `pwsh tools/migrate.ps1 -Arena sp500`.
    (M5's D94 precondition fails loudly if any `corporate_actions.processed_on` was ever written —
    it never was; a failure there means the store is not what we think and needs investigation.)
+   **Expected warning, not an error:** M5 prints *"The migration operation 'PRAGMA foreign_keys = 0;'
+   … cannot be executed in a transaction"*. That is EF's standard SQLite TABLE-REBUILD pattern for
+   the D93 `regime_labels` PK change — a PRAGMA is a no-op inside a transaction, so EF must toggle
+   it outside one (and this arena runs with foreign keys OFF anyway, finding 145, so the toggle
+   guards nothing here). The rebuild's DROP+RENAME is still its own atomic transaction; the risk the
+   warning describes (a kill between the two transactions leaves `ef_temp_regime_labels` behind and
+   the re-run fails on it) is exactly what the snapshot taken in this same step is for — restore it
+   and re-run. The step succeeded iff the script ends with the green `Migration applied to arena …`
+   line; verify with `dotnet dotnet-ef migrations list --connection … --no-build` (no `(Pending)`
+   marks). Applied to the live arena 2026-07-23.
 2. **The D70 historical backfill** (hours; EODHD spend ~3 calls/name — check the headroom):
    `dotnet run --project tools/Backfill -- --historical sp500 --from <window-start> --to <window-end>`
    The window must cover >= Replay.ValidationYears (15y). The fja05680 CSV comes from
