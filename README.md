@@ -12,17 +12,24 @@ without the honesty that qualifies it.
 
 ## Status
 
-**Phase 2 complete — funnel + ledger merged.** (Phase and test count move fast; **`PROGRESS.md` is the source of truth** for both. This section describes the shape of the build, not the live count.) Phase 0 stood up the skeleton (solution, schema, process
-model, API boundary, empty UI); **Phase 1 adds the market-data layer** — the EODHD provider, the
-security master, versioned append-only bars + watermark reads, index-membership reconciliation (iShares
-OEF + Wikipedia cross-check), the trading calendar, the regime-proxy feed, and the data-quality gate,
-all driven by a bootstrap backfill CLI. That CLI has been run **live against the S&P 100** — 101
-members, ~488k versioned bars over 20 years, plus the GSPC regime proxy. Still ahead in Phases 3–8 (see
+**Phases 0–3.5 complete and merged; Phase 4 (Arena Replay) code-complete, awaiting the operator
+sign-off run.** (Phase and test count move fast; **`PROGRESS.md` is the source of truth** for both.
+This section describes the shape of the build, not the live count.) Phases 0–2 stood up the skeleton,
+the market-data layer (run **live against the S&P 100** — 101 members, ~488k versioned bars over 20
+years, plus the GSPC regime proxy), and the six-stage funnel + ledger + cost model + the staged daily
+pipeline hosted in `AlphaLab.Worker`. Phase 3 added the honest-arena evaluation — MDE, gate,
+overfitting monitor, allocator, random control populations — and Phase 3.5 the save/continue
+hardening (`reproduce-day` makes byte-identical reproducibility an executable proof). **Phase 4**
+builds the sealed room that proves the honesty engine works before forward judgment begins: the whole
+pipeline replayed over historical years under `run_kind='replay'` quarantine, validated against
+planted strategies with known truth, freezing the monitor's calibrated pass marks — the code is on
+`feat/phase4-arena-replay` (PR #16); what remains is the operator's sign-off run
+([`docs/RUNBOOK_v1.9.md`](docs/RUNBOOK_v1.9.md) §8). Still ahead in Phases 4.5–8 (see
 [`docs/BUILD_AND_PROMPTS_v1.9.md`](docs/BUILD_AND_PROMPTS_v1.9.md) §2 and [`PROGRESS.md`](PROGRESS.md)):
-the six-stage funnel, the ledger + cost model, the strategies, the honest-arena evaluation, and the
-daily pipeline hosted in `AlphaLab.Worker`. No forward pipeline run has been committed yet, so the
-strategy/evaluation screens still return empty, `no_run_yet`-stamped read-models. `tools/ci.ps1` is
-green (build + the full test suite + guard greps); see `PROGRESS.md` for the current test count.
+the signal library, the LLM layer, real strategies, risk/regimes/observability, and (contingent)
+fundamentals. No forward pipeline run has been committed yet, so the strategy/evaluation screens still
+return empty, `no_run_yet`-stamped read-models. `tools/ci.ps1` is green (build + the full test suite +
+guard greps); see `PROGRESS.md` for the current test count.
 
 **What "working" will look like — set expectations now.** By construction, the lab's *fast* outputs
 are the honest-but-unglamorous ones: **anti-predictive kills** (a strategy the monitor can show is
@@ -113,9 +120,10 @@ Blazor WebAssembly · xUnit. Package versions are pinned centrally in `Directory
 ```
 src/     AlphaLab.{Core, Data, Strategies, Evaluation, Llm, Worker, Api, Web}
 tests/   mirrored *.Tests (Core, Data, Strategies, Evaluation, Llm, Worker, Api)
-tools/   ci.ps1, migrate.ps1, snapshot-db.ps1  (+ shared resolver)
+tools/   Backfill/ (the bootstrap + D70 historical CLI) · ci.ps1, migrate.ps1, snapshot-db.ps1,
+         backup-offsite.ps1, register-nightly-backup.ps1, audit-dividend-unadjusted.ps1  (+ shared resolver)
 docs/    the full design package — decisions, schema, config, test plan, runbook
-CLAUDE.md, PROGRESS.md, START_HERE.md
+CLAUDE.md, ORIENTATION.md, PROGRESS.md, START_HERE.md
 ```
 
 ## Documentation
@@ -130,6 +138,7 @@ The `docs/` folder is the authoritative design package. Start with
 | [`docs/CONFIG_REFERENCE_v1.9.md`](docs/CONFIG_REFERENCE_v1.9.md) | Every config key, default, and owning decision |
 | [`docs/BUILD_AND_PROMPTS_v1.9.md`](docs/BUILD_AND_PROMPTS_v1.9.md) | Functional requirements + the gated phase plan (Phase 0 = checkpoints 0.1–0.6) |
 | [`docs/TEST_PLAN_v1.9.md`](docs/TEST_PLAN_v1.9.md) | The fixtures and tests each phase must pass (§8 = the Phase-0 inventory) |
-| [`docs/RUNBOOK_v1.9.md`](docs/RUNBOOK_v1.9.md) | Operations: daily cycle, catch-up, backups |
+| [`docs/RUNBOOK_v1.9.md`](docs/RUNBOOK_v1.9.md) | Operations: daily cycle, catch-up, backups, the Phase-4 sign-off (§8) |
+| [`ORIENTATION.md`](ORIENTATION.md) | The plain-language tour — what the lab is and how the whole system runs |
 | [`CLAUDE.md`](CLAUDE.md) | The standing hard rules the build obeys |
 | [`PROGRESS.md`](PROGRESS.md) | The honest ledger — what shipped, what's red, what was deferred |
