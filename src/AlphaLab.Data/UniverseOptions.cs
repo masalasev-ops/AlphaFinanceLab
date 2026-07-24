@@ -23,6 +23,14 @@ public sealed class UniverseOptions
     public string SectorSource { get; set; } = "ivv_csv";
     public string HistoricalMembershipSource { get; set; } = "community_csv";
 
+    /// <summary>Symbols permanently excluded from the universe (finding 266). Two consumers read this one
+    /// list: the historical backfill SKIPS them on ingest (skip-and-record, like a ticker-reuse suspect),
+    /// and the replay composition excludes them from the roster (<see cref="ExclusionScopedMembershipRead"/>).
+    /// This is the escape hatch for single-spell symbol reuse the &gt;2y disjoint-spell heuristic cannot see —
+    /// e.g. SUN (old Sunoco's ticker reused by Sunoco LP, whose in-window bars are the wrong company).
+    /// Matched case-insensitively against the canonical symbol.</summary>
+    public string[] Exclusions { get; set; } = [];
+
     public UniverseBootstrapOptions Bootstrap { get; set; } = new();
 }
 

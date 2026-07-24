@@ -54,7 +54,7 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `docs/alphalab_ux_mockups.html` (the single consolidated UX mockup — every screen; supersedes the earlier per-topic mockup files)
 
 **Revision history**
-- `docs/CHANGELOG_v1.9.md` — every consistency finding and decision, v1.9.1 through v1.9.40.
+- `docs/CHANGELOG_v1.9.md` — every consistency finding and decision, v1.9.1 through v1.9.43.
 
 ## Revision state
 - v1.9.1 errata (findings 59–75; D68–D69) — merged.
@@ -210,6 +210,17 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   findings 240–247; migration **M5**; 754 → 819 tests) + the doc sweep and the ORIENTATION three-pictures
   section. v1.9.40 the Phase-4 adversarial-review fix pass (findings **248–262**, all fixed pre-merge with
   regression tests; 819 → 839 tests) — the review register lives in CHANGELOG v1.9.40.
+- **v1.9.41–43 the pre-4.11 fix pass** (branch `chore/pre-4.11-dataquality-sun-bsc`; **findings 263–274**;
+  no migration; → **862 tests**). v1.9.41: the D70 historical backfill's data-quality tail — SUN excluded as
+  wrong-company + BSC cleared (finding 266), the ops EF log filter (267), and physically-impossible vendor
+  PRICE bars guarded at read time + rejected at ingestion (268/269, proposal P17). **v1.9.42 the two-pass
+  calibration machinery fix (B2+B3, decisions D100–D101, findings 270–273):** a first full-scale run proved
+  the machinery froze nothing (it retired the D64 plants on uncalibrated flat-anchor verdicts, truncating the
+  curves it builds); the fix stops *acting* on those verdicts while recording the would-be retires, brings the
+  flat-anchor fallback into D63 conformance, ADDS out-of-sample curve-based metrics with their own keys, and
+  rule-selects a per-cadence plant strength ladder. v1.9.43 the proxy-only backfill mode (finding 274) — the
+  regime warm-up + benchmark depth without the membership-reconcile mass-eviction hazard. The full `--reset`
+  calibration is the operator's de-risk-then-sign-off sequence (RUNBOOK §8).
 - The mockups were consolidated into the single `alphalab_ux_mockups.html` in the v1.9.21/v1.9.22 passes
   (the earlier per-topic and v2 files are gone; the consolidated file gained the UX-14 paired-comparison block
   and the slate-grey replay tokens in v1.9.22). SCHEMA received its first post-v1.9.1 edit in v1.9.7

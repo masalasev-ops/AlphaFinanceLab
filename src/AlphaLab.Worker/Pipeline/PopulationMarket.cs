@@ -17,7 +17,8 @@ public sealed class PopulationMarket(
     IIndexMembershipRead membership,
     ICalendarService calendar,
     CostModel costModel,
-    int advWindowSessions) : IPopulationMarket
+    int advWindowSessions,
+    double maxSingleDayPriceFactor) : IPopulationMarket
 {
     // A fixed epoch well before any seeded arena calendar. The absolute ordinal is irrelevant — only that it
     // is monotone per session and stable across runs (the calendar is fixed), which keeps the population's
@@ -56,8 +57,36 @@ public sealed class PopulationMarket(
         var today = features.AdjClose(id, d);
         var yesterday = features.AdjClose(id, prev.Value);
         if (today is not { } t || yesterday is not { } y || y <= 0.0) return 0.0;   // no bar ⇒ no return (frozen/halted)
-        return t / y - 1.0;
+
+        // Read-side fail-closed guard (rule 10; D21/D40). A stored bar can never be deleted, so a
+        // physically-impossible single-session move — a vendor bad print that R2 now rejects at ingestion
+        // but that PRE-DATES that gate — is neutralized HERE so it never inflates a plant's realized
+        // dispersion (and through it the calibration's MDE floor) or explodes its equity.
+        var factor = t / y;
+        if (IsPlausibleMove(factor)) return factor - 1.0;
+
+        // The move is impossible. Resolve WHICH bar is the bad print with a one-step look-back rather than
+        // zeroing both sides of the V (which would discard the real move the print straddles):
+        //   • if YESTERDAY is itself an impossible jump from the session before it, YESTERDAY is the bad
+        //     print (CFC's $0.028 on 2007-11-29) — span today's return OVER it to the last good price, so
+        //     the genuine move survives (11-28 $124.67 → 11-30 $119.68 = −4%, not zeroed);
+        //   • otherwise TODAY is the bad print — skip it (no return), exactly like a halted day.
+        // A still-impossible span (consecutive bad bars, the MEL class) freezes too — those are left to
+        // whole-security exclusion (R2 / the P-next bar-granularity proposal).
+        var prev2 = calendar.PreviousSession(prev.Value);
+        if (prev2 is not null && features.AdjClose(id, prev2.Value) is { } y2 && y2 > 0.0 && !IsPlausibleMove(y / y2))
+        {
+            var spanned = t / y2;
+            return IsPlausibleMove(spanned) ? spanned - 1.0 : 0.0;
+        }
+        return 0.0;
     }
+
+    /// <summary>A single-session adjusted-price ratio strictly inside (1/factor, factor) — i.e. NOT a
+    /// physically-impossible move. The bound is the shared <c>Data.MaxSingleDayPriceFactor</c> the
+    /// ingestion gate (R2) also keys on, so "impossible" means the same thing on both sides of the write.</summary>
+    private bool IsPlausibleMove(double factor) =>
+        factor > 1.0 / maxSingleDayPriceFactor && factor < maxSingleDayPriceFactor;
 
     public double OneWayCostFraction(long securityId, string date, decimal perNameNotional)
     {

@@ -142,8 +142,8 @@ public class PlantOverlayTests
         var families = PopulationFamilies.ForPhase3(new PopulationsOptions { Size = 6, CostFreeSize = 3 });
         var specs = PlantCohorts.Build(plant, families);
 
-        // 7 cohorts × 3 seeds: edge/noedge/anti/naive on daily + edge on monthly + the 4%/8% C-1 sweep.
-        Assert.Equal(21, specs.Count);
+        // 8 cohorts × 3 seeds (Change 4): edge/noedge/anti/naive on daily + the 4-rung monthly ladder (2/4/8/16).
+        Assert.Equal(24, specs.Count);
         Assert.Equal(specs.Count, specs.Select(s => s.StrategyId).Distinct().Count());
         Assert.Equal(specs.Count, specs.Select(s => s.MemberIndex).Distinct().Count());
         Assert.All(specs, s => Assert.True(s.MemberIndex >= PlantCohorts.MemberIndexBase)); // never a real member's index

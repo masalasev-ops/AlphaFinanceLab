@@ -161,6 +161,51 @@ public class BackfillRunnerTests
         finally { TestDb.Delete(path); }
     }
 
+    // Finding 274: the proxy-only backfill ingests the regime proxy (GSPC) + the cap-weight benchmark (OEF)
+    // and NEVER reconciles membership — the P1 mass-eviction hazard is not even reachable on this path.
+    [Fact]
+    public async Task BackfillProxiesOnlyAsync_IngestsGspcAndCapWeight_LeavesMembershipUntouched()
+    {
+        var path = TestDb.CreateMigrated();
+        try
+        {
+            using var db = TestDb.Open(path);
+            var runner = Runner(db, CwClient());
+            var o = new BackfillOptions { AsOf = AsOf, CalendarYearsEitherSide = 2, CapWeightProxy = CwTarget() };
+
+            await runner.BackfillProxiesOnlyAsync(o);
+
+            // GSPC regime proxy ingested (security + bars + the proxy config row)…
+            var gspc = db.Securities.Single(s => s.CurrentSymbol == "GSPC.INDX");
+            Assert.True(db.Bars.Any(b => b.SecurityId == gspc.SecurityId));
+            Assert.Single(db.Config.Where(c => c.Key == RegimeProxyIngestion.ProxyConfigKey).ToList());
+            // …and the cap-weight benchmark (its config row + bars)…
+            Assert.Single(db.Config.Where(c => c.Key == CwConfigKey).ToList());
+            var oef = db.Securities.Single(s => s.CurrentSymbol == "OEF");
+            Assert.True(db.Bars.Any(b => b.SecurityId == oef.SecurityId));
+            // …but membership was NEVER reconciled — no roster rows, no mass eviction.
+            Assert.Empty(db.IndexMembership.ToList());
+            // The run flushed its usage (the finally block): the GSPC fetch is recorded in api_usage_log.
+            Assert.Contains(db.ApiUsageLog.ToList(), u => u.Source == "eodhd_gspc");
+        }
+        finally { TestDb.Delete(path); }
+    }
+
+    [Fact]
+    public async Task BackfillProxiesOnlyAsync_DryRun_MakesNoCallAndNoWrite()
+    {
+        var path = TestDb.CreateMigrated();
+        try
+        {
+            using var db = TestDb.Open(path);
+            var http = CwClient();
+            await Runner(db, http).BackfillProxiesOnlyAsync(new BackfillOptions { AsOf = AsOf, CapWeightProxy = CwTarget(), DryRun = true });
+            Assert.Equal(0, http.Calls);
+            Assert.Empty(db.Securities.ToList());
+        }
+        finally { TestDb.Delete(path); }
+    }
+
     [Fact]
     public async Task RefreshMembershipStep_RealOefVsWikipedia_ReconcilesAndLogs()
     {

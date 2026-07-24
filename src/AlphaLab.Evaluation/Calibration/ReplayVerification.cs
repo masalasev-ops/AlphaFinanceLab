@@ -2,6 +2,7 @@ using System.Globalization;
 using AlphaLab.Core.Config;
 using AlphaLab.Data;
 using AlphaLab.Evaluation.Metrics;
+using AlphaLab.Evaluation.Monitor;
 using AlphaLab.Evaluation.Power;
 using static System.FormattableString;
 
@@ -25,15 +26,20 @@ public sealed record AllocatorValueAdd(
     double GapAnn, double MdeAnn, int TDays, string Verdict,
     double MeanEdgeWeightPct, double MeanAntiWeightPct);
 
-/// <summary>The recorded D63/finding-113/114 KPI numbers (null = not computable at this scale).</summary>
+/// <summary>The recorded D63/finding-113/114 KPI numbers (null = not computable at this scale). The
+/// <c>WouldBeEdgeSurvival</c> pair is the retained finding-113 metric read from the would-be-retire log
+/// (Change 1/2); <c>NoEdgeCurveBreachValidate</c> / <c>CurveBasedEdgeSurvival</c> are the Change-2
+/// out-of-sample curve-based analogues with their own threshold keys.</summary>
 public sealed record ReplayKpis(
     double? AntiDetectionSpeedMedianSessions,
     double? DaysToIndistinguishabilityMedian,
-    double? EdgeSurvival5y,
-    double? EdgeSurvival10y,
+    double? WouldBeEdgeSurvival5y,
+    double? WouldBeEdgeSurvival10y,
     double? JointFalseAlarmFrac,
     IReadOnlyDictionary<string, int> FalseAlarmPerSignal,
     double? NoEdgeBreachRateValidate,
+    double? NoEdgeCurveBreachValidate,
+    double? CurveBasedEdgeSurvival,
     AllocatorValueAdd? ValueAdd);
 
 public sealed record ReplayVerificationReport(IReadOnlyList<VerificationCheck> Checks, ReplayKpis Kpis)
@@ -54,18 +60,19 @@ public sealed class ReplayVerification(
     AlphaLabDbContext db,
     GateOptions gate,
     VerdictsOptions verdicts,
-    ReplayOptions replay)
+    ReplayOptions replay,
+    PlantOptions plant)
 {
     private const string Replay = "replay";
     private const int SessionsPerYear = 252;
 
     public ReplayVerificationReport Run(
-        IReadOnlyList<PlantSpec> specs, string? learnThrough, S3Curve? builtPNoise)
+        IReadOnlyList<PlantSpec> specs, string? learnThrough, S3Curve? builtPNoise, S3Curve? builtPEdge = null)
     {
         var checks = new List<VerificationCheck>();
 
         var ids = (
-            edge: PrimaryEdgeIds(specs), floorEdge: FloorEdgeIds(specs),
+            edge: PrimaryEdgeIds(specs, plant), floorEdge: FloorEdgeIds(specs),
             noEdge: Ids(specs, PlantKind.NoEdge), anti: Ids(specs, PlantKind.Anti));
 
         var windowSessions = db.Runs.Count(r => r.RunKind == Replay && r.Status == "ok");
@@ -92,10 +99,19 @@ public sealed class ReplayVerification(
                 promotedNoEdge <= bound ? CheckOutcome.Pass : CheckOutcome.Fail,
                 Invariant($"{promotedNoEdge}/{n} no-edge plants promoted; chance bound {bound} at p={p:F4}"), promotedNoEdge));
 
+            // The RULE-SELECTED primary (Change 4) is the detection gate; the per-RUNG promotion is the C-1
+            // detection-power curve — the checkpoint's primary finding, carried in the Detail (read this, not
+            // the gate colour). Every edge cohort's promotion count, so the reader sees the whole ladder.
             var detectedEdge = PromotedAmong(ids.edge);
+            var perRung = specs.Where(s => s.Kind == PlantKind.Edge)
+                .GroupBy(s => (s.Family, s.AlphaAnnPct))
+                .OrderBy(g => g.Key.Family, StringComparer.Ordinal).ThenBy(g => g.Key.AlphaAnnPct)
+                .Select(g => Invariant($"{g.Key.Family}@{g.Key.AlphaAnnPct:0.##}%:{PromotedAmong(g.Select(s => s.StrategyId).ToList())}/{g.Count()}"))
+                .ToList();
             checks.Add(new VerificationCheck("edge_plant_detected",
                 detectedEdge > 0 ? CheckOutcome.Pass : windowSessions < gate.MinTrackDays ? CheckOutcome.Insufficient : CheckOutcome.Fail,
-                $"{detectedEdge}/{ids.edge.Count} primary edge plants promoted (window {windowSessions} sessions)", detectedEdge));
+                Invariant($"{detectedEdge}/{ids.edge.Count} PRIMARY edge plants promoted (window {windowSessions} sessions); ") +
+                Invariant($"detection-power by rung — {string.Join(", ", perRung)}"), detectedEdge));
 
             // ---- joint any-signal false alarm (finding 114): no-edge plants EVER Suspect/Retired ----
             var alarmed = SuspectEver(ids.noEdge);
@@ -161,26 +177,86 @@ public sealed class ReplayVerification(
             }
         }
 
+        // ---- Change 2 (Pass 2): the curve-based OUT-OF-SAMPLE metrics — per-PLANT SUSTAINED breaches of the
+        // built P_noise on the held-out validate segment (the S3Trajectory sustain logic, not a single-point
+        // breach). These are the INDEPENDENT validation of the curves (amendment C1): they validate the
+        // CURVES, not the monitor's flat-anchor flagging (which Change 3 altered), so unlike the retained
+        // joint_false_alarm they carry their OWN threshold keys and do not move when the monitor is tuned.
+        double? noEdgeCurveBreach = null, curveEdgeSurvival = null;
+        if (builtPNoise is null || learnThrough is null)
+        {
+            var why = builtPNoise is null ? "no built P_noise curve supplied" : "no learn/validate partition set";
+            checks.Add(new VerificationCheck("noedge_curve_breach_validate", CheckOutcome.Insufficient, why));
+            checks.Add(new VerificationCheck("curve_based_edge_survival", CheckOutcome.Insufficient, why));
+        }
+        else
+        {
+            // no-edge: fraction of plants that SUSTAIN-breach P_noise on validate (a mid-band no-edge plant
+            // should not — it hovers at its median, breaching only at the false-alarm rate, D63).
+            var breaching = ids.noEdge.Count(id => SustainsAcross(id, learnThrough, builtPNoise, belowCurve: true));
+            noEdgeCurveBreach = ids.noEdge.Count == 0 ? 0.0 : breaching / (double)ids.noEdge.Count;
+            checks.Add(new VerificationCheck("noedge_curve_breach_validate",
+                noEdgeCurveBreach <= replay.NoEdgeCurveBreachMaxFrac ? CheckOutcome.Pass : CheckOutcome.Fail,
+                Invariant($"{breaching}/{ids.noEdge.Count} no-edge plants sustain-breach P_noise on validate (bound {replay.NoEdgeCurveBreachMaxFrac:P0})"),
+                noEdgeCurveBreach));
+
+            // floor-edge: fraction that do NOT sustain-breach P_noise on validate (a real edge stays above it).
+            // When P_edge is supplied, ALSO report how many sustain-CLEAR P_edge (the distinguishable count) —
+            // informational context on the same paths, so the report shows survival and separation together.
+            if (ids.floorEdge.Count == 0)
+            {
+                checks.Add(new VerificationCheck("curve_based_edge_survival", CheckOutcome.Insufficient, "no floor-edge plants"));
+            }
+            else
+            {
+                var surviving = ids.floorEdge.Count(id => !SustainsAcross(id, learnThrough, builtPNoise, belowCurve: true));
+                curveEdgeSurvival = surviving / (double)ids.floorEdge.Count;
+                var distinguishable = builtPEdge is null
+                    ? (int?)null
+                    : ids.floorEdge.Count(id => SustainsAcross(id, learnThrough, builtPEdge, belowCurve: false));
+                checks.Add(new VerificationCheck("curve_based_edge_survival",
+                    curveEdgeSurvival >= replay.CurveBasedEdgeSurvivalFloor ? CheckOutcome.Pass : CheckOutcome.Fail,
+                    Invariant($"{surviving}/{ids.floorEdge.Count} floor-edge plants do not sustain-breach P_noise on validate (floor {replay.CurveBasedEdgeSurvivalFloor:P0})") +
+                    (distinguishable is { } d ? Invariant($"; {d}/{ids.floorEdge.Count} sustain-clear P_edge (distinguishable)") : ""),
+                    curveEdgeSurvival));
+            }
+        }
+
         // ---- edge-plant survival at 5y/10y (finding 113) + every retire logged with its trigger ----
-        // The floor cohort is the D64 calibration plants ONLY — the primary-alpha daily cohort plus the
-        // finding-199 monthly cohort — never the 2x/4x C-1 sweep levels (Phase-4 review): pooling the
-        // easy-to-survive sweep plants (half the denominator) can hold the fraction above the floor
-        // while the primary cohort fails it, suppressing exactly the S6-patience recalibration the
-        // floor exists to trigger.
-        var (survival5, survival10) = EdgeSurvival(ids.floorEdge, windowSessions);
+        // The floor cohort is the MIN-ALPHA D64 edge plants — the daily SURVIVAL plant plus the monthly base
+        // rung (Change 4) — never the higher monthly ladder rungs (the C-1 detection-power sweep, easy to
+        // survive): pooling the strong-edge sweep plants would hold the fraction above the floor while the
+        // small-edge cohort fails it, suppressing exactly the S6-patience recalibration the floor exists to
+        // trigger. Daily is deliberately IN here (survival) and OUT of PrimaryEdgeIds (promotion) — the
+        // monitor track cancels its cost drag (same-cadence population ⇒ same turnover/cost), unlike the
+        // absolute benchmark hurdle on the promotion track.
+        // Change 1/2 (amendment A2): edge plants are EXEMPT from actually retiring under a calibration
+        // replay, so survival is read from the WOULD-BE retire log (go_live_log 'WouldRevert'), not the
+        // 'retired' status — otherwise the exemption would make this trivially 1.00 (the vacuous trap). This
+        // retained finding-113 metric keeps its own EdgePlantSurvivalFloor5y key; the curve-based analogue
+        // (curve_based_edge_survival, below) is the independent out-of-sample check with its own key.
+        var (survival5, survival10) = WouldBeEdgeSurvival(ids.floorEdge, windowSessions);
         checks.Add(survival5 is { } s5
-            ? new VerificationCheck("edge_survival_5y",
+            ? new VerificationCheck("would_be_edge_survival_5y",
                 s5 >= replay.EdgePlantSurvivalFloor5y ? CheckOutcome.Pass : CheckOutcome.Fail,
-                Invariant($"{s5:P0} of D64 edge plants (primary + monthly cohorts; sweep excluded) survive 5y ") +
-                Invariant($"(floor {replay.EdgePlantSurvivalFloor5y:P0}; a floor failure recalibrates S6's patience, never the plant)"), s5)
-            : new VerificationCheck("edge_survival_5y", CheckOutcome.Insufficient, Invariant($"window {windowSessions} < 5y")));
-        var retiredEdges = RetiredAmong(ids.floorEdge);
-        var unloggedRetires = retiredEdges.Where(id => !db.GoLiveLog.Any(g => g.RunKind == Replay && g.Demoted == id)).ToList();
+                Invariant($"{s5:P0} of {ids.floorEdge.Count} min-alpha D64 edge plants (daily survival + monthly base; sweep excluded) would-survive 5y ") +
+                Invariant($"(floor {replay.EdgePlantSurvivalFloor5y:P0} over n={ids.floorEdge.Count} — read the denominator, 0.90 over a small cohort is noisy; a floor failure recalibrates S6's patience, never the plant)"), s5)
+            : new VerificationCheck("would_be_edge_survival_5y", CheckOutcome.Insufficient, Invariant($"window {windowSessions} < 5y")));
+        // finding 113 audit: every WOULD-BE edge retire is logged WITH its triggering signal (Change 1
+        // writes the 'WouldRevert' row and the s2/s3/s6 contributions atomically). Guards against a
+        // regression that records the would-be retire but drops the signal that caused it.
+        var wouldRetiredEdges = WouldBeRetiredAmong(ids.floorEdge);
+        var unsignedRetires = db.GoLiveLog
+            .Where(g => g.RunKind == Replay && g.Verdict == OverfittingMonitor.WouldRevertVerdict
+                        && g.Demoted != null && ids.floorEdge.Contains(g.Demoted!))
+            .AsEnumerable()
+            .Where(g => !g.EvidenceJson.Contains("consecutive_suspect", StringComparison.Ordinal))
+            .Select(g => g.Demoted!).Distinct().ToList();
         checks.Add(new VerificationCheck("edge_retires_logged",
-            unloggedRetires.Count == 0 ? CheckOutcome.Pass : CheckOutcome.Fail,
-            retiredEdges.Count == 0
-                ? "no edge plant auto-retired"
-                : $"{retiredEdges.Count} edge retire(s); {unloggedRetires.Count} missing a go_live_log demotion row"));
+            unsignedRetires.Count == 0 ? CheckOutcome.Pass : CheckOutcome.Fail,
+            wouldRetiredEdges.Count == 0
+                ? "no edge plant would auto-retire (nothing to log)"
+                : $"{wouldRetiredEdges.Count} would-be edge retire(s) logged; {unsignedRetires.Count} missing a triggering signal"));
 
         // ---- the §1.2 allocator value-add KPI (its live read-model belongs to the D58 set) ----
         // Behavioral judgment (overweight edge / shed anti) only once the paired track clears the
@@ -204,7 +280,8 @@ public sealed class ReplayVerification(
             : new VerificationCheck("cohort_s3_paths_present", CheckOutcome.Insufficient, "no replay evaluations ran"));
 
         return new ReplayVerificationReport(checks, new ReplayKpis(
-            antiSpeed, daysToChip, survival5, survival10, jointFalseAlarm, perSignal, breachRate, valueAdd));
+            antiSpeed, daysToChip, survival5, survival10, jointFalseAlarm, perSignal,
+            breachRate, noEdgeCurveBreach, curveEdgeSurvival, valueAdd));
     }
 
     // ---- helpers over the quarantined generation ----
@@ -212,19 +289,34 @@ public sealed class ReplayVerification(
     private static List<string> Ids(IEnumerable<PlantSpec> specs, PlantKind kind) =>
         specs.Where(s => s.Kind == kind).Select(s => s.StrategyId).ToList();
 
-    private static List<string> PrimaryEdgeIds(IReadOnlyList<PlantSpec> specs)
+    /// <summary>Change 4 (B3) — the RULE-SELECTED primary edge cohort: per cadence, the smallest ladder rung
+    /// that CLEARS that cadence's pre-registered offline cost_drag+MDE floor; the primary cadence is the one
+    /// whose clearing rung is smallest (the most efficient detectable edge). A stated rule, not a hand-picked
+    /// plant — that is what keeps this from being tuning-by-another-name. Daily's floor is unreachable by any
+    /// plausible overlay, so the primary is the smallest MONTHLY rung clearing the monthly floor (the 16%
+    /// detection-sanity rung at the defaults). Empty when NO cadence clears its floor at any rung — itself a
+    /// recorded finding (the machinery cannot demonstrate an edge at the pre-registered strengths).</summary>
+    public static List<string> PrimaryEdgeIds(IReadOnlyList<PlantSpec> specs, PlantOptions plant)
     {
         var edges = specs.Where(s => s.Kind == PlantKind.Edge).ToList();
         if (edges.Count == 0) return [];
-        var primaryAlpha = edges.Min(s => s.AlphaAnnPct);   // the sweep levels are multiples of the primary
-        return edges.Where(s => s is { Family: "daily" } && s.AlphaAnnPct == primaryAlpha).Select(s => s.StrategyId).ToList();
+        var clearing = edges
+            .GroupBy(s => s.Family)
+            .Select(g => (Family: g.Key, Rung: g.Select(s => s.AlphaAnnPct)
+                .Where(a => a >= plant.MdeFloorFor(g.Key)).DefaultIfEmpty(double.PositiveInfinity).Min()))
+            .Where(x => double.IsFinite(x.Rung))
+            .OrderBy(x => x.Rung)
+            .ToList();
+        if (clearing.Count == 0) return [];
+        var (family, rung) = clearing[0];
+        return edges.Where(s => s.Family == family && s.AlphaAnnPct == rung).Select(s => s.StrategyId).ToList();
     }
 
     /// <summary>The finding-113 survival-floor cohort: every EDGE plant at the PRIMARY alpha — the
     /// daily cohort plus the finding-199 monthly (low-turnover) cohort — and never the 2x/4x C-1
     /// sweep levels, which exist only as detection-power inputs (D89) and would dilute the floor in
     /// the easy direction.</summary>
-    private static List<string> FloorEdgeIds(IReadOnlyList<PlantSpec> specs)
+    public static List<string> FloorEdgeIds(IReadOnlyList<PlantSpec> specs)
     {
         var edges = specs.Where(s => s.Kind == PlantKind.Edge).ToList();
         if (edges.Count == 0) return [];
@@ -241,10 +333,14 @@ public sealed class ReplayVerification(
             .Where(o => o.RunKind == Replay && (o.Status == "suspect" || o.Status == "retired") && ids.Contains(o.StrategyId))
             .Select(o => o.StrategyId).Distinct().ToList();
 
-    private List<string> RetiredAmong(IReadOnlyCollection<string> ids) =>
-        db.OverfittingStatus
-            .Where(o => o.RunKind == Replay && o.Status == "retired" && ids.Contains(o.StrategyId))
-            .Select(o => o.StrategyId).Distinct().ToList();
+    /// <summary>The floor-edge plants that WOULD have auto-retired under the calibration replay — read from
+    /// the go_live_log 'WouldRevert' rows Change 1 records in lieu of an actual retire (never the 'retired'
+    /// status, which the exemption suppresses).</summary>
+    private List<string> WouldBeRetiredAmong(IReadOnlyCollection<string> ids) =>
+        db.GoLiveLog
+            .Where(g => g.RunKind == Replay && g.Verdict == OverfittingMonitor.WouldRevertVerdict
+                        && g.Demoted != null && ids.Contains(g.Demoted!))
+            .Select(g => g.Demoted!).Distinct().ToList();
 
     private double? MedianSessionsToFirstSuspect(IReadOnlyCollection<string> ids)
     {
@@ -264,18 +360,19 @@ public sealed class ReplayVerification(
         return firsts[firsts.Count / 2];
     }
 
-    private (double? At5y, double? At10y) EdgeSurvival(IReadOnlyCollection<string> edgeIds, int windowSessions)
+    private (double? At5y, double? At10y) WouldBeEdgeSurvival(IReadOnlyCollection<string> edgeIds, int windowSessions)
     {
         double? At(int years)
         {
             if (windowSessions < years * SessionsPerYear || edgeIds.Count == 0) return null;
             var horizon = SessionAsOf(years * SessionsPerYear);
             if (horizon is null) return null;
-            var retiredBy = db.OverfittingStatus
-                .Where(o => o.RunKind == Replay && o.Status == "retired" && edgeIds.Contains(o.StrategyId)
-                            && string.Compare(o.AsOf, horizon) <= 0)
-                .Select(o => o.StrategyId).Distinct().Count();
-            return (edgeIds.Count - retiredBy) / (double)edgeIds.Count;
+            var wouldRetiredBy = db.GoLiveLog
+                .Where(g => g.RunKind == Replay && g.Verdict == OverfittingMonitor.WouldRevertVerdict
+                            && g.Demoted != null && edgeIds.Contains(g.Demoted!)
+                            && string.Compare(g.AsOf, horizon) <= 0)
+                .Select(g => g.Demoted!).Distinct().Count();
+            return (edgeIds.Count - wouldRetiredBy) / (double)edgeIds.Count;
         }
         return (At(5), At(10));
     }
@@ -306,6 +403,36 @@ public sealed class ReplayVerification(
             }
         }
         return contributions;
+    }
+
+    /// <summary>True when the plant's HELD-OUT (validate-segment) S3 percentile path stays on the far side of
+    /// <paramref name="curve"/> for <c>curve.SustainEvals</c> CONSECUTIVE evals — below it when
+    /// <paramref name="belowCurve"/> (the P_noise-breach / suspect signature), else above it (the P_edge-clear
+    /// / distinguishable signature). Mirrors <see cref="MonitorSignals.S3Trajectory"/>'s sustain logic, applied
+    /// OUT OF SAMPLE — the streak counts within validate only; track-days are the point's age since inception.</summary>
+    private bool SustainsAcross(string id, string learnThrough, S3Curve curve, bool belowCurve)
+    {
+        var path = db.OverfittingChecks
+            .Where(c => c.RunKind == Replay && c.Signal == "S3" && c.StrategyId == id && c.Value != null)
+            .OrderBy(c => c.AsOf)
+            .Select(c => new { c.AsOf, c.Value })
+            .ToList();
+        var consecutive = 0;
+        for (var i = 0; i < path.Count; i++)
+        {
+            if (string.CompareOrdinal(path[i].AsOf, learnThrough) <= 0) continue;   // validate segment only
+            var threshold = curve.At((i + 1) * gate.EvaluationCadenceDays);
+            var onFarSide = belowCurve ? path[i].Value!.Value < threshold : path[i].Value!.Value >= threshold;
+            if (onFarSide)
+            {
+                if (++consecutive >= curve.SustainEvals) return true;
+            }
+            else
+            {
+                consecutive = 0;
+            }
+        }
+        return false;
     }
 
     private List<(double Pct, int TrackDays)> ValidatePercentilePoints(IReadOnlyCollection<string> ids, string learnThrough)

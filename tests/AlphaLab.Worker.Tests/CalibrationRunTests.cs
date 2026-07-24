@@ -68,11 +68,12 @@ public class CalibrationRunTests
             Assert.NotEmpty(noise.Knots);
             Assert.NotNull(noise.Vintage);
 
-            // The C-1 sweep covers the three alpha levels (2/4/8 at defaults).
+            // The C-1 sweep is the MONTHLY ladder rungs (2/4/8/16 at defaults; Change 4).
             var power = db.Config.Single(c => c.Key == CalibratedKeys.DetectionPower).ValueJson;
             Assert.Contains("\"2\"", power);
             Assert.Contains("\"4\"", power);
             Assert.Contains("\"8\"", power);
+            Assert.Contains("\"16\"", power);
 
             // A SECOND freeze appends v2 — never an UPDATE (finding 108; the CI grep guards the SQL side,
             // this guards the semantics).
@@ -220,5 +221,46 @@ public class CalibrationRunTests
         Assert.Throws<ArgumentException>(() => WorkerCommandParser.Parse(["replay-calibrate", "--from", "2010-01-04"]));
         Assert.Throws<ArgumentException>(() => WorkerCommandParser.Parse(
             ["replay-calibrate", "--from", "2025-06-30", "--to", "2010-01-04"]));
+    }
+
+    // finding 276: the archived report is the Phase-4 sign-off artifact and MUST land in the TRACKED
+    // docs/calibration — but .NET 10 `dotnet run --project src/AlphaLab.Worker` runs with cwd = the
+    // project dir, so a bare relative "docs/calibration" wrote under src/AlphaLab.Worker/ on the smoke
+    // run. A relative ReportDir is now anchored to the git repo root; an absolute one is honored verbatim.
+
+    [Fact]
+    public void FX_ReportPath_AbsoluteDir_HonoredVerbatim()
+    {
+        // What the tests inject (an absolute temp dir) must pass through untouched — repoRoot ignored.
+        var abs = Path.Combine(Path.GetTempPath(), "alphalab-report");
+        Assert.True(Path.IsPathRooted(abs));
+        Assert.Equal(abs, CalibrationOrchestrator.ResolveReportBaseDir(abs, "C:/some/repo/root"));
+    }
+
+    [Fact]
+    public void FX_ReportPath_RelativeDir_AnchoredToGivenRepoRoot()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "alphalab-repo-root");
+        Assert.Equal(Path.Combine(root, "docs/calibration"),
+            CalibrationOrchestrator.ResolveReportBaseDir("docs/calibration", root));
+    }
+
+    [Fact]
+    public void FX_ReportPath_RelativeDir_NullRoot_FallsBackToCurrentDirectory()
+    {
+        Assert.Equal(Path.Combine(Directory.GetCurrentDirectory(), "docs/calibration"),
+            CalibrationOrchestrator.ResolveReportBaseDir("docs/calibration", repoRoot: null));
+    }
+
+    [Fact]
+    public void FX_ReportPath_FindRepoRoot_ResolvesToTrackedDocsCalibration()
+    {
+        // The test bin sits inside the repo, so discovery walks up to the real root — proving that on a
+        // real launch the default "docs/calibration" resolves to the git-tracked dir (verify-it-lands-there).
+        var root = CalibrationOrchestrator.FindRepoRoot();
+        Assert.NotNull(root);
+        Assert.True(Directory.Exists(Path.Combine(root!, "src", "AlphaLab.Worker")), "repo root must contain src/AlphaLab.Worker");
+        var reportBase = CalibrationOrchestrator.ResolveReportBaseDir("docs/calibration", root);
+        Assert.True(Directory.Exists(reportBase), $"the resolved report base must be the tracked docs/calibration: {reportBase}");
     }
 }

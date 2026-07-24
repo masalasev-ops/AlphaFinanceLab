@@ -16,8 +16,39 @@ public sealed class CalibrationOptions
 /// <summary>The D64 plant parameters (CONFIG "Calibration.Plant"; MASTER §20.9).</summary>
 public sealed class PlantOptions
 {
-    /// <summary>The edge plant's annualized overlay target, percent (default 2.0).</summary>
+    /// <summary>The edge plant's annualized overlay target, percent (default 2.0). The DAILY edge plant and
+    /// the floor-cohort minimum; daily is a SURVIVAL case only (finding-113 cohort), never a promotion
+    /// target — under its ~21.9%/yr random-redraw cost drag it cannot beat the benchmark at any plausible
+    /// overlay (Change 4 finding). Promotion is demonstrated on the MONTHLY ladder below.</summary>
     public double AlphaAnnualPct { get; set; } = 2.0;
+
+    /// <summary>Change 4 (B3, per-cadence ladder): the MONTHLY edge-plant strength rungs, percent
+    /// (default GEOMETRIC 2/4/8/16 — geometric because the guarded MDE is unknown ahead of the smoke run
+    /// and the unguarded value was ~15.9%). The 16% rung is an explicit DETECTION-SANITY rung: it exists to
+    /// establish the machinery can detect an edge AT ALL, not to represent a plausible strategy. The
+    /// per-rung promotion outcome IS the C-1 detection-power curve — the checkpoint's primary finding, read
+    /// instead of the gate colour.</summary>
+    public double[] MonthlyEdgeLadderPct { get; set; } = [2.0, 4.0, 8.0, 16.0];
+
+    /// <summary>Change 4: the offline-estimated cost_drag + MDE floor per cadence, percent — the bar
+    /// PrimaryEdgeIds' rule uses to pick the smallest rung that clears it. DAILY ~37% (cost drag 21.9% +
+    /// clean MDE) is unreachable by any plausible daily overlay, so daily never becomes the primary; MONTHLY
+    /// ~15.9% (the offline MDE; the guarded value is confirmed on the Stage-2 smoke run) is cleared by the
+    /// 16% rung. Pre-registered BEFORE the run (never tuned to it) — the rule, not a hand-picked plant, is
+    /// what keeps this from being tuning-by-another-name.</summary>
+    public double DailyMdeFloorPct { get; set; } = 37.0;
+
+    /// <summary>See <see cref="DailyMdeFloorPct"/> — the monthly cadence's offline cost_drag+MDE floor.</summary>
+    public double MonthlyMdeFloorPct { get; set; } = 15.9;
+
+    /// <summary>The pre-registered offline floor for a cadence; an unlisted family is unreachable (+∞), so it
+    /// can never win the primary selection.</summary>
+    public double MdeFloorFor(string family) => family switch
+    {
+        "daily" => DailyMdeFloorPct,
+        "monthly" => MonthlyMdeFloorPct,
+        _ => double.PositiveInfinity,
+    };
 
     /// <summary>The anti-predictive plant's mirrored negative target, percent (default −2.0).</summary>
     public double AntiAlphaAnnualPct { get; set; } = -2.0;

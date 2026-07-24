@@ -84,6 +84,40 @@ public class BarFeatureViewTests
     private static BarFeatureView View(AlphaLabDbContext db, string watermark) =>
         new(new BarReadService(db), new CalendarService(db), AsOf, watermark, Costs());
 
+    // finding 275 — the carry-forward mark for a data gap. LastRawCloseOnOrBefore returns the most recent raw
+    // close on or before AsOf, so a held name missing ITS bar on this session (but priced the day before) marks
+    // at the last known price, never a years-old cost basis. Null only when the name was never priced ≤ AsOf.
+    [Fact]
+    public void LastRawCloseOnOrBefore_CarriesForwardThePriorBar_NullWhenNeverPriced()
+    {
+        var path = SeededDb(withFutureBars: false);   // AAPL/MSFT bars on every session ENDING AT AsOf
+        try
+        {
+            using var db = TestDb.Open(path);
+            var view = View(db, WatermarkAfter);
+            var calendar = new CalendarService(db);
+
+            // AAPL is priced ON AsOf ⇒ the lookup returns AsOf's own close (== the last stored ≤ AsOf).
+            var aaplToday = view.RawClose(new SecurityId(Aapl), AsOf);
+            Assert.NotNull(aaplToday);
+            Assert.Equal(aaplToday, view.LastRawCloseOnOrBefore(new SecurityId(Aapl)));
+
+            // Introduce a DATA GAP: overwrite AsOf so AAPL has no visible bar there — mimicking OEF 2014-04-22.
+            // (Delete is only in this throwaway test DB; the store's append-only rule is a production invariant.)
+            db.Bars.RemoveRange(db.Bars.Where(b => b.SecurityId == Aapl && b.Date == AsOf.ToString("yyyy-MM-dd")));
+            db.SaveChanges();
+            var gapped = View(db, WatermarkAfter);
+            var prevClose = gapped.RawClose(new SecurityId(Aapl), calendar.PreviousSession(AsOf)!.Value);
+
+            Assert.Null(gapped.RawClose(new SecurityId(Aapl), AsOf));              // no bar today
+            Assert.Equal(prevClose, gapped.LastRawCloseOnOrBefore(new SecurityId(Aapl)));  // carries the prior close forward
+
+            // A never-priced security ⇒ null (the conservative cost-basis fallback fires downstream).
+            Assert.Null(gapped.LastRawCloseOnOrBefore(new SecurityId(999)));
+        }
+        finally { TestDb.Delete(path); }
+    }
+
     // ============================ F-LEAK ============================
 
     /// <summary>

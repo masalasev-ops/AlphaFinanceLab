@@ -15,7 +15,8 @@ using Microsoft.Extensions.Configuration;
 
 const string Usage =
     "usage: Backfill --universe sp100 [--as-of yyyy-MM-dd] [--years N] [--dry-run] [--preflight]\n" +
-    "       Backfill --historical sp500 --from yyyy-MM-dd --to yyyy-MM-dd [--csv path] [--dry-run]   (D70 replay prerequisite)";
+    "       Backfill --historical sp500 --from yyyy-MM-dd --to yyyy-MM-dd [--csv path] [--dry-run]   (D70 replay prerequisite)\n" +
+    "       Backfill --proxy-only [--as-of yyyy-MM-dd] [--years N] [--dry-run]   (finding 274: GSPC + cap-weight only; extends the regime warm-up + benchmark; membership untouched)";
 
 // D67: config is EXACTLY appsettings.json + appsettings.Secrets.json (optional) — no env vars, no User Secrets.
 var config = new ConfigurationBuilder()
@@ -30,6 +31,14 @@ var config = new ConfigurationBuilder()
 if (args.Contains("--historical"))
 {
     return await RunHistoricalAsync(args, config);
+}
+
+// ---- The PROXY-ONLY mode (finding 274): backfill ONLY the regime proxy (GSPC) + cap-weight benchmark
+// (OEF), extending them backward for the replay's regime warm-up + benchmark depth, WITHOUT touching the
+// membership reconcile (the P1 mass-eviction hazard) or the member universe. Separate from both modes above.
+if (args.Contains("--proxy-only"))
+{
+    return await RunProxyOnlyAsync(args, config);
 }
 
 BackfillOptions options;
@@ -226,7 +235,13 @@ static async Task<int> RunHistoricalAsync(string[] args, IConfiguration config)
         // widen to ~500 names with no error anywhere.
         options = HistoricalBackfillArgs.Parse(
                 args, DateTime.UtcNow.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture))
-            with { ApiPlanLimit = config.GetValue<int?>("Backfill:ApiPlanLimit") };
+            with
+            {
+                ApiPlanLimit = config.GetValue<int?>("Backfill:ApiPlanLimit"),
+                // Universe:Exclusions (finding 266): symbols skipped on ingest — the same list the replay
+                // composition denies from the roster. A future re-run reproduces the exclusion.
+                Exclusions = config.GetSection($"{AlphaLab.Data.UniverseOptions.SectionName}:Exclusions").Get<string[]>() ?? [],
+            };
     }
     catch (ArgumentException ex)
     {
@@ -334,6 +349,137 @@ static async Task<int> RunHistoricalAsync(string[] args, IConfiguration config)
     catch (Exception ex)
     {
         Console.Error.WriteLine($"historical backfill failed: {ex.Message}");
+        return 1;
+    }
+}
+
+// ---- the PROXY-ONLY mode (finding 274; composition only — orchestration is BackfillRunner.BackfillProxiesOnlyAsync) ----
+static async Task<int> RunProxyOnlyAsync(string[] args, IConfiguration config)
+{
+    void Log(string message) => Console.WriteLine(message);
+
+    var asOf = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+    var years = 25;   // From = AsOf − 25y ≈ 2001 — comfortably past the D73 warm-up floor (≈956 sessions before the 2006-01-03 replay start)
+    var dryRun = false;
+    for (var i = 0; i < args.Length; i++)
+    {
+        switch (args[i])
+        {
+            case "--as-of" when i + 1 < args.Length: asOf = args[++i]; break;
+            case "--years" when i + 1 < args.Length:
+                if (!int.TryParse(args[++i], NumberStyles.Integer, CultureInfo.InvariantCulture, out years))
+                {
+                    Console.Error.WriteLine($"argument error: --years must be an integer, got '{args[i]}'.");
+                    return 2;
+                }
+                break;
+            case "--dry-run": dryRun = true; break;
+        }
+    }
+    if (!DateOnly.TryParseExact(asOf, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+    {
+        Console.Error.WriteLine($"argument error: --as-of must be yyyy-MM-dd, got '{asOf}'.");
+        return 2;
+    }
+    if (years < 24)
+    {
+        Console.Error.WriteLine(
+            $"argument error: --years {years} does not cover the replay window (~20y) plus the D73 regime warm-up (≈4y); need ≥ 24. Refusing (fail closed).");
+        return 2;
+    }
+
+    // Bridge the layer AlphaLab.Data cannot cross — resolve the cap-weight benchmark ETF proxy from the
+    // membership source (identical to the forward mode). Fail closed on an unknown source.
+    var membershipPrimary = config["Universe:Bootstrap:MembershipPrimary"] ?? CapWeightProxy.OefSource;
+    CapWeightProxyTarget cwProxy;
+    try
+    {
+        cwProxy = CapWeightProxyTarget.FromEodhdSymbol(
+            CapWeightProxy.SymbolFor(membershipPrimary), CapWeightProxy.ProxySecurityIdConfigKey, membershipPrimary);
+    }
+    catch (Exception ex) when (ex is NotSupportedException or ArgumentException)
+    {
+        Console.Error.WriteLine($"cap-weight proxy config error: {ex.Message}");
+        return 2;
+    }
+
+    var options = new BackfillOptions
+    {
+        AsOf = asOf,
+        BackfillYears = years,
+        DryRun = dryRun,
+        RegimeProxySource = config["Regime:ProxySource"] ?? RegimeProxySource.EodhdGspc,
+        CapWeightProxy = cwProxy,
+        ApiPlanLimit = config.GetValue<int?>("Backfill:ApiPlanLimit"),
+    };
+
+    if (dryRun)
+    {
+        Log($"[dry-run] PROXY-ONLY {options.PlanSummary()} — GSPC + cap-weight only, membership UNTOUCHED, no network, no writes.");
+        return 0;
+    }
+
+    var arenaId = config["Arena:Id"] ?? "sp500";
+    var connectionString = config.GetConnectionString("AlphaLab")
+        ?? throw new InvalidOperationException("ConnectionStrings:AlphaLab is required in appsettings.json.");
+    var resolved = DbPathResolver.Resolve(connectionString, arenaId);
+    using var db = new AlphaLabDbContext(new DbContextOptionsBuilder<AlphaLabDbContext>().UseSqlite(resolved).Options);
+
+    // Create-vs-migrate discipline (rule 14 / finding A): proxy-only EXTENDS an existing store, so a pending
+    // migration goes through the snapshot-first path — never migrate here.
+    var storeExists = File.Exists(new SqliteConnectionStringBuilder(resolved).DataSource);
+    if (storeExists)
+    {
+        var pending = db.Database.GetPendingMigrations().ToList();
+        if (pending.Count > 0)
+        {
+            Console.Error.WriteLine(
+                $"The store has {pending.Count} pending migration(s): {string.Join(", ", pending)}.\n" +
+                $"Run: pwsh tools/migrate.ps1 -Arena {arenaId}  (snapshot-first, rule 14), then re-run.");
+            return 1;
+        }
+    }
+    else
+    {
+        db.Database.Migrate();
+        Console.WriteLine($"[schema] created a new store for arena '{arenaId}' — NOTE: proxy-only against a FRESH store warms up a replay that has no members yet; did you mean '--historical' first?");
+    }
+
+    var eodhd = new EodhdOptions
+    {
+        BaseUrl = config["Eodhd:BaseUrl"] ?? "https://eodhd.com/api",
+        ExchangeSuffix = config["Eodhd:ExchangeSuffix"] ?? "US",
+        ApiToken = config["Secrets:EodhdApiToken"]
+            ?? throw new InvalidOperationException("Secrets:EodhdApiToken is required for a live proxy backfill (appsettings.Secrets.json)."),
+    };
+    var http = new ResilientHttpClient(new HttpClient());
+    var rawCache = new FileRawCache(config["Backfill:RawCacheRoot"] ?? "tools/raw-cache");
+
+    // The membership providers are ctor-required but UNUSED by BackfillProxiesOnlyAsync (it never reconciles).
+    var runner = new BackfillRunner(
+        db,
+        membershipPrimary: new ISharesHoldingsMembershipProvider(http, ISharesHoldingsOptions.Oef(), rawCache),
+        membershipCrossCheck: new WikipediaMembershipCrossCheck(http, new WikipediaMembershipOptions
+        {
+            Url = config["Backfill:WikipediaSp100Url"] ?? "https://en.wikipedia.org/wiki/S%26P_100",
+            Source = "wikipedia_sp100"
+        }, rawCache),
+        regimeProxy: new EodhdGspcRegimeProxyProvider(http, eodhd, rawCache),
+        marketData: new EodhdMarketDataProvider(http, eodhd, rawCache),
+        log: Log);
+
+    try
+    {
+        await runner.BackfillProxiesOnlyAsync(options);
+        var pruned = rawCache.Prune(DateTime.UtcNow);
+        Log($"[cache] pruned {pruned} raw payload(s) older than {FileRawCache.RetentionDays} days.");
+        Log("[verify] confirm GSPC has ≥956 distinct sessions before 2006-01-03 (D73 warm-up) and OEF a bar on every replay session, " +
+            "then probe that a replay's regime_labels begin at/near 2006-01-03 before the full --reset run.");
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"proxy-only backfill failed: {ex.Message}");
         return 1;
     }
 }

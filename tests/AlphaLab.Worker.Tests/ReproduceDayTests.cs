@@ -284,13 +284,18 @@ public class ReproduceDayTests
 
     /// <summary>Row counts across every table a run writes, plus the file's length — enough to catch
     /// any write the reproduction might have leaked into the live arena.</summary>
+    // finding 277: "untouched" is a LOGICAL invariant — row counts across every mutable table.
+    // The raw file byte-length is NOT WAL-stable: opening the store (even the after-measurement's own
+    // connection) can trigger a passive checkpoint that flushes -wal pages into the main .db file,
+    // growing its size with ZERO logical writes. Including FileInfo.Length made this test flaky on
+    // Linux (4096 -> 319488 while every row count was identical). The row counts already prove
+    // reproduce-day wrote nothing to the live store — any real write would add rows.
     private static string StoreFingerprint(PipelineHarness h)
     {
         using var db = h.Open();
         return string.Join("|",
             db.Runs.Count(), db.Bars.Count(), db.Trades.Count(), db.Decisions.Count(),
             db.EquityCurve.Count(), db.ControlEquity.Count(), db.Positions.Count(),
-            db.PositionSnapshots.Count(), db.CashEvents.Count(), db.RegimeLabels.Count(),
-            new FileInfo(h.DbPath).Length);
+            db.PositionSnapshots.Count(), db.CashEvents.Count(), db.RegimeLabels.Count());
     }
 }

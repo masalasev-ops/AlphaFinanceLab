@@ -38,6 +38,7 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     "MembershipCrossCheck": "wikipedia",          // D49 launch: wikipedia; post-upgrade: ivv_csv
     "SectorSource": "ivv_csv",                    // D49 launch; post-upgrade: eodhd
     "HistoricalMembershipSource": "community_csv",// D49/D70 launch: fja05680/sp500; post-upgrade: eodhd
+    "Exclusions": ["SUN"],                        // finding 266 — canonical symbols permanently OUT of the universe. TWO consumers read this ONE list: the historical backfill SKIPS them on ingest (skip-and-record, like a ticker-reuse suspect) and the replay composition DENIES them from the roster (ExclusionScopedMembershipRead). The escape hatch for single-spell symbol reuse the >2y disjoint-spell heuristic cannot see (SUN = old Sunoco's ticker reused by Sunoco LP, whose in-window bars are the wrong company). Case-insensitive. MUST match across the Worker + Backfill appsettings (ConfigConsistencyTests). Default [].
     "Bootstrap": {                                // D65/D70 — the S&P 100 slice (forward universe through Phase 4 sign-off)
       "Universe": "sp100",                        // consumed by the backfill CLI and Stage-1 eligibility until the post-Phase-4 widen
       "MembershipPrimary": "oef_csv",             // iShares OEF holdings CSV (same BlackRock pattern as IVV)
@@ -50,7 +51,8 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     "Provider": "eodhd",                          // D35; fallback: alpaca
     "BarCrossCheckSampleSize": 10,                // rotating names/day vs Alpaca (FR-6)
     "BarCrossCheckTolerancePct": 0.5,
-    "OutlierZ": 8.0                               // quality gate daily-return z cutoff
+    "OutlierZ": 8.0,                              // quality gate daily-return z cutoff (Warn)
+    "MaxSingleDayPriceFactor": 10.0              // physically-impossible single-session price ratio (close_t/close_{t-1}); a move ≥×this or ≤÷this is a vendor bad print — R2 rejects it at ingestion, R1 neutralizes it (no return) at read time for bars already stored (D21/D40)
     // BackfillYears moved to the Backfill CLI section — the live key is `Backfill:BackfillYears` (v1.9.12 finding 158)
   },
 
@@ -191,21 +193,30 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     "PrunePerMemberLedgersAfterSignoff": true,
     "EdgePlantSurvivalFloor5y": 0.90,              // v1.9.7 finding 113: Phase-4 DoD floor — fraction of D64 edge plants still promotable at 5y of simulated
                                                    // track; a floor failure recalibrates S6's patience, never the plant (the lab must not kill its own honest winners)
-    "JointFalseAlarmMaxFrac": 0.10                 // v1.9.7 finding 114: bound on the fraction of no-edge plants ever reaching Suspect via ANY signal over the
+    "JointFalseAlarmMaxFrac": 0.10,                // v1.9.7 finding 114: bound on the fraction of no-edge plants ever reaching Suspect via ANY signal over the
                                                    // replay window; per-signal contribution is a permanent calibration-report section
+    "NoEdgeCurveBreachMaxFrac": 0.10,             // Change 2 (two-pass calibration): bound on the fraction of no-edge plants that SUSTAIN-breach the built P_noise
+                                                   // on the HELD-OUT validate segment — the curves' own out-of-sample false-alarm rate. Its OWN key, NOT shared with
+                                                   // JointFalseAlarmMaxFrac (which measures the monitor's flat-anchor flagging, altered by Change 3) — the independent validation
+    "CurveBasedEdgeSurvivalFloor": 0.90           // Change 2: floor on the fraction of floor-edge plants that do NOT sustain-breach P_noise on validate; its OWN key,
+                                                   // distinct from EdgePlantSurvivalFloor5y (the would-be-retire survival read from the monitor's log)
   },
 
   "Calibration": {                                 // D64 — plants under P_noise(t)/P_edge(t)
     "Plant": {
-      "AlphaAnnualPct": 2.0,                       // edge plant target (§1.1 realistic prize)
+      "AlphaAnnualPct": 2.0,                       // edge plant target (§1.1 realistic prize); the DAILY survival plant + floor-cohort min — daily is a survival case, never a promotion target (Change 4)
       "AntiAlphaAnnualPct": -2.0,                  // anti-predictive plant (the Suspect fixture)
       "ActiveDayFrac": 0.25,                       // lumpy delivery — edge arrives in streaks
       "PersistencePhi": 0.9,                       // run persistence, scaled to family horizon (mean active run = max(1/(1−φ), horizon), v1.9.39)
       "RegimeMultipliers": { "bull": 1.25, "bear": 0.5 },  // renormalized to the target (v1.9.39: by the RUNNING realized mix ≤ t — PIT-clean)
       "SeedsPerPlant": 50,                         // curves = multi-seed medians + 25–75% bands
-      "SensitivityMaxGapPts": 10                   // naive-vs-realistic P_edge divergence trigger
+      "SensitivityMaxGapPts": 10,                  // naive-vs-realistic P_edge divergence trigger
+      "MonthlyEdgeLadderPct": [2, 4, 8, 16],       // Change 4 (B3): the MONTHLY edge-plant strength ladder (geometric; the promotable cohort + the C-1 detection-power sweep). 16 = detection-sanity rung (can the machinery detect an edge AT ALL), not a plausible strategy. Per-rung promotion IS the primary finding
+      "DailyMdeFloorPct": 37.0,                    // Change 4: offline cost_drag (21.9%) + clean MDE for daily — UNREACHABLE by any plausible daily overlay, so daily is never the rule-selected primary
+      "MonthlyMdeFloorPct": 15.9                   // Change 4: offline monthly MDE (guarded value confirmed on the Stage-2 smoke run); PrimaryEdgeIds selects the smallest monthly rung clearing this (⇒ 16% at defaults). Pre-registered BEFORE the run, never tuned to it
     },
-    "ReportDir": "docs/calibration"                // v1.9.39 (D98): `replay-calibrate` archives {Arena.Id}/{date}-calibration.md here; Calibration.ReportRef (a config ROW) cross-references it by path + sha256
+    "ReportDir": "docs/calibration"                // v1.9.39 (D98): `replay-calibrate` archives {Arena.Id}/{date}-calibration.md here; Calibration.ReportRef (a config ROW) cross-references it by path + sha256.
+                                                   // RELATIVE (the default) is anchored to the git repo root, not cwd (finding 276: `dotnet run --project` runs with cwd = the project dir, so the bare path wrote under src/AlphaLab.Worker/); an ABSOLUTE value is honored verbatim
   },
 
   "Verdicts": {                                    // D63 — separation state (read-models)

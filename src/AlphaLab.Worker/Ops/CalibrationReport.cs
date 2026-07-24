@@ -110,9 +110,11 @@ public static class CalibrationReport
         var k2 = r.Verification.Kpis;
         sb.AppendLine($"- Anti-predictive detection speed (D63): {Fmt(k2.AntiDetectionSpeedMedianSessions, "F0")} sessions (median)");
         sb.AppendLine($"- Days to IndistinguishableFromRandom (D63): {Fmt(k2.DaysToIndistinguishabilityMedian, "F0")}");
-        sb.AppendLine($"- Edge-plant survival: 5y {Fmt(k2.EdgeSurvival5y, "P0")} · 10y {Fmt(k2.EdgeSurvival10y, "P0")}");
-        sb.AppendLine($"- Joint any-signal false alarm: {Fmt(k2.JointFalseAlarmFrac, "P1")}");
-        sb.AppendLine($"- No-edge P_noise breach rate (validate segment): {Fmt(k2.NoEdgeBreachRateValidate, "P1")}");
+        sb.AppendLine($"- Would-be edge-plant survival (from the retire log): 5y {Fmt(k2.WouldBeEdgeSurvival5y, "P0")} · 10y {Fmt(k2.WouldBeEdgeSurvival10y, "P0")}");
+        sb.AppendLine($"- Joint any-signal false alarm (monitor flagging — see comparability note): {Fmt(k2.JointFalseAlarmFrac, "P1")}");
+        sb.AppendLine($"- No-edge P_noise breach rate, point-level (validate segment): {Fmt(k2.NoEdgeBreachRateValidate, "P1")}");
+        sb.AppendLine($"- No-edge curve breach, per-plant sustained (validate — INDEPENDENT of monitor flagging): {Fmt(k2.NoEdgeCurveBreachValidate, "P1")}");
+        sb.AppendLine($"- Curve-based edge survival (validate): {Fmt(k2.CurveBasedEdgeSurvival, "P0")}");
         if (k2.ValueAdd is { } va)
         {
             sb.AppendLine(Invariant($"- Allocator value-add (§1.2): gap {va.GapAnn:P2}/yr, MDE {va.MdeAnn:P2}, {va.Verdict}, T={va.TDays}; ") +

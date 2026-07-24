@@ -148,6 +148,80 @@ public class HistoricalBackfillTests
         finally { TestDb.Delete(path); }
     }
 
+    // ---- Finding 266: the operator exclusion list — single-spell symbol reuse the disjoint-spell
+    // heuristic above structurally cannot catch (e.g. SUN). Skipped on ingest, recorded, idempotent. ----
+
+    [Fact]
+    public async Task Finding266_OperatorExclusion_SkippedRecordedAndIdempotent()
+    {
+        var path = TestDb.CreateMigrated();
+        try
+        {
+            using var db = TestDb.Open(path);
+            SeedCalendar(db);
+            var market = new FakeMarket();
+            var clean = CleanBars(db, From, To);
+            market.BarsFor["AAA"] = clean;
+            market.BarsFor["BBB"] = clean;
+
+            // BBB is on Universe:Exclusions — lowercase, to prove the match is case-insensitive.
+            var options = Options() with { Exclusions = ["bbb"] };
+            var runner = Runner(db, market);
+            var first = await runner.RunAsync(options, TwoMemberCsv);
+
+            // BBB: never fetched, zero bars, recorded in OperatorExclusions, absent from Coverage.
+            Assert.DoesNotContain("BBB", market.EodCalls);
+            var bbb = db.Securities.Single(s => s.CurrentSymbol == "BBB").SecurityId;
+            Assert.Empty(db.Bars.Where(b => b.SecurityId == bbb).ToList());
+            var excl = Assert.Single(first.OperatorExclusions);
+            Assert.Equal("BBB", excl.Symbol);
+            Assert.DoesNotContain(first.Coverage, c => c.Symbol == "BBB");
+
+            // AAA (not excluded) ingests normally.
+            Assert.Contains("AAA", market.EodCalls);
+            var aaa = db.Securities.Single(s => s.CurrentSymbol == "AAA").SecurityId;
+            Assert.Equal(clean.Count, db.Bars.Count(b => b.SecurityId == aaa));
+
+            // Idempotent: a re-run reproduces the identical artifact and ingests nothing new.
+            var barsAfterFirst = db.Bars.Count();
+            var second = await runner.RunAsync(options, TwoMemberCsv);
+            Assert.Equal(first.ToCanonicalJson(), second.ToCanonicalJson());
+            Assert.Equal(barsAfterFirst, db.Bars.Count());
+        }
+        finally { TestDb.Delete(path); }
+    }
+
+    // ---- Finding 266: the replay-roster deny-list (ExclusionScopedMembershipRead) — the rule-3-compliant
+    // substitute for deleting an already-ingested wrong-company bar set: the security leaves the roster. ----
+
+    [Fact]
+    public void Finding266_ExclusionScopedMembershipRead_DeniesExcludedSymbolFromRoster()
+    {
+        var path = TestDb.CreateMigrated();
+        try
+        {
+            using var db = TestDb.Open(path);
+            db.Securities.Add(new SecurityRow { SecurityId = 1, CurrentSymbol = "KEEP", Exchange = "US", FirstSeen = "2006-01-02" });
+            db.Securities.Add(new SecurityRow { SecurityId = 2, CurrentSymbol = "EXCL", Exchange = "US", FirstSeen = "2006-01-02" });
+            db.IndexMembership.Add(new IndexMembershipRow { SecurityId = 1, AddedOn = "2006-01-02", RemovedOn = null });
+            db.IndexMembership.Add(new IndexMembershipRow { SecurityId = 2, AddedOn = "2006-01-02", RemovedOn = null });
+            db.SaveChanges();
+
+            var inner = new IndexMembershipReadService(db);
+            const string asOf = "2010-01-04";
+            Assert.Equal(new long[] { 1, 2 }, inner.MembersAsOf(asOf).OrderBy(x => x).ToArray());   // raw read sees both
+
+            // The deny-list (case-insensitive) removes EXCL from the roster; KEEP survives.
+            var denied = new ExclusionScopedMembershipRead(inner, db, new UniverseOptions { Exclusions = ["excl"] });
+            Assert.Equal(new long[] { 1 }, denied.MembersAsOf(asOf).OrderBy(x => x).ToArray());
+
+            // Empty exclusions ⇒ pass-through (a store that never listed one is unaffected).
+            var passthrough = new ExclusionScopedMembershipRead(inner, db, new UniverseOptions { Exclusions = [] });
+            Assert.Equal(new long[] { 1, 2 }, passthrough.MembersAsOf(asOf).OrderBy(x => x).ToArray());
+        }
+        finally { TestDb.Delete(path); }
+    }
+
     // ---- rule 22: the forward slice survives the historical ingest ----
 
     [Fact]

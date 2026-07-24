@@ -40,6 +40,12 @@ public sealed record HistoricalBackfillOptions
     /// <summary>EODHD daily-call plan limit for the ≥50% headroom check (null = unknown).</summary>
     public int? ApiPlanLimit { get; init; }
 
+    /// <summary>Canonical symbols to SKIP on ingest (Universe:Exclusions, finding 266): a name here is
+    /// skipped-and-recorded before any fetch, exactly like a ticker-reuse suspect, so a re-run reproduces
+    /// its exclusion. The escape hatch for single-spell symbol reuse the &gt;2y disjoint-spell heuristic
+    /// cannot see. Case-insensitive; empty by default.</summary>
+    public IReadOnlyList<string> Exclusions { get; init; } = [];
+
     /// <summary>Walk the plan, no network, no writes.</summary>
     public bool DryRun { get; init; }
 }
@@ -118,13 +124,19 @@ public sealed record TickerReuseSuspect(string Symbol, long SecurityId, IReadOnl
 
 public sealed record UnresolvableMember(string Symbol, long SecurityId, string Reason);
 
+/// <summary>An operator-listed exclusion (Universe:Exclusions, finding 266): a symbol skipped on ingest
+/// because its in-window bars are the wrong company (single-spell reuse the disjoint-spell heuristic
+/// cannot catch). Distinct from <see cref="TickerReuseSuspect"/> (heuristic-caught, two spells).</summary>
+public sealed record OperatorExclusion(string Symbol, long SecurityId, string Reason);
+
 public sealed record HistoricalCoverageReport(
     string Universe, string From, string To, string MembershipCsvSha256,
     int MembersInWindow,
     IReadOnlyList<MemberCoverage> Coverage,
     IReadOnlyList<GateExclusion> GateExclusions,
     IReadOnlyList<TickerReuseSuspect> TickerReuseSuspects,
-    IReadOnlyList<UnresolvableMember> Unresolvable)
+    IReadOnlyList<UnresolvableMember> Unresolvable,
+    IReadOnlyList<OperatorExclusion> OperatorExclusions)
 {
     /// <summary>Canonical serialization — declaration-ordered properties over pre-sorted lists, NO
     /// run-mechanics counters (fetched-vs-skipped differs between a first run and an idempotent
@@ -184,7 +196,7 @@ public sealed class HistoricalBackfillRunner(
         if (o.DryRun)
         {
             Log($"[dry-run] historical {o.Universe} bars {o.From}..{o.To} csv sha256={csvSha[..12]}… — no network, no writes.");
-            return new HistoricalCoverageReport(o.Universe, o.From, o.To, csvSha, 0, [], [], [], []);
+            return new HistoricalCoverageReport(o.Universe, o.From, o.To, csvSha, 0, [], [], [], [], []);
         }
 
         try
@@ -210,6 +222,7 @@ public sealed class HistoricalBackfillRunner(
             var gateExclusions = new List<GateExclusion>();
             var suspects = new List<TickerReuseSuspect>();
             var unresolvable = new List<UnresolvableMember>();
+            var operatorExclusions = new List<OperatorExclusion>();
             var fetched = 0;
             var skippedCovered = 0;
 
@@ -221,6 +234,17 @@ public sealed class HistoricalBackfillRunner(
                 if (symbol is null)
                 {
                     unresolvable.Add(new UnresolvableMember("(unregistered)", id, "security row has no symbol"));
+                    continue;
+                }
+
+                // (3.5) Operator exclusion list (Universe:Exclusions, finding 266): skip-and-record before
+                // any fetch, identically to a ticker-reuse suspect. The escape hatch for single-spell symbol
+                // reuse the disjoint-spell heuristic below cannot see (e.g. SUN: old Sunoco's ticker reused
+                // by Sunoco LP, whose in-window bars are the wrong company).
+                if (o.Exclusions.Contains(symbol, StringComparer.OrdinalIgnoreCase))
+                {
+                    operatorExclusions.Add(new OperatorExclusion(symbol, id, "Universe:Exclusions"));
+                    Log($"[exclude] {symbol} (id={id}): operator exclusion (Universe:Exclusions) — EXCLUDED from ingest (finding 266).");
                     continue;
                 }
 
@@ -302,11 +326,13 @@ public sealed class HistoricalBackfillRunner(
                 Coverage: coverage,          // already symbol-ordered by the walk
                 GateExclusions: gateExclusions,
                 TickerReuseSuspects: suspects,
-                Unresolvable: unresolvable);
+                Unresolvable: unresolvable,
+                OperatorExclusions: operatorExclusions);
 
             WriteGateSweepMarker(o, result);
             Log($"[done] historical backfill: {fetched} fetched, {skippedCovered} already covered, " +
-                $"{gateExclusions.Count} gate-excluded, {suspects.Count} ticker-reuse suspect(s), {unresolvable.Count} unresolvable.");
+                $"{gateExclusions.Count} gate-excluded, {suspects.Count} ticker-reuse suspect(s), " +
+                $"{operatorExclusions.Count} operator-excluded, {unresolvable.Count} unresolvable.");
             return result;
         }
         finally
@@ -436,6 +462,7 @@ public sealed class HistoricalBackfillRunner(
                 artifact_sha256 = report.Sha256(),
                 excluded = report.GateExclusions.Select(g => g.Symbol).ToList(),
                 ticker_reuse = report.TickerReuseSuspects.Select(s => s.Symbol).ToList(),
+                operator_excluded = report.OperatorExclusions.Select(e => e.Symbol).ToList(),
                 swept_at = o.ObservedAt,
             }),
             Version = (current?.Version ?? 0) + 1,
@@ -503,5 +530,46 @@ public sealed class SliceScopedMembershipRead(
             else break;
         }
         return members.Where(slice.Contains).ToList();
+    }
+}
+
+/// <summary>
+/// Replay-roster deny-list (finding 266): removes <see cref="UniverseOptions.Exclusions"/> symbols from
+/// the as-of membership so a security whose in-window bars are the WRONG company — single-spell ticker
+/// reuse the backfill's &gt;2y disjoint-spell heuristic cannot catch (e.g. SUN: old Sunoco's ticker reused
+/// by Sunoco LP) — is never rostered in replay, and its already-ingested bars are therefore never read.
+/// This is the rule-3-compliant substitute for deleting the bars (which is forbidden): the bars stay,
+/// inert, because the security leaves the roster. Registered ONLY in the replay composition
+/// (ReplayRunner), wrapping the RAW <see cref="IndexMembershipReadService"/> that D70/rule 22 mandate for
+/// replay; the forward pipeline uses <see cref="SliceScopedMembershipRead"/> and is unaffected. On a fresh
+/// store a future backfill never ingests the excluded symbols (they have no bars → inert like a
+/// ticker-reuse suspect), so there this filter is a harmless no-op. Excluded symbols resolve to
+/// security_ids once, case-insensitively and fail-closed (a reused symbol may map to more than one
+/// security row); an empty list is a pass-through.
+/// </summary>
+public sealed class ExclusionScopedMembershipRead(
+    IIndexMembershipRead inner,
+    AlphaLabDbContext db,
+    UniverseOptions options) : IIndexMembershipRead
+{
+    private HashSet<long>? _excludedIds;
+
+    public IReadOnlyList<long> MembersAsOf(string date)
+    {
+        var members = inner.MembersAsOf(date);
+        if (options.Exclusions is not { Length: > 0 }) return members;
+
+        _excludedIds ??= ResolveExcludedIds();
+        if (_excludedIds.Count == 0) return members;
+        return members.Where(id => !_excludedIds.Contains(id)).ToList();
+    }
+
+    private HashSet<long> ResolveExcludedIds()
+    {
+        var wanted = new HashSet<string>(options.Exclusions, StringComparer.OrdinalIgnoreCase);
+        return db.Securities.AsEnumerable()
+            .Where(s => wanted.Contains(s.CurrentSymbol))
+            .Select(s => s.SecurityId)
+            .ToHashSet();
     }
 }

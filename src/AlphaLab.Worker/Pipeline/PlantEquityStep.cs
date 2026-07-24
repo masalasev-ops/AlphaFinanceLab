@@ -25,7 +25,8 @@ public sealed class PlantEquityStep(
     CostsOptions costs,
     ICalendarService calendar,
     IIndexMembershipRead membership,
-    CalibrationOptions calibration) : IPipelineDayExtension
+    CalibrationOptions calibration,
+    DataQualityOptions dataQuality) : IPipelineDayExtension
 {
     private const string Replay = "replay";
 
@@ -42,7 +43,7 @@ public sealed class PlantEquityStep(
             .Where(f => f.CostsOn)
             .ToDictionary(f => f.Name, StringComparer.Ordinal);
         var specs = PlantCohorts.Build(calibration.Plant, PopulationFamilies.ForPhase3(populations));
-        var market = new PopulationMarket(context.Features, membership, calendar, new CostModel(costs), costs.AdvWindowDays);
+        var market = new PopulationMarket(context.Features, membership, calendar, new CostModel(costs), costs.AdvWindowDays, dataQuality.MaxSingleDayPriceFactor);
         var engine = new PopulationEngine(market);
 
         var prevSession = calendar.PreviousSession(context.AsOfDate);

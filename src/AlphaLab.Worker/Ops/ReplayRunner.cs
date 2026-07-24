@@ -419,9 +419,15 @@ public sealed class ReplayRunner(
             new CorporateActionReadService(sp.GetRequiredService<AlphaLabDbContext>()),
             sp.GetRequiredService<ReplaySimDay>()));
 
-        // Replay NEVER runs on the S&P 100 slice (rule 22/D70): the RAW as-of read replaces the
-        // forward composition's SliceScopedMembershipRead.
-        services.AddScoped<IIndexMembershipRead, IndexMembershipReadService>();
+        // Replay NEVER runs on the S&P 100 slice (rule 22/D70): the RAW as-of read replaces the forward
+        // composition's SliceScopedMembershipRead — then the finding-266 deny-list removes any
+        // Universe:Exclusions symbol (wrong-company single-spell reuse the backfill heuristic misses) from
+        // the replay roster, so its already-ingested bars are never read (the rule-3-compliant substitute
+        // for a bar delete). Empty Exclusions ⇒ pass-through.
+        services.AddScoped<IIndexMembershipRead>(sp => new ExclusionScopedMembershipRead(
+            new IndexMembershipReadService(sp.GetRequiredService<AlphaLabDbContext>()),
+            sp.GetRequiredService<AlphaLabDbContext>(),
+            sp.GetRequiredService<UniverseOptions>()));
 
         // The D64 plants (FR-36): the equity step joins the atomic replay day via the extension seam.
         services.AddSingleton(configuration.GetSection(CalibrationOptions.SectionName).Get<CalibrationOptions>() ?? new CalibrationOptions());

@@ -386,6 +386,40 @@ public sealed class BackfillRunner(
         }
     }
 
+    /// <summary>PROXY-ONLY backfill (finding 274): the regime proxy (GSPC) + the cap-weight benchmark (OEF)
+    /// ONLY — the replay's regime warm-up and benchmark depth — WITHOUT the membership reconcile or the
+    /// member-universe backfill. That separation is the whole point: the reconciler is universe-blind (D70/
+    /// D71), so chaining it here would mass-evict the historical S&amp;P 500 roster (the P1 hazard); and the
+    /// members are already backfilled by the D70 historical pass. The D70 pass left GSPC/OEF at the Phase-1
+    /// 20-year window (starting mid-2006), so the replay has NO pre-2006-01-03 regime warm-up and a 6-month
+    /// front gap; this run EXTENDS both backward. Idempotent + append-only (re-run safe). Set
+    /// <see cref="BackfillOptions.BackfillYears"/> large enough that <c>From</c> precedes the replay start by
+    /// the D73 readiness floor (200 + 3×252 ≈ 956 sessions ⇒ ~4 years).</summary>
+    public async Task BackfillProxiesOnlyAsync(BackfillOptions o, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(o);
+        ArgumentException.ThrowIfNullOrWhiteSpace(o.AsOf);
+
+        if (o.DryRun)
+        {
+            Log($"[dry-run] PROXY-ONLY {o.PlanSummary()} — GSPC + cap-weight proxy only, membership UNTOUCHED, no network, no writes.");
+            return;
+        }
+
+        try
+        {
+            SeedCalendarStep(o);
+            await BackfillRegimeProxyStep(o, ct).ConfigureAwait(false);
+            await BackfillCapWeightProxyStep(o, ct).ConfigureAwait(false);
+            Log("[done] proxy-only backfill complete (GSPC + cap-weight benchmark; membership + members untouched).");
+        }
+        finally
+        {
+            try { FlushApiUsage(o); }
+            catch (Exception flushEx) { Log($"[api] usage flush failed (original error preserved): {flushEx.Message}"); }
+        }
+    }
+
     // Apply the primary snapshot's GICS sectors to the (now-registered) members.
     private void ApplySectorsFrom(MembershipSnapshot primary, string asOf)
     {

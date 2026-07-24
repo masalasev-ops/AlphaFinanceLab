@@ -28,9 +28,11 @@ public sealed record Position
 
     /// <summary>
     /// The fail-closed flag (D39 / hard rule 10). Set when an unmapped corporate action or a bar
-    /// stoppage without an event makes the position unpriceable: valuation freezes at the last
-    /// print, the position is flagged on the Risk screen, and the operator is alerted. Never
-    /// silently mispriced.
+    /// stoppage without an event makes the position unpriceable: valuation marks at COST BASIS (D86 —
+    /// not the last print, which a stale unpriceable name could misstate silently), the position is
+    /// flagged on the Risk screen, and the operator is alerted. Never silently mispriced. (A NON-frozen
+    /// position whose bar is merely missing on a session — a data gap — instead carries its last known
+    /// close forward, finding 275; only a genuine freeze marks at cost basis.)
     /// </summary>
     public bool Frozen { get; init; }
 

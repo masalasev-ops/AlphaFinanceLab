@@ -34,7 +34,7 @@ public class PlantReplayTests
             .Where(a => PlantCohorts.IsPlantId(a.StrategyId))
             .Select(a => a.AccountId)
             .ToList();
-        Assert.Equal(14, plantAccounts.Count);   // 7 cohorts × SeedsPerPlant=2 (CI-scale)
+        Assert.Equal(16, plantAccounts.Count);   // 8 cohorts × SeedsPerPlant=2 (CI-scale): edge/noedge/anti/naive daily + the 4 monthly ladder rungs
 
         // Every plant has one equity point per replay session, all quarantined, all positive.
         foreach (var accountId in plantAccounts)

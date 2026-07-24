@@ -81,6 +81,13 @@ public class AllocationStepTests
         arena.SeedStrategy("cand:ok", "candidate", dates, EvalArena.Noise(99, 0.01, seed: 99));
 
         using var db = arena.Open();
+        // Change 3 (D63): a sub-anchor dip is Suspect only when SUSTAINED, so seed the prior below-anchor S3
+        // checks a real run of Suspect evals would have left — this evaluation then reads Suspect and flows
+        // its decay into the allocator clamp.
+        foreach (var d in new[] { "2026-01-01", "2026-01-02", "2026-01-03" })
+            db.OverfittingChecks.Add(new OverfittingCheckRow { StrategyId = "cand:anti", AsOf = d, Signal = "S3", Value = 5.0, ThresholdJson = "{}", Contribution = "suspect", RunKind = "live" });
+        db.SaveChanges();
+
         var gate = new GateOptions();
         new EvaluationStep(db, gate).Run(dates[^1]);
         new OverfittingMonitor(db, gate).Run(dates[^1], "buyhold:cw", popId);

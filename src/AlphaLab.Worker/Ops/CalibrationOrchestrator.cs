@@ -34,6 +34,35 @@ public sealed class CalibrationOrchestrator(
 
     private readonly ILogger _logger = loggerFactory.CreateLogger<CalibrationOrchestrator>();
 
+    /// <summary>
+    /// Where the archived report is written. The report is the Phase-4 sign-off artifact — it MUST land
+    /// in the repo's TRACKED docs/calibration, never wherever the process was launched from. .NET 10's
+    /// <c>dotnet run --project src/AlphaLab.Worker</c> runs with cwd = the project dir, so a bare relative
+    /// <c>docs/calibration</c> would write under src/AlphaLab.Worker/ (finding 276). A RELATIVE ReportDir
+    /// (the default) is therefore anchored to the git repo root; an ABSOLUTE one (what the tests inject)
+    /// is honored verbatim. <paramref name="repoRoot"/> is <see cref="FindRepoRoot"/>'s result — null
+    /// falls back to the current directory (the historic behavior).
+    /// </summary>
+    public static string ResolveReportBaseDir(string configured, string? repoRoot) =>
+        Path.IsPathRooted(configured)
+            ? configured
+            : Path.Combine(repoRoot ?? Directory.GetCurrentDirectory(), configured);
+
+    /// <summary>
+    /// The git repo root, discovered by walking up from the running assembly's directory (cwd-independent).
+    /// A <c>.git</c> entry marks the root (a directory in a normal clone, a file in a worktree). Null if
+    /// none is found — the caller then falls back to the current directory.
+    /// </summary>
+    public static string? FindRepoRoot()
+    {
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            var git = Path.Combine(dir.FullName, ".git");
+            if (Directory.Exists(git) || File.Exists(git)) return dir.FullName;
+        }
+        return null;
+    }
+
     public async Task<int> RunAsync(string connectionString, ReplayRequest request, bool reportOnly, CancellationToken ct = default)
     {
         var runner = new ReplayRunner(configuration, arena, loggerFactory);
@@ -92,7 +121,7 @@ public sealed class CalibrationOrchestrator(
         // ---- (3) the C-1 sweep, (4) FR-41, (5) verification ----
         var detectionPower = DetectionPowerCurves(db, specs, gate.EvaluationCadenceDays);
         new ReplayRegimeOutcomesWriter(db).Write(EvaluationStep.DefaultBenchmarkStrategyId);
-        var verification = new ReplayVerification(db, gate, verdicts, replayOptions).Run(specs, request.LearnThrough, pNoise);
+        var verification = new ReplayVerification(db, gate, verdicts, replayOptions, calibration.Plant).Run(specs, request.LearnThrough, pNoise, pEdge);
 
         // ---- (6) the archived report ----
         // ONE captured instant, invariant-formatted: the filename must agree with the "Generated:"
@@ -100,7 +129,9 @@ public sealed class CalibrationOrchestrator(
         // non-Gregorian filename into the frozen ReportRef on e.g. an ar-SA locale (Phase-4 review).
         var generatedInstant = DateTime.UtcNow;
         var generatedAt = generatedInstant.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
-        var reportDir = Path.Combine(configuration["Calibration:ReportDir"] ?? "docs/calibration", arena.Id);
+        var reportDir = Path.Combine(
+            ResolveReportBaseDir(configuration["Calibration:ReportDir"] ?? "docs/calibration", FindRepoRoot()),
+            arena.Id);
         Directory.CreateDirectory(reportDir);
         var reportPath = Path.Combine(reportDir,
             $"{generatedInstant.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}-calibration.md");
@@ -203,8 +234,10 @@ public sealed class CalibrationOrchestrator(
     {
         var sessions = db.Runs.Where(r => r.RunKind == Replay && r.Status == "ok")
             .OrderBy(r => r.AsOf).Select(r => r.AsOf).ToList();
+        // Change 4: the detection-power sweep is the MONTHLY ladder (daily cannot promote under its cost
+        // drag, so sweeping it is pointless) — the per-rung promotion here IS the C-1 detection-power curve.
         var result = new Dictionary<double, DetectionPowerCurve>();
-        foreach (var level in specs.Where(s => s is { Kind: PlantKind.Edge, Family: "daily" }).GroupBy(s => s.AlphaAnnPct))
+        foreach (var level in specs.Where(s => s is { Kind: PlantKind.Edge, Family: "monthly" }).GroupBy(s => s.AlphaAnnPct))
         {
             var ids = level.Select(s => s.StrategyId).ToList();
             var promotionSessions = new List<int>();
