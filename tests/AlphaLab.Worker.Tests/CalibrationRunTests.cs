@@ -49,6 +49,9 @@ public class CalibrationRunTests
             Assert.Contains("Per-signal false-alarm contribution", text);
             Assert.Contains("Data vintage (D64 stamp)", text);
             Assert.Contains("C-2 sampling band", text);
+            // finding 278: the report records which build produced its numbers (the sign-off DoD).
+            Assert.Contains("Build configuration:", text);
+            Assert.Contains(CalibrationOrchestrator.BuildConfiguration(), text);
 
             using var db = h.Open();
             // The frozen rows: v1 of each D98 key, append-only.

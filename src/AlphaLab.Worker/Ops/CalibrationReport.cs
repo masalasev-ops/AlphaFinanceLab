@@ -24,7 +24,8 @@ public sealed record CalibrationReportInputs(
     double SensitivityThresholdPts,
     IReadOnlyDictionary<double, DetectionPowerCurve> DetectionPower,
     ReplayVerificationReport Verification,
-    IReadOnlyList<string> FrozenConfigKeys);
+    IReadOnlyList<string> FrozenConfigKeys,
+    string BuildConfiguration);
 
 /// <summary>One C-1 detection-power curve: P(promoted by t | α) on the eval grid + the median.</summary>
 public sealed record DetectionPowerCurve(
@@ -48,6 +49,7 @@ public static class CalibrationReport
         sb.AppendLine($"- Replay run span: {(r.FirstRunId is null ? "(none)" : $"run {r.FirstRunId}..{r.LastRunId}")}");
         sb.AppendLine($"- Seeds per plant: {r.SeedsPerPlant} · population M: {r.PopulationM}");
         sb.AppendLine($"- Generated: {generatedAtIso}");
+        sb.AppendLine($"- Build configuration: **{r.BuildConfiguration}** (finding 278: the sign-off artifact records which build produced these numbers)");
         sb.AppendLine($"- Config rows frozen this run: {(r.FrozenConfigKeys.Count == 0 ? "(none — report-only, or a verification failure blocked the freeze)" : string.Join(", ", r.FrozenConfigKeys))}");
         sb.AppendLine();
 
