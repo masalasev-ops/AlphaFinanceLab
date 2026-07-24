@@ -215,7 +215,8 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
       "DailyMdeFloorPct": 37.0,                    // Change 4: offline cost_drag (21.9%) + clean MDE for daily — UNREACHABLE by any plausible daily overlay, so daily is never the rule-selected primary
       "MonthlyMdeFloorPct": 15.9                   // Change 4: offline monthly MDE (guarded value confirmed on the Stage-2 smoke run); PrimaryEdgeIds selects the smallest monthly rung clearing this (⇒ 16% at defaults). Pre-registered BEFORE the run, never tuned to it
     },
-    "ReportDir": "docs/calibration"                // v1.9.39 (D98): `replay-calibrate` archives {Arena.Id}/{date}-calibration.md here; Calibration.ReportRef (a config ROW) cross-references it by path + sha256
+    "ReportDir": "docs/calibration"                // v1.9.39 (D98): `replay-calibrate` archives {Arena.Id}/{date}-calibration.md here; Calibration.ReportRef (a config ROW) cross-references it by path + sha256.
+                                                   // RELATIVE (the default) is anchored to the git repo root, not cwd (finding 276: `dotnet run --project` runs with cwd = the project dir, so the bare path wrote under src/AlphaLab.Worker/); an ABSOLUTE value is honored verbatim
   },
 
   "Verdicts": {                                    // D63 — separation state (read-models)
