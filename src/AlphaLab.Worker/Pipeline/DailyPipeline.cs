@@ -644,17 +644,19 @@ public sealed class DailyPipeline(
         ledger.GetCashEvents(accountId, kind).Sum(e => e.Amount)
         + ledger.GetTrades(accountId, kind).Sum(t => t.CashDelta);
 
-    // Mark the book at today's raw close. A held name with no bar today (a frozen/halted position) is
-    // valued at its average cost basis — neither a gain nor a loss recognised — rather than dropped;
-    // the dummies always hold priced names, so this fallback never fires for them.
+    // Mark the book at today's raw close. With no bar today the two no-price cases are DISTINCT (finding 275,
+    // BasisMath.MarkOne): a FROZEN name (unmapped CA / genuine halt) marks at cost basis (D86), but a NON-frozen
+    // name whose bar is merely MISSING (a vendor data gap on a session it actually traded — e.g. OEF 2014-04-22)
+    // CARRIES FORWARD its last known close, not a years-old cost basis. The old code applied cost basis to any
+    // missing bar, which would fabricate a one-day equity round-trip for a held name on a plain data gap.
     private decimal MarkToMarket(IReadOnlyList<Position> held, DateOnly asOf, BarFeatureView features)
     {
         var total = 0m;
         foreach (var p in held)
         {
-            total += features.RawClose(p.SecurityId, asOf) is { } c
-                ? (decimal)c * (decimal)p.Shares
-                : p.CostBasis;
+            var today = features.RawClose(p.SecurityId, asOf);
+            var lastKnown = today is null ? features.LastRawCloseOnOrBefore(p.SecurityId) : null;
+            total += BasisMath.MarkOne(today, p.Frozen, lastKnown, p.Shares, p.CostBasis);
         }
         return total;
     }

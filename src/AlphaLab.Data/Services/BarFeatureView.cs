@@ -102,6 +102,17 @@ public sealed class BarFeatureView : IFeatureView
         return Bar(id, date)?.Close;
     }
 
+    /// <summary>The most recent RAW close on or before <see cref="AsOf"/> — the carry-forward mark for a held
+    /// position whose bar is MISSING on this session (a vendor data gap, not a frozen halt; finding 275). Null
+    /// only if the name has no bar at all ≤ AsOf (never priced). PIT-safe by construction: it resolves the last
+    /// stored date ≤ AsOf at the watermark through the same reader as every other read, so it can never see a
+    /// price the session could not have.</summary>
+    public double? LastRawCloseOnOrBefore(SecurityId id)
+    {
+        var last = _bars.LastStoredDate(id.Value, Iso(AsOf), Watermark);
+        return last is null ? null : _bars.GetBar(id.Value, last, Watermark)?.Close;
+    }
+
     public double? RawOpen(SecurityId id, DateOnly date)
     {
         GuardNotFuture(date, nameof(date));
