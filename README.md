@@ -22,9 +22,15 @@ overfitting monitor, allocator, random control populations — and Phase 3.5 the
 hardening (`reproduce-day` makes byte-identical reproducibility an executable proof). **Phase 4**
 builds the sealed room that proves the honesty engine works before forward judgment begins: the whole
 pipeline replayed over historical years under `run_kind='replay'` quarantine, validated against
-planted strategies with known truth, freezing the monitor's calibrated pass marks — the code is on
-`feat/phase4-arena-replay` (PR #16); what remains is the operator's sign-off run
-([`docs/RUNBOOK_v1.9.md`](docs/RUNBOOK_v1.9.md) §8). Still ahead in Phases 4.5–8 (see
+planted strategies with known truth, freezing the monitor's calibrated pass marks. The D70 historical
+backfill ran (918 members), and a **pre-4.11 fix pass** merged (findings 266–274, v1.9.41–43): SUN
+excluded, physically-impossible vendor price bars guarded + rejected, a **two-pass calibration**
+machinery fix (a first full-scale run proved the machinery froze nothing — it retired the plants on
+uncalibrated flat-anchor verdicts; the fix stops *acting* on them while still recording the would-be
+retires, brings the fallback into D63 conformance, adds out-of-sample curve-based metrics, and
+rule-selects a per-cadence plant ladder), and a proxy-only backfill for the regime warm-up. What
+remains is the operator's de-risk-then-sign-off sequence — proxy backfill → offline gate → snapshot →
+smoke run → the full `--reset` calibration ([`docs/RUNBOOK_v1.9.md`](docs/RUNBOOK_v1.9.md) §8). Still ahead in Phases 4.5–8 (see
 [`docs/BUILD_AND_PROMPTS_v1.9.md`](docs/BUILD_AND_PROMPTS_v1.9.md) §2 and [`PROGRESS.md`](PROGRESS.md)):
 the signal library, the LLM layer, real strategies, risk/regimes/observability, and (contingent)
 fundamentals. No forward pipeline run has been committed yet, so the strategy/evaluation screens still

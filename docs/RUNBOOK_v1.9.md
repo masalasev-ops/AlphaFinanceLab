@@ -96,23 +96,43 @@ run_kind='replay', quarantined).
    idempotent and the artifact is deterministic, so a re-run is a clean git diff). Commit the artifact.
    Do NOT re-run the FORWARD bootstrap (`--universe sp100`) after this until the widening lands: the
    universe-blind reconciler would stamp removed_on on the ~400 non-slice members (P1).
-3. **Snapshot again**, then the full-scale calibration run (hours -> a day; deterministic; resumable —
-   a crash or stop resumes by re-running the same command):
-   `dotnet run --project src/AlphaLab.Worker -- replay-calibrate --from <start> --to <end> [--learn-through <boundary>]`
-   `--learn-through` is the FR-42 learn/validate split (a runtime parameter, deliberately no CONFIG
-   key); the curves build from the learn side, the no-edge breach-rate check reads the validate side.
-4. **Review the archived report** (`docs/calibration/sp500/<date>-calibration.md`): the verification
-   check table must be ALL-GREEN at full scale (Insufficient is only legitimate at CI scale). If the
-   edge-plant survival floor fails: raise the patience via a NEW `Monitor.S6.AutoRetireEvals` config
-   version and re-run — NEVER touch the plant (finding 113). Iterations are recorded as config-row
-   versions + report sections.
-5. **Commit the report** (+ the coverage artifact) and fill the PROGRESS Phase-4 gate box with the
-   measured numbers (detection-speed / days-to-indistinguishability medians, survival fractions, the
-   joint false-alarm fraction with per-signal contributions).
-6. **The D87 sign-off item:** record in PROGRESS whether a verified-depth S&P 400/600 as-of-membership
+3. **The proxy-only backfill (v1.9.43, finding 274) — the regime warm-up + benchmark depth** (minutes;
+   EODHD spend ~2 calls). The D70 pass left GSPC + OEF at the Phase-1 20y window (starting mid-2006), so
+   the replay has NO pre-2006-01-03 regime warm-up (D73 needs ≥956 sessions before the start) and a
+   ~6-month front gap: `dotnet run --project tools/Backfill -- --proxy-only` (default `--years 25`).
+   It extends GSPC + OEF backward and touches NOTHING else (no membership reconcile — the P1 hazard). Then
+   VERIFY (the CLI prints this): GSPC has ≥956 distinct sessions before 2006-01-03, OEF a bar on every
+   replay session, and a short replay's `regime_labels` begin at/near 2006-01-03.
+4. **De-risk BEFORE the ~4-day run (v1.9.42 two-pass fix).** (a) **Stage-1 offline gate:**
+   `replay-calibrate --report-only` on the aborted-run store re-scores the stored S3 paths through the
+   fixed Pass-2 logic — confirm `noedge_curve_breach_validate < NoEdgeCurveBreachMaxFrac` and
+   `curve_based_edge_survival ≥ CurveBasedEdgeSurvivalFloor`, and **commit that report as evidence FIRST**
+   (`--reset` deletes the sessions it reads). (b) **Snapshot** (`tools/snapshot-db.ps1 -Arena sp500`) so
+   those sessions stay recoverable. (c) **Stage-2 smoke run** (~4-8h, a 1-2y window): assert no plant
+   retires and every plant emits rows across the whole window (its verification reads `Insufficient` by
+   design — a mechanics smoke test). Only then spend the full run.
+5. **The full-scale calibration run** (hours → a day; deterministic; resumable — a crash or stop resumes by
+   re-running the same command):
+   `dotnet run --project src/AlphaLab.Worker -- replay-calibrate --reset --from <start> --to <end> [--learn-through <boundary>]`
+   `--learn-through` is the FR-42 learn/validate split (a runtime parameter, deliberately no CONFIG key);
+   the curves build from the learn side, the curve-based validate checks read the validate side.
+6. **Review the archived report** (`docs/calibration/sp500/<date>-calibration.md`): the verification table
+   must be ALL-GREEN at full scale (Insufficient is only legitimate at CI scale). **v1.9.42 changed how to
+   read it:** plants are no longer retired during calibration, so `would_be_edge_survival` (from the
+   would-be-retire log) and the curve-based metrics are the survival/false-alarm gates — the documented
+   "raise `Monitor.S6.AutoRetireEvals` and re-run" loop was proven NOT to converge (finding 270; it is
+   gone). The **per-rung detection-power curve** (`edge_plant_detected` Detail: monthly@2/4/8/16 promotions)
+   is the primary finding — read that, not the gate colour; the rule-selected primary is the smallest
+   monthly rung clearing the offline floor. Record the `joint_false_alarm` with its comparability caveat
+   (it is NOT independent validation post-Change-3 — only the curve-based metric is).
+7. **Commit the report** (+ the coverage artifact) and fill the PROGRESS Phase-4 gate box with the
+   measured numbers (detection-speed / days-to-indistinguishability medians, would-be-survival + curve-based
+   fractions, the per-rung detection-power outcome, the joint false-alarm fraction with per-signal
+   contributions + its comparability caveat).
+8. **The D87 sign-off item:** record in PROGRESS whether a verified-depth S&P 400/600 as-of-membership
    source is confirmed (the S&P 1500 widening target) — else the S&P 500 stands. Verified at sign-off,
    never silently at the flip.
-7. **After sign-off:** `Replay.PrunePerMemberLedgersAfterSignoff` sanctions pruning the per-member
+9. **After sign-off:** `Replay.PrunePerMemberLedgersAfterSignoff` sanctions pruning the per-member
    replay ledgers (control_equity + plant equity rows); the runs, power_reports, frozen curves and the
    report stay. The forward widen (`Universe:Bootstrap:Universe` flip + backfill delta) remains a
    SEPARATE post-sign-off action.
