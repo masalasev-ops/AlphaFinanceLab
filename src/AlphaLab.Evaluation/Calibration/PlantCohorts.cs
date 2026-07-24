@@ -14,11 +14,12 @@ public sealed record PlantSpec(
 }
 
 /// <summary>
-/// The Phase-4 plant cohorts (FR-36 / MASTER §20.9 / v1.9.23): edge + no-edge + anti-predictive on the
-/// DAILY family, the low-turnover edge cohort on the MONTHLY family (the survival-floor calibration must
-/// include it), the naive constant-drift comparator (sensitivity check only), and the C-1
-/// detection-power sweep (edge at ~2×/4× the primary level — with the primary cohort, three alpha
-/// levels on the same seed count). Seeds per cohort = Calibration.Plant.SeedsPerPlant.
+/// The Phase-4 plant cohorts (FR-36 / MASTER §20.9 / v1.9.23; Change 4 per-cadence ladder): no-edge +
+/// anti-predictive + naive on the DAILY family, a single DAILY edge plant at the primary level (a
+/// SURVIVAL case for the finding-113 floor — daily cannot PROMOTE under its cost drag, so it is never swept
+/// or made the primary), and the MONTHLY edge LADDER (Calibration.Plant.MonthlyEdgeLadderPct, default
+/// geometric 2/4/8/16) — which both carries the promotable cohort AND is the C-1 detection-power sweep, its
+/// per-rung promotion the checkpoint's primary finding. Seeds per cohort = Calibration.Plant.SeedsPerPlant.
 /// </summary>
 public static class PlantCohorts
 {
@@ -29,9 +30,6 @@ public static class PlantCohorts
 
     /// <summary>Per-cohort index stride (seeds within a cohort occupy base + stride·cohort + seed).</summary>
     private const int CohortStride = 1_000;
-
-    /// <summary>The C-1 sweep multipliers on the primary edge level (2% → 4% and 8% at the default).</summary>
-    private static readonly double[] SweepMultipliers = [2.0, 4.0];
 
     public static IReadOnlyList<PlantSpec> Build(PlantOptions plant, IReadOnlyList<PopulationFamily> families)
     {
@@ -52,14 +50,18 @@ public static class PlantCohorts
             cohort++;
         }
 
-        Add(PlantKind.Edge, daily, plant.AlphaAnnualPct);
+        Add(PlantKind.Edge, daily, plant.AlphaAnnualPct);   // daily SURVIVAL plant only — FloorEdge, never Primary/swept
         Add(PlantKind.NoEdge, daily, 0.0);
         Add(PlantKind.Anti, daily, plant.AntiAlphaAnnualPct);
         Add(PlantKind.Naive, daily, plant.AlphaAnnualPct);
-        if (monthly is not null) Add(PlantKind.Edge, monthly, plant.AlphaAnnualPct);
-        foreach (var multiplier in SweepMultipliers)
+        // The monthly ladder: the promotable cohort + the C-1 detection-power sweep, per-cadence (Change 4).
+        // Deduped so a rung equal to AlphaAnnualPct still yields ONE monthly edge cohort at that level.
+        if (monthly is not null)
         {
-            Add(PlantKind.Edge, daily, plant.AlphaAnnualPct * multiplier);
+            foreach (var rung in plant.MonthlyEdgeLadderPct.Distinct())
+            {
+                Add(PlantKind.Edge, monthly, rung);
+            }
         }
         return specs;
     }

@@ -17,32 +17,41 @@ public class MonitorSignalsTests
         Assert.Equal(elevated ? MonitorStatus.Warning : MonitorStatus.Healthy, s.Status);
     }
 
+    // Change 3 (D63 conformance): the flat anchor flags the anti-predictive tail (< 25th) as Suspect ONLY
+    // when SUSTAINED to FlatAnchorSustainEvals (3) consecutive evals — a single/double dip is a Warning, so
+    // "a merely edgeless strategy … S3 never flags it" (§3) holds for its rare within-null excursions. The
+    // ≥95th is Healthy, ~50th is in_band, and the 25th boundary is not the tail.
     [Theory]
-    [InlineData(10.0, "suspect", MonitorStatus.Suspect)]    // < 25th — the anti-predictive tail (D63)
-    [InlineData(50.0, "in_band", MonitorStatus.Healthy)]    // median no-edge — NEVER Suspect
-    [InlineData(97.0, "healthy", MonitorStatus.Healthy)]    // ≥ 95th — distinguishable above
-    [InlineData(25.0, "in_band", MonitorStatus.Healthy)]    // the boundary is not Suspect
-    public void S3_FlatAnchors_OnlyTheAntiPredictiveTailIsSuspect(double pct, string contribution, MonitorStatus status)
+    [InlineData(10.0, 0, "below_anchor", MonitorStatus.Warning)]  // single dip → Warning, not Suspect
+    [InlineData(10.0, 1, "below_anchor", MonitorStatus.Warning)]  // two consecutive → still Warning
+    [InlineData(10.0, 2, "suspect", MonitorStatus.Suspect)]       // three consecutive → Suspect (anti-predictive)
+    [InlineData(50.0, 9, "in_band", MonitorStatus.Healthy)]       // median no-edge — never reaches the anchor
+    [InlineData(97.0, 0, "healthy", MonitorStatus.Healthy)]       // ≥ 95th — distinguishable above
+    [InlineData(25.0, 9, "in_band", MonitorStatus.Healthy)]       // the boundary is not the tail
+    public void S3_FlatAnchors_AntiPredictiveTailIsSuspect_OnlyWhenSustained(double pct, int priorBelow, string contribution, MonitorStatus status)
     {
-        var s = MonitorSignals.S3(pct);
+        var s = MonitorSignals.S3(pct, priorBelow, MonitorSignals.FlatAnchorSustainEvals);
         Assert.Equal(contribution, s.Contribution);
         Assert.Equal(status, s.Status);
     }
 
     [Fact]
-    public void S6_NeverSuspectOnASingleEvaluation_EscalatesOnStreaks()
+    public void S6_NegAlphaSuspectOnlyWhenSustained_InsideBandCapsAtWarning()
     {
-        // D63 still holds under the Phase-4 escalation: a single 63-day window trips t < −1 ~16% of the
-        // time under the null, so ONE evaluation is never Suspect. The Appendix-A ladder: a single
-        // negative t ⇒ Warning; SUSTAINED (2 consecutive) ⇒ Suspect. Inside-band: one window is normal
-        // (none of the ladder), two consecutive ⇒ elevated Warning, three ⇒ critical Suspect.
+        // Negative rolling alpha (t < −1): a single 63-day window trips it ~16% of the time under the null,
+        // so it is Warning once and Suspect ONLY when SUSTAINED to FlatAnchorSustainEvals (3) — Change 3
+        // stops a within-null two-window excursion from tripping it.
         Assert.Equal(MonitorStatus.Warning, MonitorSignals.S6(rollingAlphaT: -1.5, insideCentralBand: true).Status);
-        Assert.Equal(MonitorStatus.Suspect, MonitorSignals.S6(-1.5, insideCentralBand: true, priorConsecutiveNegativeT: 1).Status);
+        Assert.Equal(MonitorStatus.Warning, MonitorSignals.S6(-1.5, insideCentralBand: true, priorConsecutiveNegativeT: 1).Status);  // 2 consecutive — still Warning
+        Assert.Equal(MonitorStatus.Suspect, MonitorSignals.S6(-1.5, insideCentralBand: true, priorConsecutiveNegativeT: 2).Status);  // 3 consecutive — Suspect
+        // Inside-band decay is a CAUTION (Warning) at most, NEVER Suspect — D63 scope note: "do not tune S6
+        // to catch mid-band lifers." One window normal; two consecutive elevated; and it never escalates further.
         Assert.Equal(MonitorStatus.Healthy, MonitorSignals.S6(0.2, insideCentralBand: true).Status);
         Assert.Equal(MonitorStatus.Warning, MonitorSignals.S6(0.2, insideCentralBand: true, priorConsecutiveInsideBand: 1).Status);
-        Assert.Equal(MonitorStatus.Suspect, MonitorSignals.S6(0.2, insideCentralBand: true, priorConsecutiveInsideBand: 2).Status);
+        Assert.Equal(MonitorStatus.Warning, MonitorSignals.S6(0.2, insideCentralBand: true, priorConsecutiveInsideBand: 2).Status);  // 3 consecutive — STILL Warning
+        Assert.Equal(MonitorStatus.Warning, MonitorSignals.S6(0.2, insideCentralBand: true, priorConsecutiveInsideBand: 9).Status);  // never Suspect, however long
+        // An outside-band window is Healthy regardless of any prior streak.
         Assert.Equal(MonitorStatus.Healthy, MonitorSignals.S6(0.2, insideCentralBand: false).Status);
-        // An outside-band window BREAKS the streak regardless of its depth into it.
         Assert.Equal(MonitorStatus.Healthy, MonitorSignals.S6(0.2, insideCentralBand: false, priorConsecutiveInsideBand: 5).Status);
     }
 
@@ -105,7 +114,7 @@ public class OverfittingMonitorTests
     }
 
     [Fact]
-    public void AntiPredictive_LandsInTheSuspectTail()
+    public void AntiPredictive_LandsInTheTail_WarningOnASingleEval_SuspectWhenSustained()
     {
         using var arena = new EvalArena();
         var dates = EvalArena.Dates(100, new DateOnly(2026, 1, 5));
@@ -115,16 +124,24 @@ public class OverfittingMonitorTests
         var members = Enumerable.Range(0, m).Select(i => EvalArena.Noise(99, 0.01, 3000 + i)).ToList();
         var popId = arena.SeedPopulation("daily", costsOn: true, seed: 1001, dates, i => members[i], m);
 
-        // A constant NEGATIVE excess below the centroid ⇒ alpha below the 25th percentile.
+        // A constant NEGATIVE excess below the centroid ⇒ alpha below the 25th percentile every eval.
         var anti = Centroid(members, 99).Select(r => r - 0.003).ToArray();
         arena.SeedStrategy("cand:anti", "candidate", dates, anti);
 
         using var db = arena.Open();
-        var result = new OverfittingMonitor(db, new GateOptions()).Run(dates[^1], "buyhold:cw", popId).Single(r => r.StrategyId == "cand:anti");
+        var monitor = new OverfittingMonitor(db, new GateOptions());
 
-        Assert.True(result.S3.Value < 25, $"anti-predictive S3 percentile was {result.S3.Value}");
-        Assert.Equal(MonitorStatus.Suspect, result.S3.Status);
-        Assert.Equal(MonitorStatus.Suspect, result.Status);
+        // Change 3 (D63): the alpha lands in the sub-25th tail, but a SINGLE dip is a Warning, not Suspect.
+        var first = monitor.Run(dates[^3], "buyhold:cw", popId).Single(r => r.StrategyId == "cand:anti");
+        Assert.True(first.S3.Value < 25, $"anti-predictive S3 percentile was {first.S3.Value}");
+        Assert.Equal("below_anchor", first.S3.Contribution);
+        Assert.Equal(MonitorStatus.Warning, first.S3.Status);
+
+        // SUSTAINED (three consecutive sub-25th evals) ⇒ Suspect — the anti-predictive fast-kill channel.
+        monitor.Run(dates[^2], "buyhold:cw", popId);
+        var third = monitor.Run(dates[^1], "buyhold:cw", popId).Single(r => r.StrategyId == "cand:anti");
+        Assert.Equal(MonitorStatus.Suspect, third.S3.Status);
+        Assert.Equal(MonitorStatus.Suspect, third.Status);
     }
 
     [Fact]
@@ -167,9 +184,14 @@ public class OverfittingMonitorTests
         arena.SeedStrategy("cand:anti", "candidate", dates, anti);
 
         using var db = arena.Open();
-        // Three PRIOR consecutive Suspect evaluations — this one makes four ⇒ auto-retire.
+        // Three PRIOR consecutive Suspect evaluations — this one makes four ⇒ auto-retire. Each prior
+        // Suspect eval also left its S3 'suspect' check (Change 3): the sustained below-anchor streak is
+        // what makes THIS eval's S3 Suspect (a single dip would only be Warning), which drives the aggregate.
         foreach (var d in new[] { "2026-01-01", "2026-01-02", "2026-01-03" })
+        {
             db.OverfittingStatus.Add(new OverfittingStatusRow { StrategyId = "cand:anti", AsOf = d, Status = "suspect", TriggerJson = "{}", RunKind = "live" });
+            db.OverfittingChecks.Add(new OverfittingCheckRow { StrategyId = "cand:anti", AsOf = d, Signal = "S3", Value = 5.0, ThresholdJson = "{}", Contribution = "suspect", RunKind = "live" });
+        }
         db.SaveChanges();
 
         var result = new OverfittingMonitor(db, new GateOptions()).Run(dates[^1], "buyhold:cw", popId).Single(r => r.StrategyId == "cand:anti");
@@ -181,6 +203,58 @@ public class OverfittingMonitorTests
         Assert.Null(demotion.Promoted);
         Assert.Equal("Revert", demotion.Verdict);
         Assert.Contains("auto_retire", demotion.EvidenceJson);
+    }
+
+    // Change 1 (two-pass calibration): a D64 PLANT under a REPLAY run that WOULD auto-retire is exempted —
+    // it is never flipped to Retired (so it stays promotable and keeps emitting S3 rows for the FULL window,
+    // the trajectory the curves are built from), but the would-be retire is still RECORDED with its
+    // triggering signal (finding-113 audit) under a distinct 'WouldRevert' verdict. The live control above
+    // (AutoRetire_WritesAGoLiveLogDemotionRow) proves a non-replay/non-plant strategy still retires normally.
+    [Fact]
+    public void Change1_ReplayPlant_ExemptFromRetire_RecordsWouldBeRetire_AndIsNotTruncated()
+    {
+        using var arena = new EvalArena();
+        var dates = EvalArena.Dates(101, new DateOnly(2026, 1, 5));
+        arena.SeedStrategy("buyhold:cw", "baseline", dates, EvalArena.Noise(100, 0.008, seed: 5), runKind: "replay");
+
+        const int m = 60;
+        var members = Enumerable.Range(0, m).Select(i => EvalArena.Noise(100, 0.01, 3000 + i)).ToList();
+        var popId = arena.SeedPopulation("daily", costsOn: true, seed: 1001, dates, i => members[i], m, runKind: "replay");
+        // An anti-predictive PLANT: a constant negative excess ⇒ S3 percentile < 25 ⇒ Suspect every eval.
+        const string plant = "plant:anti:daily:-2:0";
+        var anti = Centroid(members, 100).Select(r => r - 0.003).ToArray();
+        arena.SeedStrategy(plant, "candidate", dates, anti, runKind: "replay");
+
+        using var db = arena.Open();
+        // Three PRIOR consecutive Suspect evals under REPLAY (status + the sustained S3 'suspect' checks that
+        // produced them, Change 3) ⇒ the next Run's S3 sustains to Suspect ⇒ WOULD auto-retire on the fourth.
+        foreach (var d in new[] { "2025-12-30", "2025-12-31", "2026-01-01" })
+        {
+            db.OverfittingStatus.Add(new OverfittingStatusRow { StrategyId = plant, AsOf = d, Status = "suspect", TriggerJson = "{}", RunKind = "replay" });
+            db.OverfittingChecks.Add(new OverfittingCheckRow { StrategyId = plant, AsOf = d, Signal = "S3", Value = 5.0, ThresholdJson = "{}", Contribution = "suspect", RunKind = "replay" });
+        }
+        db.SaveChanges();
+
+        var monitor = new OverfittingMonitor(db, new GateOptions());
+
+        // First eval: WOULD retire, but the plant is EXEMPT — Suspect, never Retired.
+        var r1 = monitor.Run(dates[^2], "buyhold:cw", popId, runKind: "replay").Single(r => r.StrategyId == plant);
+        Assert.Equal(MonitorStatus.Suspect, r1.Status);
+        Assert.DoesNotContain(db.OverfittingStatus.ToList(), s => s.StrategyId == plant && s.Status == "retired");
+        Assert.NotEqual("retired", db.Strategies.Single(s => s.StrategyId == plant).Status);   // forward column never flipped
+
+        // The would-be retire is recorded with its triggering signal, as a distinct 'WouldRevert' verdict.
+        var wouldBe = Assert.Single(db.GoLiveLog.Where(g => g.Demoted == plant).ToList());
+        Assert.Equal("WouldRevert", wouldBe.Verdict);
+        Assert.Contains("would_auto_retire", wouldBe.EvidenceJson);
+
+        // No truncation: the plant stayed promotable, so a SECOND eval (after the first would-retire) still
+        // evaluates it and writes an S3 row at that date (a real retire would have dropped it from
+        // EffectiveStatus ⇒ no result, no S3 row on the second pass).
+        var run2 = monitor.Run(dates[^1], "buyhold:cw", popId, runKind: "replay");
+        Assert.Contains(run2, r => r.StrategyId == plant);
+        Assert.Contains(db.OverfittingChecks.ToList(),
+            c => c.StrategyId == plant && c.Signal == "S3" && c.AsOf == dates[^1] && c.RunKind == "replay");
     }
 
     [Fact]

@@ -22,4 +22,17 @@ public sealed class ReplayOptions
     /// <summary>v1.9.7 finding 114: bound on the fraction of no-edge plants EVER reaching Suspect via
     /// ANY signal over the replay window (default 0.10).</summary>
     public double JointFalseAlarmMaxFrac { get; set; } = 0.10;
+
+    /// <summary>Change 2 (two-pass calibration): bound on the fraction of no-edge plants that SUSTAIN-breach
+    /// the built P_noise on the HELD-OUT validate segment — the curves' own out-of-sample false-alarm rate
+    /// (default 0.10). Its OWN key, distinct from <see cref="JointFalseAlarmMaxFrac"/> (which measures the
+    /// monitor's flat-anchor FLAGGING, itself altered by Change 3, not the curves) — so tuning one gate can
+    /// never move the other. This is the INDEPENDENT validation; the joint-false-alarm number is not.</summary>
+    public double NoEdgeCurveBreachMaxFrac { get; set; } = 0.10;
+
+    /// <summary>Change 2: floor on the fraction of floor-edge plants that do NOT sustain-breach the built
+    /// P_noise on the validate segment — the curves' out-of-sample edge retention (default 0.90). Its OWN
+    /// key, distinct from <see cref="EdgePlantSurvivalFloor5y"/> (the would-be-retire survival read from the
+    /// monitor's log) — the two measure different things and must move independently.</summary>
+    public double CurveBasedEdgeSurvivalFloor { get; set; } = 0.90;
 }

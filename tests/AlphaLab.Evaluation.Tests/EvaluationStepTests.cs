@@ -29,7 +29,8 @@ internal sealed class EvalArena : IDisposable
     /// <summary>Seed a strategy + a live account + a daily equity curve built from
     /// <paramref name="dailyReturns"/> (length = <paramref name="dates"/>.Count − 1).</summary>
     public void SeedStrategy(string strategyId, string status, IReadOnlyList<string> dates,
-        IReadOnlyList<double> dailyReturns, decimal startEquity = 100_000m, int? horizonDays = null)
+        IReadOnlyList<double> dailyReturns, decimal startEquity = 100_000m, int? horizonDays = null,
+        string runKind = "live")
     {
         using var db = Open();
         db.Strategies.Add(new StrategyRow
@@ -37,7 +38,7 @@ internal sealed class EvalArena : IDisposable
             StrategyId = strategyId, Family = "test", ConfigJson = "{}", ExitPolicyJson = "{}",
             HoldingHorizonDays = horizonDays, CreatedOn = dates[0], Status = status,
         });
-        var account = new AccountRow { StrategyId = strategyId, StartingCash = startEquity, RunKind = "live" };
+        var account = new AccountRow { StrategyId = strategyId, StartingCash = startEquity, RunKind = runKind };
         db.Accounts.Add(account);
         db.SaveChanges();
 
@@ -50,14 +51,15 @@ internal sealed class EvalArena : IDisposable
         }
         db.SaveChanges();
 
-        static EquityCurveRow Row(long acct, string asOf, decimal eq) =>
-            new() { AccountId = acct, AsOf = asOf, Equity = eq, Cash = eq, RunKind = "live" };
+        EquityCurveRow Row(long acct, string asOf, decimal eq) =>
+            new() { AccountId = acct, AsOf = asOf, Equity = eq, Cash = eq, RunKind = runKind };
     }
 
     /// <summary>Seed a control population: a control_populations row + M members' control_equity curves,
     /// each built from <paramref name="memberReturns"/>(i) (length = dates.Count − 1). Returns population_id.</summary>
     public long SeedPopulation(string family, bool costsOn, int seed, IReadOnlyList<string> dates,
-        Func<int, IReadOnlyList<double>> memberReturns, int m, decimal startEquity = 100_000m)
+        Func<int, IReadOnlyList<double>> memberReturns, int m, decimal startEquity = 100_000m,
+        string runKind = "live")
     {
         using var db = Open();
         var pop = new ControlPopulationRow
@@ -71,11 +73,11 @@ internal sealed class EvalArena : IDisposable
         {
             var rets = memberReturns(i);
             var equity = startEquity;
-            db.ControlEquity.Add(new ControlEquityRow { PopulationId = pop.PopulationId, MemberIndex = i, AsOf = dates[0], Equity = equity, RunKind = "live" });
+            db.ControlEquity.Add(new ControlEquityRow { PopulationId = pop.PopulationId, MemberIndex = i, AsOf = dates[0], Equity = equity, RunKind = runKind });
             for (var t = 1; t < dates.Count; t++)
             {
                 equity *= (decimal)(1.0 + rets[t - 1]);
-                db.ControlEquity.Add(new ControlEquityRow { PopulationId = pop.PopulationId, MemberIndex = i, AsOf = dates[t], Equity = equity, RunKind = "live" });
+                db.ControlEquity.Add(new ControlEquityRow { PopulationId = pop.PopulationId, MemberIndex = i, AsOf = dates[t], Equity = equity, RunKind = runKind });
             }
         }
         db.SaveChanges();

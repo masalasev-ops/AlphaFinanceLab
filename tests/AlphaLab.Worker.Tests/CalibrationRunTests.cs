@@ -68,11 +68,12 @@ public class CalibrationRunTests
             Assert.NotEmpty(noise.Knots);
             Assert.NotNull(noise.Vintage);
 
-            // The C-1 sweep covers the three alpha levels (2/4/8 at defaults).
+            // The C-1 sweep is the MONTHLY ladder rungs (2/4/8/16 at defaults; Change 4).
             var power = db.Config.Single(c => c.Key == CalibratedKeys.DetectionPower).ValueJson;
             Assert.Contains("\"2\"", power);
             Assert.Contains("\"4\"", power);
             Assert.Contains("\"8\"", power);
+            Assert.Contains("\"16\"", power);
 
             // A SECOND freeze appends v2 — never an UPDATE (finding 108; the CI grep guards the SQL side,
             // this guards the semantics).

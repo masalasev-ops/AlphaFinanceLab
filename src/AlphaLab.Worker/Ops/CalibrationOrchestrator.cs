@@ -92,7 +92,7 @@ public sealed class CalibrationOrchestrator(
         // ---- (3) the C-1 sweep, (4) FR-41, (5) verification ----
         var detectionPower = DetectionPowerCurves(db, specs, gate.EvaluationCadenceDays);
         new ReplayRegimeOutcomesWriter(db).Write(EvaluationStep.DefaultBenchmarkStrategyId);
-        var verification = new ReplayVerification(db, gate, verdicts, replayOptions).Run(specs, request.LearnThrough, pNoise);
+        var verification = new ReplayVerification(db, gate, verdicts, replayOptions, calibration.Plant).Run(specs, request.LearnThrough, pNoise, pEdge);
 
         // ---- (6) the archived report ----
         // ONE captured instant, invariant-formatted: the filename must agree with the "Generated:"
@@ -203,8 +203,10 @@ public sealed class CalibrationOrchestrator(
     {
         var sessions = db.Runs.Where(r => r.RunKind == Replay && r.Status == "ok")
             .OrderBy(r => r.AsOf).Select(r => r.AsOf).ToList();
+        // Change 4: the detection-power sweep is the MONTHLY ladder (daily cannot promote under its cost
+        // drag, so sweeping it is pointless) — the per-rung promotion here IS the C-1 detection-power curve.
         var result = new Dictionary<double, DetectionPowerCurve>();
-        foreach (var level in specs.Where(s => s is { Kind: PlantKind.Edge, Family: "daily" }).GroupBy(s => s.AlphaAnnPct))
+        foreach (var level in specs.Where(s => s is { Kind: PlantKind.Edge, Family: "monthly" }).GroupBy(s => s.AlphaAnnPct))
         {
             var ids = level.Select(s => s.StrategyId).ToList();
             var promotionSessions = new List<int>();

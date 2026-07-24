@@ -31,6 +31,11 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
 {
     public const int RollingWindowDays = 63;                 // Appendix A s6.window_days
     public const int AutoRetireConsecutiveSuspect = 4;       // Appendix A s6.auto_retire_evals
+
+    /// <summary>Change 1 (two-pass calibration): the go_live_log verdict a would-be plant retire carries
+    /// when the calibration replay exempts it from actually retiring. Distinct from 'Revert' (a real
+    /// demotion) so ReplayVerification's would-be-survival KPI reads exactly these, never a live retire.</summary>
+    public const string WouldRevertVerdict = "WouldRevert";
     private const int DefaultLag = 21;                       // NW lag for the alpha t-stat (Buy&Hold-shape default)
     private const string RunKindLive = "live";
 
@@ -151,8 +156,17 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
         }
         else
         {
-            s3 = MonitorSignals.S3(Statistics.PercentileRank(memberAlphas, SafeAlpha(stratReturns, benchReturns).Alpha));
-            s3Thresholds = new { healthy_anchor = MonitorSignals.S3HealthyAnchor, suspect_anchor = MonitorSignals.S3SuspectAnchor, n = memberAlphas.Count };
+            // Flat pre-calibration anchors. Change 3 (D63): a sub-25th dip is Suspect only when SUSTAINED —
+            // the persisted below-anchor streak (this eval included) must reach FlatAnchorSustainEvals, so a
+            // no-edge plant's rare within-null dip is a Warning, never a Suspect that could retire it.
+            var percentile = Statistics.PercentileRank(memberAlphas, SafeAlpha(stratReturns, benchReturns).Alpha);
+            var priorBelowAnchor = TrailingStreak(strategyId, "S3", asOf, runKind, MonitorSignals.ContinuesBelowAnchorStreak);
+            s3 = MonitorSignals.S3(percentile, priorBelowAnchor, MonitorSignals.FlatAnchorSustainEvals);
+            s3Thresholds = new
+            {
+                healthy_anchor = MonitorSignals.S3HealthyAnchor, suspect_anchor = MonitorSignals.S3SuspectAnchor,
+                sustain_evals = MonitorSignals.FlatAnchorSustainEvals, n = memberAlphas.Count,
+            };
         }
 
         // S6 — rolling 63-day alpha t-stat + inside the population's central 50% band, with the
@@ -184,8 +198,20 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
         // Auto-retire: the sustained-Suspect streak at the CALIBRATED patience (finding 113: a survival-
         // floor failure recalibrates this value — via a new Monitor.S6.AutoRetireEvals config version —
         // never the plant).
-        if (aggregate == MonitorStatus.Suspect &&
-            TrailingSuspectCount(strategyId, asOf, runKind) >= autoRetireEvals - 1)
+        var wouldRetire = aggregate == MonitorStatus.Suspect &&
+            TrailingSuspectCount(strategyId, asOf, runKind) >= autoRetireEvals - 1;
+
+        // Change 1 — two-pass calibration (the B2 core fix). During a CALIBRATION replay the D56 curves do
+        // not exist yet, so the monitor runs on the flat PRE-calibration anchors + S6 escalation: its
+        // verdicts are uncalibrated BY CONSTRUCTION. ACTING on them (retiring a D64 plant) is the category
+        // error — it (a) truncates the S3 trajectory the curves are BUILT from (a retired plant leaves the
+        // promotable set and stops emitting S3 rows ⇒ the curves collapse to survivors) and (b) makes the
+        // verification KPIs, read from that flat-anchor status, hard-FAIL. So a PLANT under replay is never
+        // flipped to Retired. The would-be retire is still RECORDED below (amendment A2), so finding 113's
+        // audit ("every edge-plant auto-retire logged with its triggering signal") and the would-be-survival
+        // KPI (Change 2) stay honest — the fix stops ACTING on the verdicts, it does not stop recording them.
+        var exemptFromRetire = runKind != RunKindLive && Calibration.PlantCohorts.IsPlantId(strategyId);
+        if (wouldRetire && !exemptFromRetire)
         {
             aggregate = MonitorStatus.Retired;
         }
@@ -229,6 +255,33 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
                     new
                     {
                         reason = "auto_retire",
+                        trigger = "consecutive_suspect",
+                        consecutive_suspect_evals = autoRetireEvals,
+                        s2 = s2.Contribution, s3 = s3.Contribution, s6 = s6.Contribution,
+                    },
+                    AlphaLabJson.Options),
+                RunKind = runKind,
+            });
+        }
+        else if (wouldRetire && exemptFromRetire)
+        {
+            // Change 1 / amendment A2 — the plant was EXEMPTED from retirement (it stays 'suspect', stays in
+            // the promotable set, keeps emitting S3 rows for the full window), but the would-be retire is
+            // recorded here so finding 113's mandated audit trail survives and Change 2's would-be-survival
+            // KPI has an event to read. A distinct 'WouldRevert' verdict (go_live_log.verdict has no CHECK)
+            // keeps it separable from a real demotion; no strategies-column flip. The trigger records the
+            // patience actually applied + the S2/S3/S6 contributions — the SAME triggering-signal evidence a
+            // real auto-retire carries, minus the actual state change.
+            db.GoLiveLog.Add(new GoLiveLogRow
+            {
+                AsOf = asOf,
+                Promoted = null,
+                Demoted = strategyId,
+                Verdict = WouldRevertVerdict,
+                EvidenceJson = JsonSerializer.Serialize(
+                    new
+                    {
+                        reason = "would_auto_retire",
                         trigger = "consecutive_suspect",
                         consecutive_suspect_evals = autoRetireEvals,
                         s2 = s2.Contribution, s3 = s3.Contribution, s6 = s6.Contribution,
