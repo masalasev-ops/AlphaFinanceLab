@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -62,6 +63,17 @@ public sealed class CalibrationOrchestrator(
         }
         return null;
     }
+
+    /// <summary>
+    /// The build configuration (Debug/Release) that produced this run, read from the SDK-generated
+    /// <see cref="AssemblyConfigurationAttribute"/>. Stamped into the report so the sign-off artifact
+    /// states which build produced its numbers (finding 278) — Debug and Release must be byte-identical
+    /// for a deterministic run, but the provenance is recorded rather than assumed.
+    /// </summary>
+    public static string BuildConfiguration() =>
+        typeof(CalibrationOrchestrator).Assembly
+            .GetCustomAttribute<AssemblyConfigurationAttribute>()?.Configuration
+        ?? "unknown";
 
     public async Task<int> RunAsync(string connectionString, ReplayRequest request, bool reportOnly, CancellationToken ct = default)
     {
@@ -163,7 +175,7 @@ public sealed class CalibrationOrchestrator(
             request.LearnThrough, vintage.MembershipSource,
             calibration.Plant.SeedsPerPlant, populations.Size,
             pEdge, pNoise, naiveEdge, maxGap, calibration.Plant.SensitivityMaxGapPts,
-            detectionPower, verification, frozenKeys), generatedAt);
+            detectionPower, verification, frozenKeys, BuildConfiguration()), generatedAt);
         await File.WriteAllTextAsync(reportPath, report, ct).ConfigureAwait(false);
         var reportSha = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(report)));
         _logger.LogInformation("replay-calibrate: report archived at {Path} (sha256 {Sha}…).", reportPath, reportSha[..12]);
