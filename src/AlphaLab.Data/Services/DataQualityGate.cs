@@ -29,7 +29,10 @@ public enum QualityIssue
     /// <summary>A price field is finite but ≤ 0 — a NaN-adjacent corruption. Fail closed.</summary>
     NonPositivePrice,
 
-    /// <summary>A daily (adjusted) return whose robust z-score exceeds <c>Data.OutlierZ</c>.</summary>
+    /// <summary>An extreme adjusted return. Two severities: <see cref="QualitySeverity.Warn"/> when the
+    /// robust z-score exceeds <c>Data.OutlierZ</c> (flagged, not dropped); <see cref="QualitySeverity.Reject"/>
+    /// when the bar is a physically-impossible one-session spike-AND-revert beyond
+    /// <c>Data.MaxSingleDayPriceFactor</c> (a vendor bad print — fail closed).</summary>
     OutlierReturn,
 
     /// <summary>The adj_close/close factor stepped between two sessions with no dividend/split in the
@@ -74,6 +77,17 @@ public sealed class DataQualityOptions
 
     /// <summary>Robust-z cutoff for the daily-return outlier test (CONFIG default 8.0).</summary>
     public double OutlierZ { get; set; } = 8.0;
+
+    /// <summary>The largest PLAUSIBLE single-session adjusted-price ratio (close_t / close_{t−1}); a move
+    /// at or beyond ×this — or at or below ÷this — is physically impossible for this universe (the most
+    /// extreme real single-day equity move in history is ~×4; an S&amp;P member never ×10) and is treated
+    /// as a vendor bad print. Two consumers share this ONE bound so "impossible" means the same thing on
+    /// both sides of the write: the ingestion gate REJECTS such a bar when it also reverts (a one-session
+    /// spike-and-revert V, R2/finding-27x) so it is never stored; and the read-side return guard
+    /// NEUTRALIZES it (contributes no return, like a halted day — rule 10) for bars ALREADY stored, which
+    /// D21/D40 forbid deleting. Symmetric by construction: both the spike session and its revert session
+    /// fall outside [1/factor, factor]. CONFIG default 10.0.</summary>
+    public double MaxSingleDayPriceFactor { get; set; } = 10.0;
 
     /// <summary>Rotating names/day cross-checked vs Alpaca (CONFIG default 10). INERT at launch.</summary>
     public int BarCrossCheckSampleSize { get; set; } = 10;
@@ -149,6 +163,7 @@ public sealed class DataQualityGate(DataQualityOptions options) : IDataQualityGa
         CheckGaps(symbol, ordered, expectedDates, flags);
         var priced = CheckFieldIntegrity(symbol, ordered, flags);   // returns the bars with a usable price
         CheckReturnOutliers(symbol, priced, flags);
+        CheckImpossibleSpikeReverts(symbol, priced, flags);
         CheckAdjustmentReconciliation(symbol, priced, actions, flags);
 
         return new QualityReport(flags);
@@ -288,6 +303,53 @@ public sealed class DataQualityGate(DataQualityOptions options) : IDataQualityGa
                 flags.Add(new QualityFlag(QualityIssue.OutlierReturn, QualitySeverity.Warn, symbol, date,
                     $"Daily return {ret.ToString("P2", CultureInfo.InvariantCulture)} has robust z " +
                     $"{robustZ.ToString("F1", CultureInfo.InvariantCulture)} > {options.OutlierZ.ToString(CultureInfo.InvariantCulture)}."));
+            }
+        }
+    }
+
+    // ---- Impossible spike-and-revert: a one-session V beyond the physical bound (fail closed) ----
+    // A vendor bad PRICE bar shows as a single session whose adjusted price is off from BOTH neighbours by
+    // a physically-impossible factor — a ×N spike then ÷N revert (or a ÷N dropout then ×N recovery, e.g.
+    // CFC's 0.04). That is what R1's read-side guard neutralises for bars ALREADY stored; here at ingestion
+    // it is REJECTED so such a bar is never written (the backfill excludes the whole security, D97, and
+    // logs it to the operator-visible gate-sweep — fail closed, rule 10). Deliberately NARROWER than
+    // CheckReturnOutliers (a RELATIVE robust-z Warn that never drops a bar): only a physically-impossible
+    // ROUND TRIP within one session trips this. A SUSTAINED large move — a one-way jump with no revert (a
+    // real permanent event: a takeover, a delisting-adjacent gap) — is NOT rejected here; dropping it would
+    // discard real history. Interior bars only: a spike at a fetch-window edge has no neighbour to confirm
+    // the revert, so it stays a Warn (and R1 catches it downstream if it was ingested before this gate).
+    private void CheckImpossibleSpikeReverts(
+        string symbol,
+        IReadOnlyList<(EodBar Bar, double RawClose, double? Adj, double? Factor)> priced,
+        List<QualityFlag> flags)
+    {
+        var k = options.MaxSingleDayPriceFactor;
+        if (!(k > 1.0)) return;   // a non-physical bound (≤1) would flag every move — treat as "disabled"
+
+        // The SAME single consistent basis CheckReturnOutliers uses (adjusted when the series carries
+        // adjusted closes, else raw), so a genuine split/dividend step is never mistaken for a spike.
+        var anyAdj = priced.Any(p => p.Adj is not null);
+        var series = new List<(string Date, double Price)>(priced.Count);
+        foreach (var p in priced)
+        {
+            double? basis = anyAdj ? p.Adj : p.RawClose;
+            if (basis is { } price && double.IsFinite(price) && price > 0) series.Add((p.Bar.Date, price));
+        }
+
+        var reciprocal = 1.0 / k;
+        for (var i = 1; i < series.Count - 1; i++)
+        {
+            var into = series[i].Price / series[i - 1].Price;      // the move INTO the bar
+            var outOf = series[i + 1].Price / series[i].Price;     // the move OUT of the bar
+            var spikeUp = into >= k && outOf <= reciprocal;        // ×N then ÷N
+            var dropOut = into <= reciprocal && outOf >= k;        // ÷N then ×N (the CFC dropout)
+            if (spikeUp || dropOut)
+            {
+                flags.Add(new QualityFlag(QualityIssue.OutlierReturn, QualitySeverity.Reject, symbol, series[i].Date,
+                    $"Physically-impossible one-session {(spikeUp ? "spike" : "dropout")}-and-revert: adjusted price " +
+                    $"×{into.ToString("G3", CultureInfo.InvariantCulture)} into {series[i].Date} then " +
+                    $"×{outOf.ToString("G3", CultureInfo.InvariantCulture)} out (bound ×{k.ToString(CultureInfo.InvariantCulture)}) " +
+                    "— a vendor bad print, not a real move (rule 10, fail closed)."));
             }
         }
     }

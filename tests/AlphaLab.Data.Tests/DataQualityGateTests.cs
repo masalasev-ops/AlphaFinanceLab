@@ -300,6 +300,97 @@ public class DataQualityGateTests
         Assert.False(report.HasRejects);
     }
 
+    // ---- R2: physically-impossible spike-and-revert is a fail-closed Reject (finding 27x) ----
+    // The distinguishing DoD: a SUSTAINED one-way move of the same magnitude is warned-but-ingested (it
+    // might be a real permanent event); only the one-session ROUND TRIP (a ×N spike then ÷N revert, or the
+    // ÷N dropout then ×N recovery) is a vendor bad print and is rejected. Same bound both R1 and R2 key on.
+
+    [Fact]
+    public void SpikeAndRevert_BeyondBound_IsFailClosedReject()
+    {
+        // Flat 100s, one session spikes ×30 to 3000 and reverts back to 100 the next session.
+        var bars = new List<EodBar>
+        {
+            B("2027-01-04", 100.0, 1.0), B("2027-01-05", 100.0, 1.0),
+            B("2027-01-06", 3000.0, 1.0),                                   // ×30 spike…
+            B("2027-01-07", 100.0, 1.0),                                    // …÷30 revert (the V)
+            B("2027-01-08", 100.0, 1.0),
+        };
+        var report = Gate.Evaluate("XYZ", bars, []);
+
+        Assert.True(report.HasRejects);
+        Assert.Single(report.Flags, f => f.Issue == QualityIssue.OutlierReturn
+            && f.Severity == QualitySeverity.Reject && f.Date == "2027-01-06");
+    }
+
+    [Fact]
+    public void DropoutAndRecovery_CfcShape_IsFailClosedReject()
+    {
+        // The CFC signature: a normal series with a single ÷5000 dropout print that recovers next session.
+        var bars = new List<EodBar>
+        {
+            B("2027-02-01", 100.0, 1.0), B("2027-02-02", 100.0, 1.0),
+            B("2027-02-03", 0.02, 1.0),                                     // ÷5000 dropout…
+            B("2027-02-04", 100.0, 1.0),                                    // …×5000 recovery (the V)
+            B("2027-02-05", 100.0, 1.0),
+        };
+        var report = Gate.Evaluate("XYZ", bars, []);
+
+        Assert.True(report.HasRejects);
+        Assert.Single(report.Flags, f => f.Issue == QualityIssue.OutlierReturn
+            && f.Severity == QualitySeverity.Reject && f.Date == "2027-02-03");
+    }
+
+    [Fact]
+    public void SustainedLargeMove_NoRevert_IsWarnedButNotRejected()
+    {
+        // A one-way ×30 STEP UP that holds — a real permanent event (e.g. a corporate action gap the feed
+        // adjusts). It is an extreme return (robust-z Warn) but NEVER a Reject: dropping it loses real
+        // history. This is the exact contrast with the spike-and-revert above.
+        var bars = new List<EodBar>
+        {
+            B("2027-03-01", 100.0, 1.0), B("2027-03-02", 100.0, 1.0), B("2027-03-03", 100.0, 1.0),
+            B("2027-03-04", 3000.0, 1.0),                                  // ×30 step up…
+            B("2027-03-05", 3000.0, 1.0), B("2027-03-08", 3000.0, 1.0),   // …and it HOLDS (no revert)
+        };
+        var report = Gate.Evaluate("XYZ", bars, []);
+
+        Assert.False(report.HasRejects);                                              // no Reject: sustained ≠ bad print
+        Assert.DoesNotContain(report.Flags, f => f.Severity == QualitySeverity.Reject);
+        Assert.Contains(report.Flags, f => f.Issue == QualityIssue.OutlierReturn      // but it IS flagged (Warn)
+            && f.Severity == QualitySeverity.Warn);
+    }
+
+    [Fact]
+    public void SpikeAtWindowEdge_NoConfirmingNeighbour_IsNotRejected()
+    {
+        // The spike is the LAST bar of the fetch window — there is no next session to confirm a revert, so
+        // the gate does not reject on incomplete evidence (R1's read guard neutralises it downstream).
+        var bars = new List<EodBar>
+        {
+            B("2027-04-01", 100.0, 1.0), B("2027-04-02", 100.0, 1.0),
+            B("2027-04-05", 3000.0, 1.0),                                   // ×30 spike with no following bar
+        };
+        var report = Gate.Evaluate("XYZ", bars, []);
+        Assert.DoesNotContain(report.Flags, f => f.Severity == QualitySeverity.Reject);
+    }
+
+    [Fact]
+    public void SpikeAndRevert_JustBelowBound_IsNotRejected()
+    {
+        // A ×9 spike-and-revert (below the ×10 bound) is surprising but not physically impossible — no
+        // Reject. Pins that the bound, not merely "a spike", is what fails closed.
+        var bars = new List<EodBar>
+        {
+            B("2027-05-03", 100.0, 1.0), B("2027-05-04", 100.0, 1.0),
+            B("2027-05-05", 900.0, 1.0),                                    // ×9 spike…
+            B("2027-05-06", 100.0, 1.0),                                    // …÷9 revert (both below ×10)
+            B("2027-05-07", 100.0, 1.0),
+        };
+        var report = Gate.Evaluate("XYZ", bars, []);
+        Assert.DoesNotContain(report.Flags, f => f.Severity == QualitySeverity.Reject);
+    }
+
     [Fact]
     public void Evaluate_NullArguments_ThrowClosed()
     {

@@ -51,7 +51,8 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     "Provider": "eodhd",                          // D35; fallback: alpaca
     "BarCrossCheckSampleSize": 10,                // rotating names/day vs Alpaca (FR-6)
     "BarCrossCheckTolerancePct": 0.5,
-    "OutlierZ": 8.0                               // quality gate daily-return z cutoff
+    "OutlierZ": 8.0,                              // quality gate daily-return z cutoff (Warn)
+    "MaxSingleDayPriceFactor": 10.0              // physically-impossible single-session price ratio (close_t/close_{t-1}); a move ≥×this or ≤÷this is a vendor bad print — R2 rejects it at ingestion, R1 neutralizes it (no return) at read time for bars already stored (D21/D40)
     // BackfillYears moved to the Backfill CLI section — the live key is `Backfill:BackfillYears` (v1.9.12 finding 158)
   },
 

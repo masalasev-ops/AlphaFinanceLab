@@ -63,6 +63,7 @@ public sealed class DailyPipeline(
     IIndexMembershipRead membership,
     IDataQualityFlagStore flagStore,
     CostsOptions costs,
+    DataQualityOptions dataQuality,
     PopulationsOptions populations,
     GateOptions gate,
     AllocatorOptions allocator,
@@ -481,7 +482,7 @@ public sealed class DailyPipeline(
     private void ComputePopulations(DateOnly asOfDate, string asOf, BarFeatureView features, string runKindToken)
     {
         var costModel = new CostModel(costs);
-        var market = new PopulationMarket(features, membership, calendar, costModel, costs.AdvWindowDays);
+        var market = new PopulationMarket(features, membership, calendar, costModel, costs.AdvWindowDays, dataQuality.MaxSingleDayPriceFactor);
         var engine = new PopulationEngine(market);
         var familyMap = new PopulationSeeder(db, populations).Seed(costs.ModelVersion);
         var writer = new ControlEquityWriter(db);
@@ -598,7 +599,7 @@ public sealed class DailyPipeline(
             if (windowDates.Count >= 2)
             {
                 var features = new BarFeatureView(barReads, calendar, asOfDate, watermark, costs);
-                var market = new PopulationMarket(features, membership, calendar, new CostModel(costs), costs.AdvWindowDays);
+                var market = new PopulationMarket(features, membership, calendar, new CostModel(costs), costs.AdvWindowDays, dataQuality.MaxSingleDayPriceFactor);
                 var dailyFamily = PopulationFamilies.ForPhase3(populations).First(f => f is { Name: "daily", CostsOn: true });
                 new TurnoverMatchStep(db, populations.TurnoverMatchTolerancePct)
                     .Run(asOf, windowDates, new PopulationEngine(market), dailyFamily, EvaluationStep.DefaultBenchmarkStrategyId, runKindToken);
