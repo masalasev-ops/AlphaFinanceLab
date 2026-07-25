@@ -124,7 +124,14 @@ run_kind='replay', quarantined).
    gone). The **per-rung detection-power curve** (`edge_plant_detected` Detail: monthly@2/4/8/16 promotions)
    is the primary finding — read that, not the gate colour; the rule-selected primary is the smallest
    monthly rung clearing the offline floor. Record the `joint_false_alarm` with its comparability caveat
-   (it is NOT independent validation post-Change-3 — only the curve-based metric is).
+   (it is NOT independent validation post-Change-3 — only the curve-based metric is). **D102 (v1.9.46,
+   finding 279): `joint_false_alarm` does NOT gate the freeze.** Expect it to read Fail at ~1.00 — every
+   no-edge plant trips the "ever Suspect" counter within the first trading year (~session 62), and the
+   statistic is monotonic, so it cannot recover. That is the pre-registered amendment-C1 situation, not a
+   failed calibration: read it, record it with its per-signal contributions (finding 280 — S6 is the
+   dominant contributor, not S3), and judge the run on the curve-based metrics and `promotions_le_chance`.
+   Before D102 landed, this Fail alone drove `NoFailures` false and froze **zero** config rows — if a run
+   archives its report but reports no frozen keys, check this first.
 7. **Commit the report** (+ the coverage artifact) and fill the PROGRESS Phase-4 gate box with the
    measured numbers (detection-speed / days-to-indistinguishability medians, would-be-survival + curve-based
    fractions, the per-rung detection-power outcome, the joint false-alarm fraction with per-signal
