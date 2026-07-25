@@ -91,7 +91,37 @@ A rising equity curve appears nowhere in that table. If the lab produces trustwo
 
 ## 2. Decisions log (what we chose, and why)
 
-The decision numbers are stable identifiers used throughout the build; the version labels (v4/v5/v6) simply record *which design pass* introduced each group. D1–D25 come from the initial design ("v4"), D26–D34 from the first review pass ("v5"), **D35–D48 from the external-review pass ("v6")**, D49 from the setup & secrets pass (v6.3), D50–D56 from the gap-closure pass, D57–D62 from the UI-swappability, coherence, and naming passes, **D63–D65 from the verdict-economics + calibration-realism pass, D66–D67 from the build-readiness pass, D68–D69 from the v1.9.1 consistency pass, D70 from the v1.9.2 consistency pass, D71 from the v1.9.3 multi-arena pass, D72–D73 from the v1.9.7 deep-dive pass, D74–D75 from the v1.9.9 Phase-1 reconciliation pass, and D76–D78 from the v1.9.13 pre-Phase-2 schema-decisions pass (corporate-action versioning, `data_quality_flags`, the cross-sectional bar read), and D79–D82 from the v1.9.21 AI-role pass (the three AI seats, the context-pack contract, contestant determinism/evidence rules, and the researcher loop + trials budget — §23), and D83 from the v1.9.23 reconciliation pass (factor returns' dual role for residual momentum — amending D41), and D84 from the v1.9.25 funnel-cash-constraint pass (Stage-5 opens sized against cash — resolving finding 190), and D85 from the v1.9.26 twin-scorer pass (the no-LLM twin's Stage-2 equal-weight z-score blend — refining D81), and D86 from the v1.9.29 frozen-valuation pass (a frozen unmapped-halt position marks at cost basis, not last print — amending §13.6), and D87 from the v1.9.33 sp1500-target pass (the post-Phase-4 widening target amended to the S&P Composite 1500, contingent on a verified-depth 400/600 historical-membership source, else S&P 500 — amending D70(a)), and D88 from the v1.9.34 cohort-maturation pass (the cohort maturation curve KPI: admission-cohort median D36 population percentile vs track length, age-aligned, retired members retained, descriptive only - never a gate, monitor, or allocator input), and D89 from the v1.9.35 phase4-prebuild pass (the detectability-at-admission gate: CandidateFactory refuses a candidate whose pre-registered expected effect could not clear the NW-MDE within `Gate.DetectabilityHorizonYears`, promoting the parked v1.9.8 C-1 detection-power proposal), and D90 from the v1.9.37 save/continue pass (the end-of-day book persisted as-of in `position_snapshots`, closing the one mutable-state gap in NFR-1 so `reproduce-day` can prove it), and D91 from the v1.9.38 signal-library pass (the Signal Library registered as Phase 4.5: per-signal Spearman rank-IC grades over the Stage-1 pool as-of, descriptive only, two tables, backfill after D70), and **D100–D101 from the v1.9.42 two-pass calibration pass** (the pre-4.11 machinery fix: stop acting on uncalibrated verdicts + record the would-be retires + D63-conformant flat anchors + curve-based out-of-sample metrics; the per-cadence plant ladder with a rule-selected primary), and **D102 from the v1.9.46 freeze-gate pass** (the finding-114 `joint_false_alarm` is reported, never freeze-gating — resolving the finding-251 ∧ amendment-C1 deadlock that made the D98 config freeze unreachable)** — all consolidated here as revision **v1.9** (v1.9.1/v1.9.2 errata merged; D71 detailed in `ARENA_ARCHITECTURE_v1.9.3.md`). One-line summaries are retained so the *why* is never lost.
+The decision numbers are stable identifiers used throughout the build. The table below records only *which design pass introduced which range, and its theme* — the decisions themselves are in the register that follows. All consolidated as revision **v1.9** (v1.9.1/v1.9.2 errata merged; D71 detailed in `ARENA_ARCHITECTURE_v1.9.3.md`). One-line summaries are retained so the *why* is never lost.
+
+| Pass | Decisions | Theme |
+|---|---|---|
+| initial design ("v4") | **D1–D25** | the original architecture, scope and philosophy |
+| first review pass ("v5") | **D26–D34** | scope containment; the twin/control and metric choices |
+| external-review pass ("v6") | **D35–D48** | data provider, control populations, Arena Replay, the append-only invariants |
+| setup & secrets (v6.3) | **D49** | the launch tier and secrets handling |
+| gap-closure pass | **D50–D56** | the specifications written out in full in §20 |
+| UI-swappability, coherence, naming | **D57–D62** | the API boundary, honesty-in-read-models, the sole-writer Worker, `AlphaLab.*` |
+| verdict-economics + calibration-realism | **D63–D65** | verdict language per channel; the D64 plants; the bootstrap universe |
+| build-readiness | **D66–D67** | prerequisites and the single secrets file |
+| v1.9.1 consistency | **D68–D69** | ledger money as TEXT decimal |
+| v1.9.2 consistency | **D70** | replay always runs the arena's full as-of membership, never the slice |
+| v1.9.3 multi-arena | **D71** | arena isolation — detailed in `ARENA_ARCHITECTURE_v1.9.3.md` |
+| v1.9.7 deep-dive | **D72–D73** | Worker liveness, heartbeat, append-only config versioning |
+| v1.9.9 Phase-1 reconciliation | **D74–D75** | canonical ticker identity (EODHD dash form) |
+| v1.9.13 pre-Phase-2 schema decisions | **D76–D78** | corporate-action versioning; `data_quality_flags`; the cross-sectional bar read |
+| v1.9.21 AI-role | **D79–D82** | the three AI seats, the context-pack contract, contestant determinism/evidence, the researcher loop + trials budget (§23) |
+| v1.9.23 reconciliation | **D83** | factor returns' dual role for residual momentum — *amends D41* |
+| v1.9.25 funnel-cash-constraint | **D84** | Stage-5 opens sized against cash — *resolves finding 190* |
+| v1.9.26 twin-scorer | **D85** | the no-LLM twin's Stage-2 equal-weight z-score blend — *refines D81* |
+| v1.9.29 frozen-valuation | **D86** | a frozen unmapped-halt position marks at cost basis, not last print — *amends §13.6* |
+| v1.9.33 sp1500-target | **D87** | widening target amended to the S&P 1500, contingent on a verified-depth 400/600 source, else S&P 500 — *amends D70(a)* |
+| v1.9.34 cohort-maturation | **D88** | the cohort maturation curve KPI — descriptive only, never a gate/monitor/allocator input |
+| v1.9.35 phase4-prebuild | **D89** | the FR-40 detectability-at-admission gate |
+| v1.9.37 save/continue | **D90** | the end-of-day book persisted in `position_snapshots`, closing the NFR-1 mutable-state gap |
+| v1.9.38 signal-library | **D91** | the Signal Library registered as Phase 4.5 — descriptive only |
+| v1.9.39 Phase-4 build (Arena Replay) | **D92–D99** | the D95 frozen-watermark contract; `run_kind` on the regime tables (D93); calibrated curves as versioned config rows (D98); the `422 detectability_refused` outcome (D99) |
+| v1.9.42 two-pass calibration | **D100–D101** | stop acting on uncalibrated verdicts + record the would-be retires; D63-conformant flat anchors; curve-based out-of-sample metrics; the per-cadence plant ladder with a rule-selected primary |
+| v1.9.46 freeze-gate | **D102** | `joint_false_alarm` is reported, never freeze-gating — resolving the finding-251 ∧ amendment-C1 deadlock that made the D98 config freeze unreachable |
 
 | # | Decision | Rationale |
 |---|----------|-----------|
