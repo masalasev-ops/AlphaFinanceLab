@@ -61,5 +61,6 @@ These are **static visual references, not code to run or deploy**. Open any of t
    - Phase 8: CATALOG §7 (the gate first), INTEGRATIONS §1 (fundamentals row)
 6. **End every session:** tests green (or honestly red in PROGRESS.md), a PROGRESS.md entry, a commit.
 7. **New decisions** (anything the docs don't cover) get the next D-number appended to MASTER §2 in the same table format — the docs stay the single source of truth as the build evolves.
+8. **Then ask, for every new decision: "does this change a prompt that has not been spent yet?"** If it touches a phase already built, the decision row is the record and the prompt is history — leave it. If it touches a phase **nobody has built from yet**, the prompt is still load-bearing and must carry the change, or someone will build the superseded design from it. That single question is what separates a harmless back-fill from a live gap: `BUILD_AND_PROMPTS` drifted to D91 while MASTER reached D105, and the only consequential part of that drift was the unspent Phase-5 prompt, which would have produced an AI seat with no leakage invariant.
 
 > Research/paper-trading only. Not investment advice.
