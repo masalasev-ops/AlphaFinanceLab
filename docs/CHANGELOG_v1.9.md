@@ -1218,3 +1218,50 @@ Recorded as a falsifiable prediction before the test, not after. The replay's pe
 **Why record this now, with no code to check it against.** A specification written *after* its implementation tends to **describe** it; one written *before* can **contradict** it, and that contradiction is the detectable signal. Finding 285 — the gate and allocator consuming a raw active-return gap as "alpha" — was findable at all only because **D26 had said "never a raw return gap" long before the code that did**, so the divergence could be found by reading two documents against each other rather than by noticing a wrong number. §23.8 places the same bet deliberately: nothing in it describes anything today, and every clause is a claim Phase 5 can be checked against.
 
 **Scope.** Design requirements only. No implementation, no work items opened, no phase schedule changed: the seats remain Phase 5 (researcher, packs, the two tables) and Phase 6 (contestant + twin) per BUILD_AND_PROMPTS §2. Documents touched: MASTER §2 (pass table + D104/D105 rows), MASTER §13.5 (the reproduce-day bullet), MASTER §23.7-23.8 (the new section + three fixture names), TEST_PLAN §6 (the three fixtures).
+
+---
+
+## v1.9.48 — the recompute harness, adopted (D106)
+
+*Recorded 2026-07-26, during the 4.11 calibration run. Docs only. Adopted work, not a proposal — `PROGRESS.md`'s proposal register is for "anything the docs don't cover; approved ones move to MASTER §2", and this is committed, so it lands as a decision.*
+
+| # | Decision | Rationale |
+|---|---|---|
+| **D106** | **Monitor-rule and metric changes are scored by recomputing from stored rows rather than re-simulating (§25).** Covers anything **downstream of the simulation** (signal thresholds, sustain counts, the alpha definition, gate rules, verification metrics); covers **nothing that changes the simulation itself** (cost model, sizing, eligibility, plant construction). Two tiers inside "covered": **direct-read** (`overfitting_checks.value` + `contribution`) and **derived-input** (member window alphas re-derived from `control_equity`); the harness classifies by which PARAMETERS a rule specification touches and refuses or escalates on any it cannot classify. Config resolves **as-of** the recomputed session, never current. Gated on `FX-RecomputeParity`: exact reproduction of generation 1's `overfitting_status`, `go_live_log` Promoted and `go_live_log` WouldRevert rows under the CURRENT rules, deterministic on re-run, still passing after a new config version is inserted | Every monitor-rule change today costs a **multi-day replay** to evaluate — which is why findings 280 and 285 are bundled into one generation-2 run rather than scored independently. The justification is the **rate, not this one saving**: findings 280–283 are a single defect class and more instances are plausible. **Not free** — new code with its own bug surface, and a buggy harness gives wrong answers fast, which is worse than slow correct ones. Rests on one condition that is part of the decision: the allocator computes weights but **moves no money**, so no verdict feeds back into a later session. If the allocator ever moves capital, the premise dies and so does the harness |
+
+### The verification, with citations (so nobody re-derives it)
+
+- **The S6 input is persisted.** `MonitorSignals.S6` returns `SignalOutcome("S6", rollingAlphaT, …)` (`MonitorSignals.cs:110-124`); `OverfittingMonitor.cs:193` → `AddCheck` → `Value = sig.Value` (`:300-310`) → `overfitting_checks.value REAL`. **35,689 rows already carry a non-null value in generation 1.**
+- **The promotion path is recomputable on the same terms.** `PromotionGate.Decide(gap, mde.MdeAnn, d.Length, gate.MinTrackDays)` (`EvaluationStep.cs:89`); `mde` from `MdeCalculator.Compute(d, maxHorizon, gate)` (`:87`); `d` the paired difference series (`:83-84`) from `equity_curve`; `gap` the raw annualised gap (`:88`); `maxHorizon` from `strat.HoldingHorizonDays`, a **persisted column** (`LedgerEntities.cs:33`), not `config_json`.
+- **`gap` is finding 285's defect**, so reproducing promotions under the CURRENT rules means reproducing the raw-gap alpha faithfully — bug included — and the corrected run substitutes Jensen's alpha at the same call site. The harness must reproduce a known defect before it is trusted to evaluate the fix for it.
+- **No feedback.** The allocator's sole call site is `DailyPipeline.cs:609` with no funnel/sizing/ledger consumer; plants are retire-exempt (`OverfittingMonitor.cs:213`, D100).
+- **Config as-of.** `ConfigReadService.ResolveAsOf` (`ConfigReadService.cs:32`) — `MAX(version)` among rows with `changed_on <= t`.
+
+### Three corrections recorded rather than smoothed over
+
+1. **The benchmark is in `equity_curve`, not `control_equity`.** `buyhold:cw` is account 401. `control_equity` supplies the population members that S3's percentile and S6's band are computed from. Both stored, so the claim holds — but a reader following the wrong citation looks in the wrong table.
+2. **`control_equity` holds 650 members, not 200.** A working draft said 200; that was `count(distinct member_index)`, and `member_index` restarts per population (PK `(population_id, member_index, as_of, run_kind)`). Measured: 4 populations — daily/banded/monthly at `Populations.Size`=200 each plus the cost-free daily twin at `CostFreeSize`=50 — and the row count confirms it independently (1,272,700 / 1,958 = 650). Recorded because a document whose stated purpose is that the citations are right should carry its own citation error.
+3. **Recomputing S6 is pure over `value` AND `contribution`, not `value` alone.** `threshold_json` for S6 carries only `{window_days, negative_alpha_t}`, not the band edges; `contribution` distinguishes `inband`/`elevated_inband`, so `insideCentralBand` is recoverable. A band-*definition* change additionally needs member window alphas re-derived from `control_equity`. This is why the covered side is split into two tiers.
+
+### One known limit
+
+**`GateOptions` is not as-of resolvable.** It is bound from appsettings at composition (`PipelineComposition.cs:56`, `SectionName = "Gate"`), so `MinTrackDays` and the MDE parameters are not versioned config rows and are not stored per run. Reproducing generation 1's promotions rests on the `Gate` appsettings block being unchanged since — an assumption the harness cannot verify from the store. Same class as finding 282's call-site literals: a calibration-relevant parameter that is not a versioned row. Recorded as a limit; making `Gate.*` as-of resolvable is **not** proposed here.
+
+### Why the as-of requirement is structural, not defensive
+
+The harness exists to evaluate a **new** threshold, and recording a candidate threshold **INSERTS a new config version** (rule 24 / finding 108), so by the time the harness is used current config already differs from what generation 1 ran under. A harness reading current config would fail `FX-RecomputeParity` — and under §25.3's own routing rule that failure is diagnosed as *input impurity*, sending an investigation into the store when the defect is in the reader. Same class as D104's leakage invariant: an input that must be read as-of, not as-now. The replay already resolves config this way [D96].
+
+### Two open questions (recorded, deliberately not decided)
+
+- **(a) Where it writes.** Recomputed rows must never overwrite generation 1's. Candidates: a distinct vintage, a distinct `run_kind`, or report-only output. Settled when built.
+- **(b) Whether a recomputed number counts as sign-off evidence.** The harness would recompute the C-1 curve and the status-derived KPIs rather than re-simulate them. Whether that satisfies 4.11's DoD is a judgement to make deliberately — and it decides whether generation 2 is **avoidable or merely cheaper**.
+
+### Ordering
+
+**harness → generation 2 → Phase 6.** D106's trigger is **before generation 2**. Generation 2's own trigger is unchanged: **before Phase 6 registers real strategies** (findings 280 and 285). Recorded explicitly so the ordering is read rather than inferred.
+
+### Prose convention (new in this pass)
+
+The rule goes in the sentence and the decision number in a trailing bracket, so the text reads correctly with the bracket deleted — *"Monitor-rule and metric changes are scored by recomputing from stored rows rather than re-simulating [D106]"*, never *"D106 says that…"*. No prior `[D###]` instances existed in the corpus; this establishes it.
+
+**Also this pass, mechanically:** `.gitattributes` (`* text=auto eol=lf`) and the one-time normalization of `MASTER_DESIGN_v1.9.md` from CRLF to LF, committed separately so the D106 diff stays pure content. Checked first, since `ci.ps1` cannot run while the calibration holds the store: all 8 tracked data files under `tests/` are already LF in HEAD, so `eol=lf` is a no-op for them and cannot break a byte-compared fixture.
