@@ -31,6 +31,14 @@ public static class ScreenEndpoints
         group.MapGet("/cohort-maturation", (CohortMaturationBuilder b) => TypedResults.Ok(b.Build()))
             .WithName("GetCohortMaturation").WithSummary("Cohort maturation curve read-model (D88/FR-39).");
 
+        // FR-46/D91: the Signal Library. `asOf` is optional and NOT a filter convenience — it is the
+        // finding-292 seam: omitted resolves the LIVE panel ("is this signal decaying now"), supplied
+        // resolves a PINNED read whose thresholds and grades are both bounded by that date, which is
+        // what lets the Phase-5 digest enter a context pack without reopening Phase 4.5.
+        group.MapGet("/signals", (string? asOf, SignalLibraryBuilder b) => TypedResults.Ok(b.Build(asOf)))
+            .WithName("GetSignalLibrary")
+            .WithSummary("Signal Library read-model (D91/FR-46) — descriptive only; optional ?asOf= pins the read.");
+
         group.MapGet("/go-live-log", () => TypedResults.Ok(GoLiveLogReadModel.NoRunYet))
             .WithName("GetGoLiveLog").WithSummary("Go-live / retire log read-model.");
 
