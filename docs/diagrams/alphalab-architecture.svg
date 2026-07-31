@@ -1,0 +1,205 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 880" width="800" height="880" role="img" aria-labelledby="t d">
+<title id="t">AlphaLab architecture, one page</title>
+<desc id="d">Market history feeds the field of strategies (human strategies plus the AI contestant, each trading its own 100k) and the measured-alongside group (random crowds, the twin, the rule grader). The field writes the ledger; the others write benchmarks and rule grades. Both feed a judging layer that asks whether a result beat the crowd, whether the contestant beat its twin, and what the overfitting checks say. That produces a verdict, which drives the money split, the dashboards, and the AI researcher, which proposes one strategy that a human approves back onto the field. Separately, a sealed calibration run plants fake strategies of known quality, replays twenty years on a simulated clock, checks whether the machinery caught them, and sets the pass marks the judging layer uses.</desc>
+<style>
+  .bg   { fill: #ffffff; }
+  text  { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .th   { font-size: 13px; font-weight: 600; }
+  .ts   { font-size: 11px; }
+  .lbl  { font-size: 11px; fill: #73726c; }
+  .arr  { stroke: #73726c; stroke-width: 1.4; fill: none; }
+  .gray rect   { fill: #EEEEEE; stroke: #7A7A7A; stroke-width: 1; }
+  .gray text   { fill: #2b2b2b; }
+  .green rect  { fill: #E8F5E9; stroke: #2E7D46; stroke-width: 1; }
+  .green text  { fill: #14351f; }
+  .blue rect   { fill: #E7F0FB; stroke: #1F5FA6; stroke-width: 1; }
+  .blue text   { fill: #0f2f52; }
+  .teal rect   { fill: #E2F5F1; stroke: #0F6E56; stroke-width: 1; }
+  .teal text   { fill: #0a3b30; }
+  .purple rect { fill: #F3EEFB; stroke: #6A4FB0; stroke-width: 1; }
+  .purple text { fill: #301d5c; }
+  .amber rect  { fill: #FFF4E5; stroke: #C77700; stroke-width: 1; }
+  .amber text  { fill: #5c3800; }
+  .grp         { fill: none; stroke-dasharray: 4 3; stroke-width: 1; }
+  .grptxt      { fill: #3d3d3a; }
+</style>
+<defs>
+  <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#73726c" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+
+<rect class="bg" x="0" y="0" width="800" height="880"/>
+
+<!-- market history -->
+<g class="gray">
+  <rect x="40" y="30" width="520" height="54" rx="10"/>
+  <text class="th" x="300" y="54" text-anchor="middle">Market history</text>
+  <text class="ts" x="300" y="72" text-anchor="middle">20 years, only what was knowable on each day</text>
+</g>
+<line x1="150" y1="84" x2="150" y2="104" class="arr" marker-end="url(#ar)"/>
+<line x1="440" y1="84" x2="440" y2="104" class="arr" marker-end="url(#ar)"/>
+
+<!-- the field -->
+<rect class="grp" stroke="#2E7D46" x="40" y="110" width="250" height="200" rx="12"/>
+<text class="th grptxt" x="165" y="132" text-anchor="middle">The field</text>
+<text class="ts grptxt" x="165" y="149" text-anchor="middle">each trades its own $100k</text>
+<g class="green">
+  <rect x="56" y="160" width="218" height="44" rx="8"/>
+  <text class="th" x="165" y="178" text-anchor="middle">Human strategies</text>
+  <text class="ts" x="165" y="195" text-anchor="middle">momentum, value, low-vol...</text>
+</g>
+<g class="green">
+  <rect x="56" y="212" width="218" height="32" rx="8"/>
+  <text class="th" x="165" y="232" text-anchor="middle">AI contestant</text>
+</g>
+<text class="ts grptxt" x="165" y="266" text-anchor="middle">each ranks stocks, sizes positions,</text>
+<text class="ts grptxt" x="165" y="284" text-anchor="middle">a pretend broker fills with real costs</text>
+
+<!-- measured alongside -->
+<rect class="grp" stroke="#1F5FA6" x="310" y="110" width="250" height="200" rx="12"/>
+<text class="th grptxt" x="435" y="132" text-anchor="middle">Measured alongside</text>
+<g class="blue">
+  <rect x="326" y="144" width="218" height="46" rx="8"/>
+  <text class="th" x="435" y="163" text-anchor="middle">Random crowds</text>
+  <text class="ts" x="435" y="180" text-anchor="middle">the luck benchmark</text>
+</g>
+<g class="blue">
+  <rect x="326" y="198" width="218" height="46" rx="8"/>
+  <text class="th" x="435" y="217" text-anchor="middle">The twin</text>
+  <text class="ts" x="435" y="234" text-anchor="middle">same strategy, AI removed</text>
+</g>
+<g class="teal">
+  <rect x="326" y="252" width="218" height="46" rx="8"/>
+  <text class="th" x="435" y="271" text-anchor="middle">Rule grader</text>
+  <text class="ts" x="435" y="288" text-anchor="middle">is each rule still predicting?</text>
+</g>
+
+<line x1="165" y1="310" x2="165" y2="336" class="arr" marker-end="url(#ar)"/>
+<line x1="435" y1="310" x2="435" y2="336" class="arr" marker-end="url(#ar)"/>
+
+<!-- records -->
+<g class="gray">
+  <rect x="40" y="340" width="250" height="56" rx="10"/>
+  <text class="th" x="165" y="363" text-anchor="middle">The ledger</text>
+  <text class="ts" x="165" y="381" text-anchor="middle">trades, holdings, cash, equity</text>
+</g>
+<g class="gray">
+  <rect x="310" y="340" width="250" height="56" rx="10"/>
+  <text class="th" x="435" y="363" text-anchor="middle">Benchmarks + rule grades</text>
+  <text class="ts" x="435" y="381" text-anchor="middle">what everything is judged against</text>
+</g>
+
+<line x1="165" y1="396" x2="165" y2="420" class="arr" marker-end="url(#ar)"/>
+<line x1="435" y1="396" x2="435" y2="420" class="arr" marker-end="url(#ar)"/>
+
+<!-- judging -->
+<rect class="grp" stroke="#1F5FA6" x="40" y="424" width="520" height="86" rx="12"/>
+<text class="th grptxt" x="300" y="446" text-anchor="middle">Telling real from lucky (none of this is AI)</text>
+<g class="blue">
+  <rect x="56" y="456" width="158" height="42" rx="8"/>
+  <text class="ts" x="135" y="474" text-anchor="middle">beat the crowd</text>
+  <text class="ts" x="135" y="489" text-anchor="middle">by enough?</text>
+</g>
+<g class="blue">
+  <rect x="222" y="456" width="158" height="42" rx="8"/>
+  <text class="ts" x="301" y="474" text-anchor="middle">contestant minus</text>
+  <text class="ts" x="301" y="489" text-anchor="middle">its twin?</text>
+</g>
+<g class="blue">
+  <rect x="388" y="456" width="156" height="42" rx="8"/>
+  <text class="ts" x="466" y="474" text-anchor="middle">overfitting</text>
+  <text class="ts" x="466" y="489" text-anchor="middle">checks</text>
+</g>
+
+<line x1="300" y1="510" x2="300" y2="536" class="arr" marker-end="url(#ar)"/>
+
+<!-- verdict -->
+<g class="gray">
+  <rect x="170" y="540" width="260" height="56" rx="10"/>
+  <text class="th" x="300" y="563" text-anchor="middle">Verdict + lessons</text>
+  <text class="ts" x="300" y="581" text-anchor="middle">how strong, how proven</text>
+</g>
+
+<path d="M170 568 L110 568 L110 630" class="arr" marker-end="url(#ar)"/>
+<path d="M430 568 L490 568 L490 630" class="arr" marker-end="url(#ar)"/>
+<line x1="300" y1="596" x2="300" y2="626" class="arr" marker-end="url(#ar)"/>
+
+<!-- outputs -->
+<g class="blue">
+  <rect x="40" y="634" width="140" height="62" rx="8"/>
+  <text class="th" x="110" y="658" text-anchor="middle">Money split</text>
+  <text class="ts" x="110" y="676" text-anchor="middle">slow, clamped,</text>
+  <text class="ts" x="110" y="690" text-anchor="middle">evidence-led</text>
+</g>
+<g class="amber">
+  <rect x="420" y="634" width="140" height="62" rx="8"/>
+  <text class="th" x="490" y="658" text-anchor="middle">Your dashboards</text>
+  <text class="ts" x="490" y="676" text-anchor="middle">the consistency</text>
+  <text class="ts" x="490" y="690" text-anchor="middle">ledger you read</text>
+</g>
+
+<!-- ai researcher -->
+<rect class="grp" stroke="#6A4FB0" x="196" y="630" width="208" height="180" rx="12"/>
+<text class="th grptxt" x="300" y="652" text-anchor="middle">The AI researcher</text>
+<g class="purple">
+  <rect x="212" y="662" width="176" height="36" rx="8"/>
+  <text class="ts" x="300" y="684" text-anchor="middle">reads the lessons</text>
+</g>
+<line x1="300" y1="698" x2="300" y2="712" class="arr" marker-end="url(#ar)"/>
+<g class="purple">
+  <rect x="212" y="716" width="176" height="36" rx="8"/>
+  <text class="ts" x="300" y="738" text-anchor="middle">proposes one strategy</text>
+</g>
+<line x1="300" y1="752" x2="300" y2="766" class="arr" marker-end="url(#ar)"/>
+<g class="blue">
+  <rect x="212" y="770" width="176" height="32" rx="8"/>
+  <text class="ts" x="300" y="790" text-anchor="middle">worth proving? you approve</text>
+</g>
+
+<path d="M196 786 L20 786 L20 200 L34 200" class="arr" marker-end="url(#ar)"/>
+<text class="lbl" x="112" y="804" text-anchor="middle">joins the field next day</text>
+
+<!-- calibration -->
+<rect class="grp" stroke="#1F5FA6" x="600" y="110" width="180" height="350" rx="12"/>
+<text class="th grptxt" x="690" y="133" text-anchor="middle">Calibration</text>
+<text class="ts grptxt" x="690" y="150" text-anchor="middle">runs once, sealed off</text>
+<g class="blue">
+  <rect x="614" y="160" width="152" height="56" rx="8"/>
+  <text class="ts" x="690" y="180" text-anchor="middle">planted fake strategies,</text>
+  <text class="ts" x="690" y="195" text-anchor="middle">quality known in</text>
+  <text class="ts" x="690" y="210" text-anchor="middle">advance</text>
+</g>
+<line x1="690" y1="216" x2="690" y2="232" class="arr" marker-end="url(#ar)"/>
+<g class="blue">
+  <rect x="614" y="236" width="152" height="56" rx="8"/>
+  <text class="ts" x="690" y="256" text-anchor="middle">replay 20 years on</text>
+  <text class="ts" x="690" y="271" text-anchor="middle">a simulated clock,</text>
+  <text class="ts" x="690" y="286" text-anchor="middle">same daily pipeline</text>
+</g>
+<line x1="690" y1="292" x2="690" y2="308" class="arr" marker-end="url(#ar)"/>
+<g class="blue">
+  <rect x="614" y="312" width="152" height="46" rx="8"/>
+  <text class="ts" x="690" y="332" text-anchor="middle">did the checks</text>
+  <text class="ts" x="690" y="347" text-anchor="middle">catch them?</text>
+</g>
+<line x1="690" y1="358" x2="690" y2="374" class="arr" marker-end="url(#ar)"/>
+<g class="blue">
+  <rect x="614" y="378" width="152" height="46" rx="8"/>
+  <text class="ts" x="690" y="398" text-anchor="middle">set the pass marks</text>
+  <text class="ts" x="690" y="413" text-anchor="middle">the checks use</text>
+</g>
+
+<path d="M690 460 L690 486 L580 486 L580 466 L566 466" class="arr" stroke-dasharray="5 3" marker-end="url(#ar)"/>
+<text class="lbl" x="636" y="504" text-anchor="middle">pass marks</text>
+
+<!-- legend -->
+<g class="green"><rect x="40" y="838" width="11" height="11" rx="2"/></g>
+<text class="lbl" x="58" y="848">trades money</text>
+<g class="blue"><rect x="180" y="838" width="11" height="11" rx="2"/></g>
+<text class="lbl" x="198" y="848">maths, no AI</text>
+<g class="purple"><rect x="320" y="838" width="11" height="11" rx="2"/></g>
+<text class="lbl" x="338" y="848">AI, human approved</text>
+<g class="gray"><rect x="500" y="838" width="11" height="11" rx="2"/></g>
+<text class="lbl" x="518" y="848">stored records</text>
+</svg>
