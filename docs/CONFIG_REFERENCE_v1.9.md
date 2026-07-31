@@ -230,10 +230,12 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
   },
 
   "SignalLibrary": {                               // D91 - Phase 4.5 signal grading (descriptive only; read by the FR-44 IC engine + FR-46 read-model)
-    "HorizonsDays": [ 21, 63 ],                    // pre-registered grade horizons k, in trading days; adding 126 is open (PROGRESS P15)
+    "HorizonsDays": [ 21, 63 ],                    // pre-registered grade horizons k, in trading days. 126 CLOSED - rejected for v1 (finding 290): NW lag = horizon against the flag's 1y window leaves ~2 effective observations. Effective n = 252/k, reported beside each flag (~12 at k=21, ~4 at k=63)
     "RollingWindowsYears": [ 1, 5 ],               // rolling mean rank-IC windows for the trend inference (Newey-West lag = horizon)
     "TrendDecayZ": null,                           // decaying = the 1y trend significantly negative at this z; value pinned at build checkpoint 4.5.2, before the first grade row is written
     "TrendGoneZ": null                             // gone = the 1y mean not significantly above zero at this z (stable = otherwise); value pinned at build checkpoint 4.5.2
+                                                   // BOTH z KEYS: pinned once, append-only-versioned, never re-stamped (the D98 freeze discipline). Pinning them AFTER the 20y backfill exists would be choosing thresholds by looking at the answer. That a later change is cheap to re-score (D106, over stored signal_ic rows) is a cost fact, NEVER a licence to defer the pinning.
+                                                   // Read as-of (D96 ResolveAsOf) when serving a watermark-pinned consumer such as the Phase-5 digest (finding 292); ResolveCurrent for the live panel.
   },
 
   "Llm": {                                         // D24/D46
