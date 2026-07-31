@@ -169,7 +169,12 @@ run_kind='replay', quarantined).
 9. **After sign-off:** `Replay.PrunePerMemberLedgersAfterSignoff` sanctions pruning the per-member
    replay ledgers (control_equity + plant equity rows); the runs, power_reports, frozen curves and the
    report stay. The forward widen (`Universe:Bootstrap:Universe` flip + backfill delta) remains a
-   SEPARATE post-sign-off action.
+   SEPARATE post-sign-off action — **but NOT an unordered one: it must land BEFORE go-live**
+   (v1.9.51, finding 291). Forward Signal-Library IC grading begins at go-live, so widening the
+   universe afterwards puts a BREAK in the forward IC series — the same confound that rules out an
+   in-place widen for the cohort curve (the D87 statements). The Phase-4.5 BACKFILL is unaffected:
+   it grades historical S&P 500 as-of membership, which D70 already satisfied. Recorded in both
+   places (here and the Phase-4.5 prompt) so neither can be scheduled in ignorance of the other.
 
 The walk-forward seeding mode (`IBacktestEngine`) shares the replay generation rules: a seeding run
 over an evaluated generation (or vice versa) needs `--reset` — mixing evaluated and unevaluated days
