@@ -62,8 +62,15 @@ if ($dirty.Count -gt 0 -and -not $Force) {
 src/ has uncommitted changes - refusing to resume the calibration against edited machinery:
   $sample
 Resuming would continue ONE replay generation with DIFFERENT code, which no watermark check can
-detect. Either stash/commit and rebuild deliberately (then the generation needs a --reset re-run),
-or pass -Force if you are certain these changes cannot reach the replay path.
+detect. Stash or commit first, then resume. Which kind of change decides what happens next
+(corrected cost map, findings 282-283(b) / D107):
+  * a REPLAY-PATH change (anything a session's computation consumes - pipeline, flat-anchor
+    monitor rules, plant construction, costs) invalidates the generation: start a genuinely
+    fresh one with a deliberate --reset run.
+  * a VERIFICATION-STAGE change (ReplayVerification / report / freeze - the post-replay chain)
+    has ZERO residue on committed sessions: commit it and resume with THIS script. Never --reset
+    for that - it would destroy every committed session to change a stage that never touched them.
+Or pass -Force if you are certain these changes cannot reach the replay path.
 "@
 }
 
