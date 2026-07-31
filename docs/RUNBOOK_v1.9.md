@@ -111,9 +111,34 @@ run_kind='replay', quarantined).
    those sessions stay recoverable. (c) **Stage-2 smoke run** (~4-8h, a 1-2y window): assert no plant
    retires and every plant emits rows across the whole window (its verification reads `Insufficient` by
    design — a mechanics smoke test). Only then spend the full run.
-5. **The full-scale calibration run** (hours → a day; deterministic; resumable — a crash or stop resumes by
-   re-running the same command):
-   `dotnet run --project src/AlphaLab.Worker -- replay-calibrate --reset --from <start> --to <end> [--learn-through <boundary>]`
+5. **The full-scale calibration run** (deterministic; **resumable — but NOT by re-running the launch command**).
+
+   **To START a fresh generation** (`--reset` DELETES every committed replay session and begins again —
+   see the warning below):
+   `dotnet run --project src/AlphaLab.Worker -c Release -- replay-calibrate --reset --from <start> --to <end> [--learn-through <boundary>]`
+
+   > ### ⚠ TO RESUME AFTER A CRASH, REBOOT OR STOP — DO **NOT** RE-RUN THE ABOVE
+   >
+   > *(finding 279 pass; this text previously read "resumes by re-running the same command", which
+   > destroys the generation it claims to resume.)*
+   >
+   > `--reset` calls `ReplayRunner.DeleteReplayGeneration`: it **deletes every committed replay session**
+   > before starting over. Pressing Up-Enter after a crash therefore throws away the entire run — days of
+   > work — and silently begins a new generation. The run **is** genuinely resumable: sessions commit one
+   > at a time and already-committed days are skipped, so at worst you lose the in-flight day.
+   >
+   > **Resume with:**
+   > ```
+   > tools\resume-calibration.ps1
+   > ```
+   > It never emits `--reset` by construction, pins the generation's frozen watermark (D95 — a re-resolved
+   > watermark that has moved because new bars arrived would otherwise be refused as a mixed vintage),
+   > holds the build at `-c Release` to match the report's build stamp (finding 278), and refuses to launch
+   > if a Worker is already running or if `src/` has uncommitted changes (resuming one generation with two
+   > code vintages is invisible to every watermark check).
+   >
+   > The equivalent raw command, if you are not using the script, is the launch command **with `--reset`
+   > removed** and `--watermark <the generation's frozen watermark>` added.
    `--learn-through` is the FR-42 learn/validate split (a runtime parameter, deliberately no CONFIG key);
    the curves build from the learn side, the curve-based validate checks read the validate side.
 6. **Review the archived report** (`docs/calibration/sp500/<date>-calibration.md`): the verification table
@@ -124,7 +149,14 @@ run_kind='replay', quarantined).
    gone). The **per-rung detection-power curve** (`edge_plant_detected` Detail: monthly@2/4/8/16 promotions)
    is the primary finding — read that, not the gate colour; the rule-selected primary is the smallest
    monthly rung clearing the offline floor. Record the `joint_false_alarm` with its comparability caveat
-   (it is NOT independent validation post-Change-3 — only the curve-based metric is).
+   (it is NOT independent validation post-Change-3 — only the curve-based metric is). **D102 (v1.9.46,
+   finding 279): `joint_false_alarm` does NOT gate the freeze.** Expect it to read Fail at ~1.00 — every
+   no-edge plant trips the "ever Suspect" counter within the first trading year (~session 62), and the
+   statistic is monotonic, so it cannot recover. That is the pre-registered amendment-C1 situation, not a
+   failed calibration: read it, record it with its per-signal contributions (finding 280 — S6 is the
+   dominant contributor, not S3), and judge the run on the curve-based metrics and `promotions_le_chance`.
+   Before D102 landed, this Fail alone drove `NoFailures` false and froze **zero** config rows — if a run
+   archives its report but reports no frozen keys, check this first.
 7. **Commit the report** (+ the coverage artifact) and fill the PROGRESS Phase-4 gate box with the
    measured numbers (detection-speed / days-to-indistinguishability medians, would-be-survival + curve-based
    fractions, the per-rung detection-power outcome, the joint false-alarm fraction with per-signal
