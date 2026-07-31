@@ -39,8 +39,45 @@ public static class OpsCommandHost
                 VerifyWal(arena, connectionString, loggerFactory),
             WorkerCommandKind.ReplayCalibrate =>
                 await ReplayCalibrateAsync(command, configuration, arena, connectionString, loggerFactory, ct).ConfigureAwait(false),
+            WorkerCommandKind.SignalBackfill =>
+                await SignalBackfillAsync(command, configuration, arena, connectionString, loggerFactory, ct).ConfigureAwait(false),
             _ => throw new ArgumentOutOfRangeException(nameof(command), command.Kind, "Not an ops verb."),
         };
+    }
+
+    // The FR-45 signal-IC backfill (checkpoint 4.5.3). WRITES `signal_ic`, so it runs here in the
+    // Worker process (the sole writer, D59) and carries its own liveness gate. It refuses to grade a
+    // single day until the D108 thresholds are pinned — that refusal is reported as its own exit path
+    // rather than folded into the generic failure, because "not pinned yet" is an ORDERING message the
+    // operator can act on, not a crash.
+    private static async Task<int> SignalBackfillAsync(
+        WorkerCommand command,
+        IConfiguration configuration,
+        ArenaOptions arena,
+        string connectionString,
+        ILoggerFactory loggerFactory,
+        CancellationToken ct)
+    {
+        var logger = loggerFactory.CreateLogger("AlphaLab.Worker.SignalBackfill");
+        try
+        {
+            var outcome = await new SignalBackfillRunner(configuration, arena, loggerFactory)
+                .RunAsync(connectionString, command.SignalBackfill!, ct).ConfigureAwait(false);
+            logger.LogInformation(
+                "signal-backfill: {Written} grade(s) written over {Graded}/{Planned} session(s) in {Elapsed}.",
+                outcome.GradesWritten, outcome.SessionsGraded, outcome.SessionsPlanned, outcome.Elapsed);
+            return 0;
+        }
+        catch (SignalThresholdsNotPinnedException ex)
+        {
+            logger.LogCritical("signal-backfill refused: {Message}", ex.Message);
+            return 1;
+        }
+        catch (Exception ex)
+        {
+            logger.LogCritical(ex, "signal-backfill could not run.");
+            return 1;
+        }
     }
 
     // The Phase-4 replay + calibration chain (checkpoints 4.4–4.8). NOT read-only: replay WRITES

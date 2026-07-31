@@ -96,7 +96,7 @@ public class SchemaFidelityTests
     }
 
     [Fact]
-    public void Schema_ExactlyTheThirtySixTables_Exist()
+    public void Schema_ExactlyTheThirtyEightTables_Exist()
     {
         var dbPath = TempDb();
         try
@@ -122,7 +122,10 @@ public class SchemaFidelityTests
             // session because `positions` is current state that corporate actions rewrite in place, so a
             // past day's pre-trade book is otherwise unrecoverable and NFR-1 cannot hold (FR-25). Plus the
             // Phase-4 M5 replay_regime_outcomes(1) = 36 — the D89/FR-41 per-regime replay decomposition,
-            // run_kind='replay' by construction under the D37 quarantine.
+            // run_kind='replay' by construction under the D37 quarantine. Plus the Phase-4.5 M6 Signal
+            // Library(2): signals (the frozen instrument registry) + signal_ic (one row per grade) = 38.
+            // Neither carries run_kind, by design: a grade is a property of a signal and a date, not of a
+            // strategy run, so D93's per-run-kind split has no analogue (D91/FR-43,44).
             //
             // STILL deliberately absent, and each for its own reason — this list is the guard
             // against a table appearing before the phase that earns it:
@@ -146,7 +149,8 @@ public class SchemaFidelityTests
                 "index_membership", "index_membership_log", "jobs", "journal_entries", "overfitting_checks",
                 "overfitting_status", "position_snapshots", "positions", "power_reports", "regime_episodes",
                 "regime_labels", "replay_regime_outcomes", "runs", "sector_changes", "securities",
-                "strategies", "ticker_history", "trades", "trading_calendar", "trials_registry", "worker_state"
+                "signal_ic", "signals", "strategies", "ticker_history", "trades", "trading_calendar",
+                "trials_registry", "worker_state"
             }, tables);
         }
         finally { TryDelete(dbPath); }
@@ -372,6 +376,67 @@ public class SchemaFidelityTests
             }
         }
         finally { TryDelete(dbPath); }
+    }
+
+    [Fact]
+    public void Schema_Phase45SignalLibrary_MatchesSchemaSpec()
+    {
+        var dbPath = TempDb();
+        try
+        {
+            using (var db = NewContext(dbPath)) db.Database.Migrate();
+
+            var signals = TableDdl(dbPath, "signals");
+            var ic = TableDdl(dbPath, "signal_ic");
+
+            // signals: TEXT PK on signal_id, and the four provenance columns SCHEMA declares. SQLite
+            // renders a SINGLE-column key INLINE on the column ("signal_id" TEXT NOT NULL CONSTRAINT
+            // "PK_signals" PRIMARY KEY) and a composite one as a table-level clause — so the two
+            // assertions below deliberately differ in shape rather than sharing one pattern.
+            Assert.Matches(@"""signal_id""[^,]*CONSTRAINT\s+""PK_signals""\s+PRIMARY KEY", signals);
+            foreach (var col in new[] { "family", "config_json", "code_version", "registered_on" })
+            {
+                Assert.Contains(col, signals, StringComparison.Ordinal);
+            }
+
+            // signal_ic: the composite PK, in SCHEMA's declared column order.
+            Assert.Matches(@"PRIMARY KEY\s*\(\s*""?signal_id""?\s*,\s*""?as_of""?\s*,\s*""?horizon_days""?\s*\)", ic);
+            Assert.Contains("rank_ic", ic, StringComparison.Ordinal);
+            Assert.Contains("\"n\"", ic, StringComparison.Ordinal);
+
+            // NO run_kind on either table — a grade is a property of a signal and a date, not of a
+            // strategy run, so D93's per-run-kind split has no analogue here. Asserted rather than
+            // assumed, because adding run_kind later would silently double every grade.
+            Assert.DoesNotContain("run_kind", signals, StringComparison.Ordinal);
+            Assert.DoesNotContain("run_kind", ic, StringComparison.Ordinal);
+
+            // No CHECK constraints and no extra indexes beyond the PKs (SCHEMA verbatim); the
+            // signal_id REFERENCES relationship is documentary, so EF must declare no FK and create no
+            // shadow index (house precedent).
+            Assert.Equal(0, Regex.Matches(signals, "CHECK").Count);
+            Assert.Equal(0, Regex.Matches(ic, "CHECK").Count);
+            Assert.DoesNotContain("FOREIGN KEY", ic, StringComparison.Ordinal);
+            Assert.Empty(IndexNames(dbPath, "signals"));
+            Assert.Empty(IndexNames(dbPath, "signal_ic"));
+        }
+        finally { TryDelete(dbPath); }
+    }
+
+    private static List<string> IndexNames(string dbPath, string table)
+    {
+        using var db = NewContext(dbPath);
+        var conn = db.Database.GetDbConnection();
+        conn.Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name=$t AND sql IS NOT NULL;";
+        var p = cmd.CreateParameter();
+        p.ParameterName = "$t";
+        p.Value = table;
+        cmd.Parameters.Add(p);
+        var names = new List<string>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read()) names.Add(reader.GetString(0));
+        return names;
     }
 
     [Fact]

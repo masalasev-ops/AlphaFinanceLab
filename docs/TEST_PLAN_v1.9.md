@@ -84,7 +84,9 @@
 | `FX-SignalIcDeterminism` | one grading day recomputed twice at the same watermark (Phase 4.5) | FR-44/D91: byte-identical `signal_ic` rows (no cross-section persisted; deterministic recompute from versioned bars) |
 | `FX-SignalIcPit` | a name outside Stage-1 membership as-of the grading day (Phase 4.5) | FR-44/D91: the name contributes nothing to that day's grade; `n` excludes it |
 | `FX-SignalBackfillIdempotent` | an interrupted then re-run signal-IC backfill over a fixture window (Phase 4.5; runs after D70) | FR-45/D91: resumable; the re-run produces identical tables |
-| `FX-SignalParity` | one catalog strategy's Stage-2 scores vs the library scorer on the same day and pool (lands with Phase 6) | FR-43/D91: scorer-output equality between the library path and the strategy path, so the instrument measures the exact deployed formula |
+| `FX-SignalEffectiveN` | hand-computed effective samples and critical values at 5y/1y × k=21/63 (Phase 4.5) | D108: `n_eff = window ÷ horizon` and BOTH degrees of freedom (`n−1` level, `n−2` trend) derive correctly; the published t quantiles match; below the `n_eff` floor of 10 NO verdict is emitted (state `insufficient`, no statistic, no critical value) and at the floor one appears on identical data |
+| `FX-SignalPinBeforeGrade` | a store with one or both trend thresholds unpinned (Phase 4.5) | D108/FR-45: the backfill REFUSES to grade, names the missing key(s), and writes zero `signal_ic` rows; paired with its negative half (both pinned ⇒ the same call proceeds), so the guard cannot pass vacuously |
+| `FX-SignalParity` | one catalog strategy's Stage-2 scores vs the library scorer on the same day and pool (lands with Phase 6) | FR-43/D91: scorer-output equality between the library path and the strategy path, so the instrument measures the exact deployed formula. **Structurally satisfiable by construction (finding 295):** both paths hold the SAME `ISignal` instance from `AlphaLab.Core`, so this is a regression test over a shape that cannot diverge, not a discovery test over two implementations |
 
 ## 6. LLM layer — news read + the AI seats (Phase 5; D79-D82, spec MASTER §23)
 

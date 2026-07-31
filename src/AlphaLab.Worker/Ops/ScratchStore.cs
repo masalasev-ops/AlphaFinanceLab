@@ -68,13 +68,29 @@ public sealed class ScratchStore : IDisposable
     /// index_membership_log), or replay-only under the D37 quarantine (replay_regime_outcomes — a
     /// FORWARD day neither reads nor writes it, and reproduce-day reproduces forward days; a replay
     /// re-run manages its own generation via the D95 reset, not this rewind). `positions` and
-    /// `worker_state` are handled specially.</summary>
+    /// `worker_state` are handled specially.
+    ///
+    /// SIGNAL LIBRARY (signals, signal_ic — D91, M6): untouched because the daily pipeline does not
+    /// write them. `signals` is a frozen registry written once at registration; `signal_ic` is produced
+    /// by the FR-45 backfill verb, and FORWARD daily grading is NOT wired — it is gated on the
+    /// sp100→sp500 widen (finding 291), because forward grading that begins on a different universe
+    /// than the backfill graded puts a break in the series at the historical/forward join itself.
+    /// **TRIGGER, recorded here because this classification is what would silently go stale — and it has
+    /// TWO arrivals, so it fires on whichever comes first:** (a) the day forward grading IS wired into
+    /// the daily pipeline, `signal_ic` becomes a table a daily run writes and MUST move to
+    /// <see cref="RewoundTables"/> — otherwise a reproduce-day run could compare a session against its
+    /// own surviving grades and pass vacuously; and (b) the day the Phase-5 digest (§24.6, D82) wires
+    /// signal IC into a CONTEXT PACK — a reproduced session's pack would then contain a grade that
+    /// session itself produced, which is a D104 leak. `FX-PackNoLeak` would catch it, but the rewind
+    /// PREVENTS it, and prevention is the better place for a leak that would otherwise be found only
+    /// after a reproduction had already been trusted. Arrival (b) is likely the earlier of the two:
+    /// Phase 5 precedes the sp100→sp500 widen that arrival (a) is itself gated on (finding 291).</summary>
     private static readonly string[] Untouched =
     [
         "config", "jobs", "securities", "ticker_history", "sector_changes", "bars",
         "corporate_actions", "index_membership_log", "index_membership", "trading_calendar",
         "api_usage_log", "strategies", "accounts", "control_populations", "trials_registry",
-        "journal_entries", "replay_regime_outcomes",
+        "journal_entries", "replay_regime_outcomes", "signals", "signal_ic",
     ];
 
     /// <summary>Handled by dedicated logic rather than a date filter: `positions` is restored from the

@@ -21,6 +21,11 @@ public enum WorkerCommandKind
     /// run_kind='replay' at the frozen watermark; the curve build + report + config freeze steps attach
     /// per checkpoints 4.6–4.8. WRITES to the arena (quarantined rows) — the Worker is the sole writer.</summary>
     ReplayCalibrate,
+
+    /// <summary>The Phase-4.5 signal-IC backfill (FR-45, D91): grade every registered signal over the
+    /// stored history. WRITES `signal_ic` — hence a Worker verb, not a tools/Backfill mode (D59). It is
+    /// NOT a replay generation (D95) and refuses to run until the D108 thresholds are pinned.</summary>
+    SignalBackfill,
 }
 
 /// <summary>The parsed command. <see cref="Date"/> is set only for
@@ -28,7 +33,7 @@ public enum WorkerCommandKind
 /// <see cref="WorkerCommandKind.ReplayCalibrate"/>.</summary>
 public sealed record WorkerCommand(
     WorkerCommandKind Kind, string? Date = null, string? ArenaId = null, ReplayRequest? Replay = null,
-    bool ReportOnly = false);
+    bool ReportOnly = false, SignalBackfillRequest? SignalBackfill = null);
 
 /// <summary>
 /// Pure parsing of the Worker's command line (the <see cref="WorkerModeParser"/> precedent —
@@ -51,6 +56,7 @@ public static class WorkerCommandParser
     public const string ReproduceDayVerb = "reproduce-day";
     public const string VerifyWalVerb = "verify-wal";
     public const string ReplayCalibrateVerb = "replay-calibrate";
+    public const string SignalBackfillVerb = "signal-backfill";
 
     public static WorkerCommand Parse(string[] args)
     {
@@ -93,10 +99,23 @@ public static class WorkerCommandParser
                 ReportOnly: args.Contains("--report-only"));
         }
 
+        if (string.Equals(verb, SignalBackfillVerb, StringComparison.OrdinalIgnoreCase))
+        {
+            var from = RequireDate(SignalBackfillVerb, "--from", ValueOf(args, "--from"));
+            var to = RequireDate(SignalBackfillVerb, "--to", ValueOf(args, "--to"));
+            if (string.CompareOrdinal(from, to) >= 0)
+            {
+                throw new ArgumentException($"{SignalBackfillVerb}: --from ({from}) must precede --to ({to}).");
+            }
+            return new WorkerCommand(WorkerCommandKind.SignalBackfill, null, arena,
+                SignalBackfill: new SignalBackfillRequest(from, to));
+        }
+
         throw new ArgumentException(
             $"Unknown command '{verb}'. Expected '{ReproduceDayVerb}', '{VerifyWalVerb}', " +
-            $"'{ReplayCalibrateVerb}', or no verb at all (the daily launch). Refusing to fall through to " +
-            "the daily run on a typo — that would start the sole DB writer against the live arena.");
+            $"'{ReplayCalibrateVerb}', '{SignalBackfillVerb}', or no verb at all (the daily launch). Refusing " +
+            "to fall through to the daily run on a typo — that would start the sole DB writer against the " +
+            "live arena.");
     }
 
     private static string RequireDate(string verb, string flag, string? value)

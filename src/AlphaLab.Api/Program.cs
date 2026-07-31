@@ -40,6 +40,8 @@ builder.Services.AddScoped<StrategiesReadModelBuilder>();
 builder.Services.AddScoped<AllocationReadModelBuilder>();
 builder.Services.AddScoped<ReplayReadModelBuilder>();
 builder.Services.AddScoped<CohortMaturationBuilder>();
+builder.Services.AddSingleton(builder.Configuration.GetSection(SignalLibraryOptions.SectionName).Get<SignalLibraryOptions>() ?? new SignalLibraryOptions());
+builder.Services.AddScoped<SignalLibraryBuilder>();
 
 // The bounded command surface (FR-32): the D52 CandidateFactory write + the D72 liveness 409 guard, so a
 // command never races the Worker's daily write (completes the PARTIAL FR34_NoOverlappingWriters).

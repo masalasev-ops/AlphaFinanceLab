@@ -12,30 +12,36 @@ without the honesty that qualifies it.
 
 ## Status
 
-**Phases 0–3.5 complete and merged; Phase 4 (Arena Replay) code-complete, awaiting the operator
-sign-off run.** (Phase and test count move fast; **`PROGRESS.md` is the source of truth** for both.
-This section describes the shape of the build, not the live count.) Phases 0–2 stood up the skeleton,
-the market-data layer (run **live against the S&P 100** — 101 members, ~488k versioned bars over 20
-years, plus the GSPC regime proxy), and the six-stage funnel + ledger + cost model + the staged daily
-pipeline hosted in `AlphaLab.Worker`. Phase 3 added the honest-arena evaluation — MDE, gate,
-overfitting monitor, allocator, random control populations — and Phase 3.5 the save/continue
-hardening (`reproduce-day` makes byte-identical reproducibility an executable proof). **Phase 4**
-builds the sealed room that proves the honesty engine works before forward judgment begins: the whole
-pipeline replayed over historical years under `run_kind='replay'` quarantine, validated against
-planted strategies with known truth, freezing the monitor's calibrated pass marks. The D70 historical
-backfill ran (918 members), and a **pre-4.11 fix pass** merged (findings 266–274, v1.9.41–43): SUN
-excluded, physically-impossible vendor price bars guarded + rejected, a **two-pass calibration**
-machinery fix (a first full-scale run proved the machinery froze nothing — it retired the plants on
-uncalibrated flat-anchor verdicts; the fix stops *acting* on them while still recording the would-be
-retires, brings the fallback into D63 conformance, adds out-of-sample curve-based metrics, and
-rule-selects a per-cadence plant ladder), and a proxy-only backfill for the regime warm-up. What
-remains is the operator's de-risk-then-sign-off sequence — proxy backfill → offline gate → snapshot →
-smoke run → the full `--reset` calibration ([`docs/RUNBOOK_v1.9.md`](docs/RUNBOOK_v1.9.md) §8). Still ahead in Phases 4.5–8 (see
-[`docs/BUILD_AND_PROMPTS_v1.9.md`](docs/BUILD_AND_PROMPTS_v1.9.md) §2 and [`PROGRESS.md`](PROGRESS.md)):
-the signal library, the LLM layer, real strategies, risk/regimes/observability, and (contingent)
-fundamentals. No forward pipeline run has been committed yet, so the strategy/evaluation screens still
-return empty, `no_run_yet`-stamped read-models. `tools/ci.ps1` is green (build + the full test suite +
-guard greps); see `PROGRESS.md` for the current test count.
+**Phases 0–3.5 complete and merged; Phase 4 (Arena Replay) — SIGNED OFF 2026-07-31. Phase 4.5 (the
+Signal Library) is in build.** (Phase, test count, and the finding/decision registers move fast;
+**`PROGRESS.md` and [`docs/CHANGELOG_v1.9.md`](docs/CHANGELOG_v1.9.md) are the source of truth** —
+this section describes the shape of the build and deliberately keeps no counters of its own.)
+Phases 0–2 stood up the skeleton, the market-data layer (forward operation runs **the S&P 100 slice**
+— 101 members, ~488k versioned bars over 20 years, plus the GSPC regime proxy; the widen to the S&P
+500 is a separate deliberate post-sign-off action), and the six-stage funnel + ledger + cost model +
+the staged daily pipeline hosted in `AlphaLab.Worker`. Phase 3 added the honest-arena evaluation —
+MDE, gate, overfitting monitor, allocator, random control populations — and Phase 3.5 the
+save/continue hardening (`reproduce-day` makes byte-identical reproducibility an executable proof).
+
+**Phase 4 built the sealed room that proves the honesty engine works before forward judgment begins,
+and then ran it.** The whole pipeline was replayed over **5,031 sessions (2006-01-03 … 2025-12-31)**
+under `run_kind='replay'` quarantine against planted strategies with known truth. The result: **the
+monitor's calibrated pass marks are frozen** — the D56 `P_noise`/`P_edge` S3 trajectory curves,
+the C-1 detection-power curves, the S6 patience seed and the report cross-reference, written as five
+append-only config rows, with the report archived at
+[`docs/calibration/sp500/`](docs/calibration/sp500/). Forward S3 no longer runs on flat anchors.
+
+**The single most useful number it produced** — the lab's detection threshold, measured for the first
+time: across monthly edge plants at 2/4/8/16 %/yr, **1/5/26/43 of 50 were promoted**. In plain terms,
+**a 4 %/yr edge is found about 10 % of the time** over twenty years. That is the honest power of this
+machinery, and it is why promotions are expected to be rare.
+
+Still ahead in Phases 4.5–8 (see [`docs/BUILD_AND_PROMPTS_v1.9.md`](docs/BUILD_AND_PROMPTS_v1.9.md)
+§2 and [`PROGRESS.md`](PROGRESS.md)): the signal library (in build), the LLM layer, real strategies,
+risk/regimes/observability, and (contingent) fundamentals. No forward pipeline run has been committed
+yet, so the strategy/evaluation screens still return empty, `no_run_yet`-stamped read-models.
+`tools/ci.ps1` is green (build + the full test suite + guard greps); see `PROGRESS.md` for the
+current test count.
 
 **What "working" will look like — set expectations now.** By construction, the lab's *fast* outputs
 are the honest-but-unglamorous ones: **anti-predictive kills** (a strategy the monitor can show is
@@ -139,12 +145,13 @@ The `docs/` folder is the authoritative design package. Start with
 
 | Doc | What it is |
 |---|---|
-| [`docs/MASTER_DESIGN_v1.9.md`](docs/MASTER_DESIGN_v1.9.md) | Decisions D1–D99, architecture, golden rules, the UI boundary |
+| [`docs/MASTER_DESIGN_v1.9.md`](docs/MASTER_DESIGN_v1.9.md) | The decision register (§2), architecture, golden rules, the UI boundary — §2 is the count, so no range is restated here |
 | [`docs/SCHEMA_v1.9.md`](docs/SCHEMA_v1.9.md) | The database schema — the single source of truth for table shapes |
 | [`docs/CONFIG_REFERENCE_v1.9.md`](docs/CONFIG_REFERENCE_v1.9.md) | Every config key, default, and owning decision |
 | [`docs/BUILD_AND_PROMPTS_v1.9.md`](docs/BUILD_AND_PROMPTS_v1.9.md) | Functional requirements + the gated phase plan (Phase 0 = checkpoints 0.1–0.6) |
 | [`docs/TEST_PLAN_v1.9.md`](docs/TEST_PLAN_v1.9.md) | The fixtures and tests each phase must pass (§8 = the Phase-0 inventory) |
-| [`docs/RUNBOOK_v1.9.md`](docs/RUNBOOK_v1.9.md) | Operations: daily cycle, catch-up, backups, the Phase-4 sign-off (§8) |
+| [`docs/RUNBOOK_v1.9.md`](docs/RUNBOOK_v1.9.md) | Operations: daily cycle, catch-up, backups, the Phase-4 sign-off run (§8 — executed 2026-07-31) |
+| [`docs/calibration/sp500/`](docs/calibration/sp500/) | The archived calibration reports — the Phase-4 sign-off artifact and its frozen numbers |
 | [`ORIENTATION.md`](ORIENTATION.md) | The plain-language tour — what the lab is and how the whole system runs |
 | [`CLAUDE.md`](CLAUDE.md) | The standing hard rules the build obeys |
 | [`PROGRESS.md`](PROGRESS.md) | The honest ledger — what shipped, what's red, what was deferred |

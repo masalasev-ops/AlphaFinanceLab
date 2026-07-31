@@ -230,13 +230,25 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
   },
 
   "SignalLibrary": {                               // D91 - Phase 4.5 signal grading (descriptive only; read by the FR-44 IC engine + FR-46 read-model)
-    "HorizonsDays": [ 21, 63 ],                    // pre-registered grade horizons k, in trading days. 126 CLOSED - rejected for v1 (finding 290): NW lag = horizon against the flag's 1y window leaves ~2 effective observations. Effective n = 252/k, reported beside each flag (~12 at k=21, ~4 at k=63)
-    "RollingWindowsYears": [ 1, 5 ],               // rolling mean rank-IC windows for the trend inference (Newey-West lag = horizon)
-    "TrendDecayZ": null,                           // decaying = the 1y trend significantly negative at this z; value pinned at build checkpoint 4.5.2, before the first grade row is written
-    "TrendGoneZ": null                             // gone = the 1y mean not significantly above zero at this z (stable = otherwise); value pinned at build checkpoint 4.5.2
-                                                   // BOTH z KEYS: pinned once, append-only-versioned, never re-stamped (the D98 freeze discipline). Pinning them AFTER the 20y backfill exists would be choosing thresholds by looking at the answer. That a later change is cheap to re-score (D106, over stored signal_ic rows) is a cost fact, NEVER a licence to defer the pinning.
-                                                   // Read as-of (D96 ResolveAsOf) when serving a watermark-pinned consumer such as the Phase-5 digest (finding 292); ResolveCurrent for the live panel.
+    "HorizonsDays": [ 21, 63 ],                    // pre-registered grade horizons k, in trading days. 126 CLOSED - rejected for v1 (finding 290): NW lag = horizon against a 1y window leaves ~2 effective observations
+    "RollingWindowsYears": [ 1, 5 ]                // rolling mean rank-IC windows (both reported). The TREND FLAG is inferred on the 5y window for BOTH horizons [D108]: at 5y, lag/T = 0.05 at k=63 (the NW estimator is sound) and n_eff ~20; at 1y it was 0.25 and ~4
   },
+  // NOTE [D108]: the two trend-flag thresholds are NOT appsettings values. They are VERSIONED CONFIG
+  // ROWS, written once at build checkpoint 4.5.2 before the first grade row exists (the D98 freeze
+  // discipline: append-only, never re-stamped). Rows, not appsettings, because the FR-46 read-model must
+  // resolve them through ConfigReadService.ResolveAsOf to serve the watermark-pinned Phase-5 digest
+  // (finding 292) - an appsettings value is not as-of resolvable (the known GateOptions limit, D106).
+  //   SignalLibrary.TrendDecayAlpha   - significance level for the DECAYING arm (5y trend < 0)
+  //   SignalLibrary.TrendGoneAlpha    - significance level for the GONE arm (5y mean not > 0)
+  // The pinned constant is the SIGNIFICANCE LEVEL, never a critical value: the critical value is
+  // t_{1-alpha/2, df} computed at read time, where df comes from the effective independent sample
+  // (n_eff = window/horizon; df = n_eff-1 for the level arm, n_eff-2 for the trend arm, which fits a
+  // slope). Below n_eff = 10 NO verdict is emitted at all - the state is 'insufficient' (D108; the floor
+  // derives from lag/T = 1/n_eff and the same reliability bound that rejected the 1-year window).
+  // Renamed from TrendDecayZ/TrendGoneZ, which named a normal-reference z that D108 replaced.
+  // Pinning them AFTER the 20y backfill exists would be choosing thresholds by looking at the answer.
+  // That a later change is cheap to re-score (D106, over stored signal_ic rows) is a cost fact, NEVER a
+  // licence to defer the pinning. ResolveCurrent for the live panel; ResolveAsOf for a pinned consumer.
 
   "Llm": {                                         // D24/D46
     "Tasks": {
@@ -331,4 +343,5 @@ browser — it must never contain a secret (D67).
 4. **v1.8:** the Phase-4 calibration job writes the D56 `P_noise(t)` / `P_edge(t)` S3 curves as versioned config rows referencing the archived report; the flat S3 anchors (Healthy ≥ 95 / Suspect < 25 — MONITOR Appendix A) apply only before that.
 5. **v1.9.1 (D69):** ledger money properties are C# `decimal` persisted as TEXT; never bind a money value to `double`. The D60 API serialization (strings/minor units) is unchanged.
 6. Where a key also appears in OVERFITTING_MONITOR Appendix A (gate/verdicts/calibration blocks), **this file is authoritative**; the appendix mirrors values for reading convenience.
-7. **v1.9.12 binding caveat (finding 159):** some blocks documented here are the *designed* surface for a later phase and are **not yet section-bound**. `CalendarOptions`, `RegimeOptions`, and `DataQualityOptions` declare a `SectionName` (`Calendar`/`Regime`/`Data`) but are currently DI-registered as **default instances** (not `GetSection(...).Bind`), so a value placed in those sections is silently ignored until the phase that consumes them wires the bind. No value drift today — the defaults equal the documented defaults — but treat these as compile-time constants, not live knobs, at the current phase. (The `Universe.Bootstrap` binding gap is tracked separately under **D76** — finding 151.) The `Kpi` block (D88, v1.9.34) is likewise a designed surface: no options class exists until the Phase-3 read-model build wires it.
+7. **v1.9.52 (D108) — the Signal-Library trend thresholds are config ROWS, not appsettings keys.** `SignalLibrary.TrendDecayAlpha` and `SignalLibrary.TrendGoneAlpha` are written once as versioned `config` rows at build checkpoint 4.5.2, **before the first `signal_ic` row exists**, under the same append-only-never-re-stamped discipline as the D98 calibrated keys. Rows rather than appsettings because the FR-46 read-model must resolve them through `ConfigReadService.ResolveAsOf` to serve the watermark-pinned Phase-5 digest (finding 292), and an appsettings value is not as-of resolvable. Each holds a **significance level**, never a critical value: the critical value is `t_{1−α/2, df}` computed at read time from the effective independent sample (`df = n_eff − 1` level arm, `n_eff − 2` trend arm). Renamed from `TrendDecayZ`/`TrendGoneZ`, which named the normal-reference z that D108 replaced. The FR-45 backfill **refuses to run** while either row is absent (fail closed, logged reason) — that refusal, not a comment, is what enforces pin-before-grade.
+8. **v1.9.12 binding caveat (finding 159):** some blocks documented here are the *designed* surface for a later phase and are **not yet section-bound**. `CalendarOptions`, `RegimeOptions`, and `DataQualityOptions` declare a `SectionName` (`Calendar`/`Regime`/`Data`) but are currently DI-registered as **default instances** (not `GetSection(...).Bind`), so a value placed in those sections is silently ignored until the phase that consumes them wires the bind. No value drift today — the defaults equal the documented defaults — but treat these as compile-time constants, not live knobs, at the current phase. (The `Universe.Bootstrap` binding gap is tracked separately under **D76** — finding 151.) The `Kpi` block (D88, v1.9.34) is likewise a designed surface: no options class exists until the Phase-3 read-model build wires it.

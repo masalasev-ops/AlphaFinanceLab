@@ -152,6 +152,26 @@ try {
         Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' } | ForEach-Object { $_.FullName }
     Assert-NoMatch -Files $webCs -Pattern 'using\s+AlphaLab\.(Evaluation|Data)' -Message 'AlphaLab.Web must not use AlphaLab.Evaluation/AlphaLab.Data (D57).'
 
+    # 4. The Signal Library is DESCRIPTIVE ONLY (D91, MASTER 24.5): its output is never an input to the
+    #    allocator, any gate, sizing, or eligibility. Scoped to those CONSUMER directories on purpose -
+    #    an unscoped scan would fire on the library's own engine, read-model, entities and tests.
+    #
+    #    This is the belt; the brace is DescriptiveOnlyGuardTests, an assembly-scoped reflection closure
+    #    that catches a DI-injected consumer this text scan cannot see AND runs on both CI legs (greps
+    #    run on the Windows leg only). Keep both: the grep catches a raw table read in SQL that carries
+    #    no type, the closure catches a typed dependency that mentions no token.
+    $consumerDirs = @(
+        'src/AlphaLab.Evaluation/Allocator', 'src/AlphaLab.Evaluation/Gate',
+        'src/AlphaLab.Evaluation/Candidates', 'src/AlphaLab.Evaluation/Power',
+        'src/AlphaLab.Core/Funnel'
+    ) | ForEach-Object { Join-Path $repoRoot $_ } | Where-Object { Test-Path $_ }
+    $consumerCs = @()
+    if ($consumerDirs) {
+        $consumerCs = Get-ChildItem -Path $consumerDirs -Recurse -File -Include *.cs -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' } | ForEach-Object { $_.FullName }
+    }
+    Assert-NoMatch -Files $consumerCs -Pattern 'signal_ic|ISignal\b|SignalIc|SignalLibrary' -Message 'The Signal Library is descriptive only (D91) - the allocator/gate/sizing/eligibility must never read it.'
+
     Write-Host 'CI OK' -ForegroundColor Green
 }
 finally {

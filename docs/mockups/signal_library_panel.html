@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<!-- Illustrative reference for UX-16 / SignalLibraryPanel (D91, D108). SYNTHETIC DATA - every number
+     below is invented for layout purposes and describes no real signal. Absorbed into the consolidated
+     alphalab_ux_mockups.html when the UI workstream next regenerates (finding 293: the rendering is
+     deferred to that workstream; this file, the UX-16 rule and the design-system entry landed in-phase
+     at checkpoint 4.5.4 so the visual contract is fully specified before any renderer exists). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SignalLibraryPanel - UX-16 reference (D91/D108, sample data)</title>
+<style>
+  :root{
+    --bg:#0E1220; --panel:#161B2E; --panel2:#121729; --ink:#E8ECF5; --line:#2A3350;
+    --cyan:#5FD3E0; --band:#1E2A44; --amber:#E9B44C; --slate:#7A87A8; --mono:ui-monospace,Consolas,monospace;
+  }
+  body{background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,sans-serif;margin:0;padding:28px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px;max-width:1080px}
+  h1{font-size:15px;margin:0 0 4px}
+  .sub{color:var(--slate);font-size:12px;margin:0 0 18px}
+  .planned{display:inline-block;border:1px dashed var(--slate);color:var(--slate);border-radius:4px;
+           padding:1px 7px;font-size:11px;margin-left:8px;vertical-align:middle}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:var(--slate);font-weight:500;font-size:11px;text-transform:uppercase;
+     letter-spacing:.04em;border-bottom:1px solid var(--line);padding:0 10px 8px}
+  td{border-bottom:1px solid var(--line);padding:10px}
+  .id{font-family:var(--mono)}
+  .micro{color:var(--slate);font-size:11px}
+  .ic{color:var(--cyan);font-family:var(--mono)}
+  .band{background:var(--band);border-radius:3px;padding:1px 5px;font-family:var(--mono);font-size:11px;color:var(--slate)}
+  .n{font-family:var(--mono);font-size:12px}
+  .chip{border-radius:10px;padding:2px 9px;font-size:11px;border:1px solid var(--line);white-space:nowrap}
+  .stable{color:var(--ink)}
+  .decaying{color:var(--amber);border-color:var(--amber)}
+  .gone{color:var(--slate)}
+  .insufficient{color:var(--slate);opacity:.55}
+  .dim{opacity:.55}
+  .ctx{margin-top:16px;border-top:1px solid var(--line);padding-top:12px;color:var(--slate);font-size:11.5px}
+  .arena{float:right;color:var(--slate);font-size:11px;font-family:var(--mono)}
+</style>
+</head>
+<body>
+<div class="card">
+  <span class="arena">arena: sp500</span>
+  <h1>Signal Library — rank-IC by rule<span class="planned">Planned</span></h1>
+  <p class="sub">Descriptive only. Grades the RULES, not the traders — never an allocator, gate, sizing or eligibility input.</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Signal</th><th>k</th>
+        <th>1y mean IC</th><th>5y mean IC</th>
+        <th>flag</th><th>effective n</th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- A healthy instrument: clearly positive, flat, and with a sample that supports the claim. -->
+      <tr>
+        <td><span class="id">mom:L252s21</span><div class="micro">momentum &middot; v1</div></td>
+        <td class="n">63</td>
+        <td><span class="ic">0.041</span> <span class="band">&plusmn;0.019</span></td>
+        <td><span class="ic">0.038</span> <span class="band">&plusmn;0.011</span></td>
+        <td><span class="chip stable">stable</span></td>
+        <td class="n">20</td>
+      </tr>
+
+      <!-- The state the instrument exists to find. Note the mean is still POSITIVE: the trend arm fires
+           inside the window rather than waiting for the level to fall (D108). -->
+      <tr>
+        <td><span class="id">rev:L21</span><div class="micro">reversal &middot; v1</div></td>
+        <td class="n">21</td>
+        <td><span class="ic">0.008</span> <span class="band">&plusmn;0.014</span></td>
+        <td><span class="ic">0.026</span> <span class="band">&plusmn;0.009</span></td>
+        <td><span class="chip decaying" title="t = -2.41 vs trend critical -1.67 (df 58)">decaying</span></td>
+        <td class="n">60</td>
+      </tr>
+
+      <!-- Not distinguishable from zero. "gone" is a statement about the EVIDENCE, not a verdict of
+           fraud — the D63 vocabulary applies. -->
+      <tr>
+        <td><span class="id">brk:L252</span><div class="micro">breakout &middot; v1</div></td>
+        <td class="n">63</td>
+        <td><span class="ic">0.003</span> <span class="band">&plusmn;0.022</span></td>
+        <td><span class="ic">0.004</span> <span class="band">&plusmn;0.012</span></td>
+        <td><span class="chip gone" title="t = 0.33 vs level critical 1.73 (df 19)">gone</span></td>
+        <td class="n">20</td>
+      </tr>
+
+      <!-- THE ONE THAT MATTERS FOR HONESTY. Only ~1 year of grades exists, so n_eff is 4 - below the
+           floor. The MEAN still renders (it is a number a reader may look at); the band and the flag do
+           not, because the sample cannot support a significance claim. This must never render as
+           "stable", and never as a blank that reads like agreement. -->
+      <tr>
+        <td><span class="id">bab:L252</span><div class="micro">bab &middot; v1</div></td>
+        <td class="n">63</td>
+        <td class="dim"><span class="ic">0.052</span> <span class="band">&mdash;</span></td>
+        <td class="dim"><span class="ic">0.052</span> <span class="band">&mdash;</span></td>
+        <td><span class="chip insufficient" title="below_effective_sample_floor: n_eff 4 &lt; 10">insufficient</span></td>
+        <td class="n dim">4</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="ctx">
+    <strong>Detection context (Phase-4 C-1, finding 288).</strong> Rank-IC measures a <em>scoring rule</em>.
+    The arena's measured detection threshold is a property of a <em>whole trading operation</em> under costs:
+    monthly edge plants at 2/4/8/16&nbsp;%/yr were promoted 1/5/26/43 of 50 — a 4&nbsp;%/yr edge is found about
+    10&nbsp;% of the time over twenty years. <strong>No arithmetic converts one into the other.</strong> They sit
+    side by side because a signal can grade well and still describe an edge the arena could never confirm.
+  </p>
+  <p class="ctx">
+    effective n = window &divide; horizon — the independent observations the verdict rests on, and the input that
+    sets its degrees of freedom (D108). Below 10 no verdict is emitted.
+    <span class="micro">Illustrative synthetic data; read-model: <span class="id">SignalLibraryReadModel</span> (FR-46) &middot; rule: UX-16.</span>
+  </p>
+</div>
+</body>
+</html>

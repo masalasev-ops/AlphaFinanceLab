@@ -156,6 +156,13 @@ money as strings/minor-units (never floats).
 - Every phase ends with: tests green, a working demo, a PROGRESS.md entry, a commit.
 - Test names cite FRs (e.g. FR10_ParticipationCap_RejectsAndLogs); new decisions get
   D-numbers appended to MASTER §2.
+- **Commit subjects name the phase and stage**: `type(phase X stage Y): summary` — e.g.
+  `feat(phase 5 stage 1): the batches + caching provider`. Adopted at Phase 4.5 and applied to its
+  own commits retroactively (they were unpushed, so the rewrite was free; do NOT rewrite pushed
+  history to satisfy this). Work in a phase that is not a numbered checkpoint uses
+  `(phase X prep)`; anything outside a phase uses its version (`docs(v1.9.53): …`) or a plain
+  scope (`chore(ci): …`). Why: the log is the phase ledger's index — `git log --oneline` should
+  answer "what landed in which stage" without opening PROGRESS.md.
 - Prefer boring, explicit code over cleverness; determinism beats elegance.
 
 ## Solution layout
