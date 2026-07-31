@@ -110,10 +110,28 @@ public sealed class SignalIcEngine(
     }
 
     /// <summary>
+    /// The (signal, horizon) pairs ALREADY graded for <paramref name="asOf"/> — the cheap coverage read
+    /// a caller uses to skip a day BEFORE paying to score it.
+    ///
+    /// This exists because "resumable" was only nominally true without it (finding 300): grading a day
+    /// and then discarding the rows at persist time produces the right table and the wrong cost, so a
+    /// crashed multi-hour run resumed at the same price as starting over. The `HistoricalBackfill`
+    /// precedent this was modelled on checks coverage BEFORE fetching, not after; this restores that
+    /// ordering.
+    /// </summary>
+    public HashSet<(string SignalId, int Horizon)> GradedOn(string asOf) =>
+        db.SignalIc.Where(r => r.AsOf == asOf)
+            .Select(r => new { r.SignalId, r.HorizonDays })
+            .AsEnumerable()
+            .Select(r => (r.SignalId, r.HorizonDays))
+            .ToHashSet();
+
+    /// <summary>
     /// Persist grades, skipping any (signal, day, horizon) already present. Skipping rather than
-    /// upserting is the idempotency contract (<c>FX-SignalBackfillIdempotent</c>) AND the resumability
-    /// mechanism: the existing rows ARE the progress marker, so an interrupted backfill resumes by
-    /// simply not re-grading what it already wrote — no cursor table to drift out of step.
+    /// upserting is the idempotency contract (<c>FX-SignalBackfillIdempotent</c>). It remains the
+    /// last-line guard against a duplicate even when the caller has already skipped the day via
+    /// <see cref="GradedOn"/> — the cheap pre-check is an optimisation, this is the correctness rule,
+    /// and collapsing the two would leave the invariant resting on the caller remembering to ask.
     /// </summary>
     public int Persist(IReadOnlyList<SignalGrade> grades)
     {

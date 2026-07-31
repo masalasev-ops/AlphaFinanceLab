@@ -1,6 +1,6 @@
 # AlphaLab — Complete Design Package (revision v1.9)
 
-This is the **full, self-contained** design package. Design revision v1.9. Build status is live, not pre-implementation: Phase 0 and Phase 1 have shipped and Phase 2 (funnel + ledger) is merged. The full pass-by-pass history (v4/v5/v6 through the v1.9.26 twin-scorer pass, every CHANGELOG finding and decision D1-D91) lives in `docs/CHANGELOG_v1.9.md`; current phase, test count, and the open-item list live in `PROGRESS.md`. Consult those two rather than any count or status quoted inline, which may lag. Every file here is current; nothing external is required.
+This is the **full, self-contained** design package. Design revision v1.9. Build status is live, not pre-implementation: `PROGRESS.md` holds the current phase, test count, and the open-item list, and `docs/CHANGELOG_v1.9.md` holds the full pass-by-pass history (v4/v5/v6 onward — every finding and decision). **MASTER §2 is the decision register and is the count** — no range is restated here. Every file here is current; nothing external is required.
 
 Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to drive the build).
 
@@ -13,8 +13,9 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `CLAUDE.md` (repo root) — hard rules, solution layout, commands (the constitution the build obeys).
 
 **The design**
-- `docs/MASTER_DESIGN_v1.9.md` — the comprehensive document: decisions D1–D91,
-  architecture, golden rules, math appendix, UI boundary, the Signal Library (§24).
+- `docs/MASTER_DESIGN_v1.9.md` — the comprehensive document: the decisions log (§2 is the
+  register, and its length is the count), architecture, golden rules, math appendix,
+  UI boundary, the Signal Library (§24).
 - `docs/ARENA_ARCHITECTURE_v1.9.3.md` — how AlphaLab supports multiple isolated universes
   ("arenas"); decision D71. Additive, no schema change; the S&P 500 build is unaffected.
 - `docs/SCHEMA_v1.9.md` — the exact database schema (the rule-14 source of truth).
@@ -43,8 +44,8 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `docs/OVERFITTING_MONITOR_v1.9.md` — the eight-signal overfitting monitor.
 - `docs/DESIGN_IMPROVEMENTS_v1.9.md` — the honest-metrics rationale and power tables.
 - `docs/DESIGN_IMPROVEMENTS_EXPLAINED.md` — the plain-language "why" companion to the above (onboarding; section numbers match the spec).
-- `docs/UX_GUIDELINES_v1.9.md` — the UX honesty rules (UX-1…UX-15, incl. the arena no-merge rule and the paired-comparison screen).
-- `docs/UX_DESIGN_SYSTEM_v1.9.md` — the component catalogue: each honesty read-model field → its Blazor component, element, and token treatment. The visual-assembly layer under UX_GUIDELINES' tokens and UX-1…UX-15.
+- `docs/UX_GUIDELINES_v1.9.md` — the UX honesty rules (UX-1…UX-16, incl. the arena no-merge rule, the paired-comparison screen, and the signal-library panel).
+- `docs/UX_DESIGN_SYSTEM_v1.9.md` — the component catalogue: each honesty read-model field → its Blazor component, element, and token treatment. The visual-assembly layer under UX_GUIDELINES' tokens and UX-1…UX-16.
 
 **Post-Phase-8 roadmap**
 - `docs/POST_PHASE8_IMPROVEMENTS.md` - what each post-Phase-8 improvement is and why it earns its slot (the what and why; companion to the plan below).
@@ -52,9 +53,13 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 
 **UI mockups (reference for the Phase 3 screens)**
 - `docs/alphalab_ux_mockups.html` (the single consolidated UX mockup — every screen; supersedes the earlier per-topic mockup files)
+- `docs/mockups/cohort_curve_panel.html` (UX-15 / D88) and `docs/mockups/signal_library_panel.html` (UX-16 / D91/D108) — standalone panel mockups added AFTER the consolidation; each is the "Reference look" its UX rule cites, and the consolidated file absorbs them when the UI workstream next regenerates.
+
+**Diagrams**
+- `docs/diagrams/alphalab-architecture.svg` — the architecture picture (projects, the sole-writer path, the Api/UI boundary). Visual companion to MASTER §21–22 and the CLAUDE.md solution layout; not part of any phase reading diet.
 
 **Revision history**
-- `docs/CHANGELOG_v1.9.md` — every consistency finding and decision, v1.9.1 through v1.9.43.
+- `docs/CHANGELOG_v1.9.md` — every consistency finding and decision, v1.9.1 through the last `## v1.9.x` heading in the file itself (no v1.9.44/v1.9.45 were issued). The file is the coverage statement; no endpoint is restated here.
 
 ## Revision state
 - v1.9.1 errata (findings 59–75; D68–D69) — merged.
@@ -221,6 +226,28 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   rule-selects a per-cadence plant strength ladder. v1.9.43 the proxy-only backfill mode (finding 274) — the
   regime warm-up + benchmark depth without the membership-reconcile mass-eviction hazard. The full `--reset`
   calibration is the operator's de-risk-then-sign-off sequence (RUNBOOK §8).
+- **v1.9.46–v1.9.49 the pre-freeze evidence sequence** (findings 279–289; decisions **D102–D106**).
+  v1.9.46: `joint_false_alarm` made reported-not-gating (**D102**, findings 279–280), the D103 evidence
+  pass (findings 282–283), and the in-flight run's own diagnostics (findings 284–287, incl. the
+  raw-gap-vs-Jensen's-alpha defect, finding 285). v1.9.47: AI decision transparency specified before
+  implementation (**D104–D105**). v1.9.48: the recompute harness adopted (**D106**). v1.9.49: the 4.11
+  run COMPLETES — generation 1 recorded (5,031 sessions), the freeze blocked as predicted
+  (findings 288–289; D103 re-scoped).
+- **v1.9.50 the category decision + the freeze record — PHASE 4 SIGNED OFF (2026-07-31)**. **D107**
+  (supersedes D102): membership is by what a check ASSERTS, so pass-1-verdict checks are reported-only
+  and never freeze-gating. The (cont.) entry is the freeze record: the resume recomputed ZERO sessions
+  (5,031 already-committed skipped), AllGreen=True over the gating set (9/9 gating Pass), the report
+  archived under `docs/calibration/sp500/`, and **five append-only config rows FROZEN** at
+  `2026-07-31T12:57:26Z`, with the finding-285 caveat ATTACHED to the freeze record.
+- **v1.9.51 the Phase-4.5 reconciliation** (findings 290–293) — docs only. D92–D107 read and classified
+  against the unspent 4.5 prompt (four touch it, eleven do not); horizon 126 CLOSED on the statistic;
+  the forward widen must land before go-live; the FR-46 read-model must accept an as-of; P15's panel
+  timing DEFERRED to the UI workstream on a non-D65 justification. `UX-16` reserved by name.
+- **v1.9.52 Phase 4.5 (Signal Library) CODE-COMPLETE** (**D108**; findings 294–304) — D108 fixes the
+  trend flag's uniform 5-year window and its t reference, plus the IC-pool defect (294), `ISignal`'s
+  home in `AlphaLab.Core` (295), the effective-sample floor (296), the ORIENTATION staleness lesson
+  (297), and the pin verb the refusal had no satisfier for (299). The (cont.) entries carry the
+  operator run's own findings (300–301) and the corpus reconciliation that followed (302–304).
 - The mockups were consolidated into the single `alphalab_ux_mockups.html` in the v1.9.21/v1.9.22 passes
   (the earlier per-topic and v2 files are gone; the consolidated file gained the UX-14 paired-comparison block
   and the slate-grey replay tokens in v1.9.22). SCHEMA received its first post-v1.9.1 edit in v1.9.7

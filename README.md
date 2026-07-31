@@ -13,7 +13,8 @@ without the honesty that qualifies it.
 ## Status
 
 **Phases 0–3.5 complete and merged; Phase 4 (Arena Replay) — SIGNED OFF 2026-07-31. Phase 4.5 (the
-Signal Library) is in build.** (Phase, test count, and the finding/decision registers move fast;
+Signal Library) is code-complete and merged**; what remains is the operator's full 20-year
+`signal-backfill` run and its measured wall time. (Phase, test count, and the finding/decision registers move fast;
 **`PROGRESS.md` and [`docs/CHANGELOG_v1.9.md`](docs/CHANGELOG_v1.9.md) are the source of truth** —
 this section describes the shape of the build and deliberately keeps no counters of its own.)
 Phases 0–2 stood up the skeleton, the market-data layer (forward operation runs **the S&P 100 slice**
@@ -37,7 +38,7 @@ time: across monthly edge plants at 2/4/8/16 %/yr, **1/5/26/43 of 50 were promot
 machinery, and it is why promotions are expected to be rare.
 
 Still ahead in Phases 4.5–8 (see [`docs/BUILD_AND_PROMPTS_v1.9.md`](docs/BUILD_AND_PROMPTS_v1.9.md)
-§2 and [`PROGRESS.md`](PROGRESS.md)): the signal library (in build), the LLM layer, real strategies,
+§2 and [`PROGRESS.md`](PROGRESS.md)): the signal library (code-complete; the 20-year backfill run pending), the LLM layer, real strategies,
 risk/regimes/observability, and (contingent) fundamentals. No forward pipeline run has been committed
 yet, so the strategy/evaluation screens still return empty, `no_run_yet`-stamped read-models.
 `tools/ci.ps1` is green (build + the full test suite + guard greps); see `PROGRESS.md` for the

@@ -17,11 +17,39 @@ public sealed class SignalLibraryOptions
 {
     public const string SectionName = "SignalLibrary";
 
-    /// <summary>Pre-registered grade horizons k, in trading days. 126 is CLOSED — rejected for v1
-    /// (finding 290): NW lag = horizon against a 1-year window leaves ~2 effective observations.</summary>
-    public IReadOnlyList<int> HorizonsDays { get; set; } = [21, 63];
+    /// <summary>
+    /// The documented defaults. They live here as constants rather than as property initialisers
+    /// because of finding 301: the configuration binder ADDS to a pre-populated collection instead of
+    /// replacing it, so a property initialised to <c>[21, 63]</c> and configured to <c>[21]</c> yields
+    /// <c>[21, 63, 21]</c> — the horizon the operator tried to REMOVE survives, and one is duplicated.
+    /// Leaving the properties empty and resolving the default explicitly removes that trap entirely
+    /// rather than relying on binder subtleties that differ by collection type and framework version.
+    /// </summary>
+    public static readonly IReadOnlyList<int> DefaultHorizonsDays = [21, 63];
 
-    /// <summary>Rolling mean rank-IC windows, in years. Both are reported; the TREND FLAG is inferred on
-    /// the 5-year window for BOTH horizons (D108).</summary>
-    public IReadOnlyList<int> RollingWindowsYears { get; set; } = [1, 5];
+    /// <summary>Rolling mean rank-IC windows, in years (default 1 and 5).</summary>
+    public static readonly IReadOnlyList<int> DefaultRollingWindowsYears = [1, 5];
+
+    /// <summary>Configured grade horizons k, in trading days. EMPTY means "use
+    /// <see cref="DefaultHorizonsDays"/>" — read <see cref="ResolvedHorizonsDays"/>, never this
+    /// directly. 126 is CLOSED — rejected for v1 (finding 290) and LEFT closed by D108, which moved
+    /// the flag to the 5-year window and superseded the original 1-year arithmetic: at 5y, k = 126 caps
+    /// at n_eff = 1260/126 = 10, exactly the <c>EffectiveSample.MinimumCount</c> floor and never above
+    /// it, so it would read `insufficient` for the whole ramp and sit at trend df = 8 forever after
+    /// (finding 303).</summary>
+    public IReadOnlyList<int> HorizonsDays { get; set; } = [];
+
+    /// <summary>Configured rolling windows, in years. EMPTY means "use
+    /// <see cref="DefaultRollingWindowsYears"/>" — read <see cref="ResolvedRollingWindowsYears"/>.
+    /// Both windows are reported; the TREND FLAG is inferred on the LONGEST for both horizons (D108).</summary>
+    public IReadOnlyList<int> RollingWindowsYears { get; set; } = [];
+
+    /// <summary>The horizons actually in force: what was configured, or the documented default when
+    /// nothing was. This is what every consumer reads.</summary>
+    public IReadOnlyList<int> ResolvedHorizonsDays =>
+        HorizonsDays.Count > 0 ? HorizonsDays : DefaultHorizonsDays;
+
+    /// <summary>The rolling windows actually in force.</summary>
+    public IReadOnlyList<int> ResolvedRollingWindowsYears =>
+        RollingWindowsYears.Count > 0 ? RollingWindowsYears : DefaultRollingWindowsYears;
 }

@@ -13,8 +13,8 @@ namespace AlphaLab.Core.ReadModels;
 /// One rolling window's grade for one (signal, horizon): the mean rank-IC with its Newey–West band.
 ///
 /// <see cref="EffectiveN"/> is an INPUT to the verdict, not a footnote (D108): it sets the degrees of
-/// freedom and therefore the critical value. It is rendered beside the flag for the same reason the
-/// D107 power limitation prints its denominator — a thin number must not read as a thick one.
+/// freedom and therefore the critical value. It is rendered beside the flag for the same reason any
+/// low-power check prints its denominator — a thin number must not read as a thick one (finding 290).
 /// </summary>
 /// <param name="WindowYears">The rolling window (1 or 5). The FLAG is inferred on 5y only (D108).</param>
 /// <param name="MeanRankIc">Mean rank-IC over the window.</param>
@@ -33,6 +33,24 @@ public sealed record SignalWindowGrade(
 /// <param name="FlagReason">Why a verdict is withheld, when it is. Null when a flag was emitted.</param>
 /// <param name="LevelCritical">The one-sided critical value the "gone" arm used (df = n−1).</param>
 /// <param name="TrendCritical">The one-sided critical value the "decaying" arm used (df = n−2).</param>
+/// <param name="MinDetectableIc">
+/// The smallest TRUE mean rank-IC this test would have caught, at the pinned α and power — the
+/// detectability floor beneath the <c>gone</c> verdict (finding 305).
+///
+/// <c>gone</c> is a FAILURE TO REJECT, and a failure to reject means nothing without the effect size
+/// the test had the power to find. A `gone` beside a floor of 0.002 says the rule is dead; the same
+/// `gone` beside a floor of 0.060 says the instrument is blind. Publishing the flag without this makes
+/// those two indistinguishable to a reader — the exact confusion <see cref="SignalWindowGrade.EffectiveN"/>
+/// was added to prevent one level up, and the same discipline D89 applies by publishing an MDE beside a
+/// gate refusal. Null when power is unpinned or the sample cannot support the claim.
+/// </param>
+/// <param name="MinDetectableTrendPerYear">
+/// The counterpart under <c>stable</c>: the shallowest true decay, in rank-IC per year, this test would
+/// have caught. "We found no decay" is also a failure to reject.
+/// </param>
+/// <param name="StdError">NW standard error of the window mean, so the floors are recomputable.</param>
+/// <param name="SlopeStdError">NW standard error of the fitted slope, per grade-day.</param>
+/// <param name="DetectabilityReason">Why the floors are absent, when they are. Null when published.</param>
 public sealed record SignalPanelRow(
     string SignalId,
     string Family,
@@ -43,10 +61,20 @@ public sealed record SignalPanelRow(
     string? FlagReason,
     double? TStat,
     double? LevelCritical,
-    double? TrendCritical)
+    double? TrendCritical,
+    double? MinDetectableIc = null,
+    double? MinDetectableTrendPerYear = null,
+    double? StdError = null,
+    double? SlopeStdError = null,
+    string? DetectabilityReason = null)
 {
     public const string ReasonBelowEffectiveSampleFloor = "below_effective_sample_floor";
     public const string ReasonNotPinned = "thresholds_not_pinned";
+
+    /// <summary>The power level is not pinned, so the detectability floors are withheld rather than
+    /// quoted at a power nobody chose. NOT a verdict-blocking state: the flag still stands, because no
+    /// flag depends on power.</summary>
+    public const string ReasonPowerNotPinned = "power_not_pinned";
 }
 
 /// <summary>

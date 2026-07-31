@@ -7,17 +7,18 @@ using Microsoft.Extensions.Logging;
 namespace AlphaLab.Worker.Ops;
 
 /// <summary>
-/// Runs the ops verbs (`reproduce-day`, `verify-wal`, `replay-calibrate`) OUTSIDE the Generic Host,
-/// and returns a process exit code (checkpoints 3.5.1/3.5.2 + 4.4–4.8, FR-25).
+/// Runs the ops verbs (`reproduce-day`, `verify-wal`, `replay-calibrate`, `signal-backfill`,
+/// `signal-pin-thresholds`) OUTSIDE the Generic Host, and returns a process exit code
+/// (checkpoints 3.5.1/3.5.2 + 4.4–4.8 + Phase-4.5 4.5.2/4.5.3, FR-25/FR-45).
 ///
 /// Deliberately not hosted services. The daily host registers SchemaStartup (which SETS
 /// journal_mode=WAL), the heartbeat, and the OnDemand runner (which catches up and writes). None of
 /// that may happen on a verb whose contract is "look, do not touch" — a `verify-wal` that repaired
 /// WAL on its way in could never report the defect it exists to find, and a mistyped verb must never
 /// start the sole writer against the live arena. Keeping these off the host makes that structural.
-/// The one WRITING verb, `replay-calibrate`, therefore carries its own sole-writer liveness gate
-/// inside ReplayRunner (the hosted StaleRunRecovery guard never runs on this path — D59, Phase-4
-/// review).
+/// The three WRITING verbs — `replay-calibrate`, `signal-backfill` and `signal-pin-thresholds` —
+/// therefore each carry the shared sole-writer liveness gate (<see cref="SoleWriterGate"/>); the
+/// hosted StaleRunRecovery guard never runs on this path (D59/D72).
 /// </summary>
 public static class OpsCommandHost
 {

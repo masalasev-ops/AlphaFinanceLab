@@ -253,8 +253,9 @@ public sealed class ReplayRunner(
     }
 
     /// <summary>The launch-time sole-writer gate for the ops-verb path (D59). Delegates to the shared
-    /// <see cref="SoleWriterGate"/>, which the FR-45 signal backfill also uses — two copies of a
-    /// fail-closed concurrency check is exactly the shape where one gets fixed and the other does not.</summary>
+    /// <see cref="SoleWriterGate"/>, which the FR-45 `signal-backfill` and `signal-pin-thresholds` also
+    /// use — duplicated copies of a fail-closed concurrency check are exactly the shape where one gets
+    /// fixed and the rest do not.</summary>
     private void GuardAgainstConcurrentWriter(AlphaLabDbContext db) =>
         SoleWriterGate.Guard(
             db,

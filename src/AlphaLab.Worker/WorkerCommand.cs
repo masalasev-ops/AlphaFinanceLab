@@ -122,8 +122,15 @@ public static class WorkerCommandParser
         {
             var gone = RequireAlpha(SignalPinThresholdsVerb, "--gone-alpha", ValueOf(args, "--gone-alpha"));
             var decay = RequireAlpha(SignalPinThresholdsVerb, "--decay-alpha", ValueOf(args, "--decay-alpha"));
+            // --power is OPTIONAL, unlike the two alphas: it governs the finding-305 detectability
+            // floors, which are a diagnostic and never a verdict input. Present-but-unparseable is still
+            // refused, so a typo cannot silently become "omitted".
+            var powerRaw = ValueOf(args, "--power");
+            double? power = powerRaw is null
+                ? null
+                : RequireAlpha(SignalPinThresholdsVerb, "--power", powerRaw);
             return new WorkerCommand(WorkerCommandKind.SignalPinThresholds, null, arena,
-                SignalPin: new SignalPinRequest(gone, decay));
+                SignalPin: new SignalPinRequest(gone, decay, power));
         }
 
         throw new ArgumentException(

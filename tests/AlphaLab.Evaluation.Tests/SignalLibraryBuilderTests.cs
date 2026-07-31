@@ -131,6 +131,46 @@ public class SignalLibraryBuilderTests
     }
 
     [Fact]
+    public void TheDetectabilityFloorRidesWithTheFlag_AndIsWithheldRatherThanDefaultedWhenPowerIsUnpinned()
+    {
+        // finding 305. `gone` is a failure to reject, so it is uninformative without the effect size the
+        // test could have found. The floor ships as a resolved FIELD (rule 18) - and when the power row
+        // is absent it is withheld WITH ITS REASON, never quoted at a power nobody chose.
+        using var arena = new EvalArena();
+        using (var db = arena.Open())
+        {
+            Register(db);
+            SeedGrades(db, 63, 1300, i => i % 2 == 0 ? 0.02 : -0.02);   // mean ~0 => gone
+            Pin(db, SignalLibraryBuilder.GoneAlphaKey, "0.05", "2026-01-01T00:00:00Z");
+            Pin(db, SignalLibraryBuilder.DecayAlphaKey, "0.05", "2026-01-01T00:00:00Z");
+            db.SaveChanges();
+        }
+
+        using (var read = arena.Open())
+        {
+            var row = Assert.Single(new SignalLibraryBuilder(read, Options).Build().Signals, r => r.HorizonDays == 63);
+            Assert.Equal(TrendFlag.Gone, row.Flag);                 // a verdict WAS reached...
+            Assert.Null(row.MinDetectableIc);                       // ...but the floor is withheld
+            Assert.Equal(SignalPanelRow.ReasonPowerNotPinned, row.DetectabilityReason);
+            Assert.Null(row.FlagReason);                            // and the VERDICT is not impugned
+        }
+
+        using (var db = arena.Open())
+        {
+            Pin(db, SignalLibraryBuilder.MinDetectablePowerKey, "0.8", "2026-01-02T00:00:00Z");
+            db.SaveChanges();
+        }
+
+        using var after = arena.Open();
+        var pinned = Assert.Single(new SignalLibraryBuilder(after, Options).Build().Signals, r => r.HorizonDays == 63);
+        Assert.Equal(TrendFlag.Gone, pinned.Flag);                  // the verdict is unchanged...
+        Assert.Null(pinned.DetectabilityReason);
+        Assert.NotNull(pinned.MinDetectableIc);                     // ...and now the floor is published
+        Assert.True(pinned.MinDetectableIc > 0);
+        Assert.NotNull(pinned.StdError);                            // with the error it derives from
+    }
+
+    [Fact]
     public void FindingTwoNineTwo_TheAsOfSeam_BoundsBothGradesAndThresholds()
     {
         // The requirement that makes the Phase-5 digest wireable without reopening this phase: a PINNED
