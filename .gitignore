@@ -35,3 +35,6 @@ coverage/
 
 # ---- Raw provider payload cache (INTEGRATIONS §9; 30-day retention, never committed) ----
 tools/raw-cache/
+
+# Claude Code local settings (personal, not committed)
+.claude/settings.local.json
