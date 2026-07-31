@@ -252,45 +252,15 @@ public sealed class ReplayRunner(
         if (seeded > 0) _logger.LogInformation("replay: seeded {Count} D64 plant(s) across {Total} spec(s).", seeded, specs.Count);
     }
 
-    /// <summary>The launch-time sole-writer gate for the ops-verb path (mirrors StaleRunRecovery,
-    /// which only guards the hosted path): a FRESH heartbeat under run_in_progress=1 means another
-    /// Worker (daily or replay) is actively writing this arena — refuse (fail closed, D59). A stale
-    /// flag is a crash orphan: mark its run failed and clear it, so the generation guard and this run
-    /// see a clean store.</summary>
-    private void GuardAgainstConcurrentWriter(AlphaLabDbContext db)
-    {
-        var state = db.WorkerState.FirstOrDefault(w => w.Id == 1);
-        if (state is null || state.RunInProgress == 0) return;
-
-        var options = configuration.GetSection(WorkerOptions.SectionName).Get<WorkerOptions>() ?? new WorkerOptions();
-        var liveness = WorkerLivenessEvaluator.Evaluate(
-            state.RunInProgress, state.HeartbeatAt, TimeProvider.System.GetUtcNow(), options.StaleRunThresholdSeconds);
-        if (liveness.IsLive)
-        {
-            _logger.LogCritical(
-                "replay: run_in_progress=1 with a FRESH heartbeat (run_id={RunId}, heartbeat_at={Beat}) — " +
-                "another writer is live. Refusing to start (sole writer, D59).",
-                state.CurrentRunId, state.HeartbeatAt);
-            throw new OverlappingWriterException(state.CurrentRunId, state.HeartbeatAt);
-        }
-
-        var orphanId = state.CurrentRunId;
-        if (orphanId is { } id)
-        {
-            var run = db.Runs.FirstOrDefault(r => r.RunId == id);
-            if (run is { Status: "running" })
-            {
-                run.Status = "failed";
-                run.FinishedAt = TimeProvider.System.GetUtcNow().UtcDateTime
-                    .ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
-            }
-        }
-        state.RunInProgress = 0;
-        state.CurrentRunId = null;
-        db.SaveChanges();
-        _logger.LogWarning("replay: cleared a stale run_in_progress flag from a crashed writer (run_id={RunId}).",
-            orphanId);
-    }
+    /// <summary>The launch-time sole-writer gate for the ops-verb path (D59). Delegates to the shared
+    /// <see cref="SoleWriterGate"/>, which the FR-45 signal backfill also uses — two copies of a
+    /// fail-closed concurrency check is exactly the shape where one gets fixed and the other does not.</summary>
+    private void GuardAgainstConcurrentWriter(AlphaLabDbContext db) =>
+        SoleWriterGate.Guard(
+            db,
+            configuration.GetSection(WorkerOptions.SectionName).Get<WorkerOptions>() ?? new WorkerOptions(),
+            _logger,
+            "replay");
 
     // A 'running' replay run is a crash orphan: its Stage-2 rolled back, so marking it failed loses
     // nothing and unblocks the generation guard (the StaleRunRecovery idea, replay-scoped). This runs

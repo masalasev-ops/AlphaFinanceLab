@@ -132,6 +132,65 @@ public class SignalTrendTests
     }
 
     [Fact]
+    public void MinimumEffectiveSample_IsDerivedFromTheSameLegThatRejectedTheOneYearWindow()
+    {
+        // The identity that makes the floor a derivation rather than a preference: the NW lag IS the
+        // horizon, so lag/T = horizon/window = 1/n_eff exactly. D108's two recorded endpoints on that
+        // scale are lag/T = 0.25 (n_eff 4, rejected) and 0.05 (n_eff 20, sound); the standard "HAC
+        // bandwidth at most about a tenth of the sample" sits between them and inverts to n_eff >= 10.
+        Assert.Equal(10, EffectiveSample.MinimumCount);
+        Assert.Equal(0.10, 1.0 / EffectiveSample.MinimumCount, 12);
+        Assert.True(1.0 / 4 > 1.0 / EffectiveSample.MinimumCount);    // the rejected 1y/k=63 point
+        Assert.True(1.0 / 20 < 1.0 / EffectiveSample.MinimumCount);   // the accepted 5y/k=63 point
+    }
+
+    [Fact]
+    public void BelowTheFloor_NoVerdictIsEmitted_AtTheFloor_OneAppears()
+    {
+        // A signal with an unmistakable, strongly positive IC. Whether it gets a verdict must depend on
+        // the effective sample ALONE — the data is identical either side of the boundary.
+        static List<double> StrongIc(int n)
+        {
+            var ic = new List<double>();
+            for (var i = 0; i < n; i++) ic.Add(0.20 + (i % 2 == 0 ? 0.001 : -0.001));
+            return ic;
+        }
+
+        // One short of the floor at k=63: 9 * 63 = 567 sessions => n_eff 9.
+        var below = SignalTrendInference.Infer(StrongIc(600), 63, 63 * (EffectiveSample.MinimumCount - 1), 0.05, 0.05);
+        Assert.Equal(TrendFlag.Insufficient, below.Flag);
+        Assert.Equal(EffectiveSample.MinimumCount - 1, below.Sample.Count);
+        Assert.Null(below.TStat);            // no statistic is published
+        Assert.Null(below.LevelCritical);    // and no critical value, because no test was run
+        Assert.True(below.MeanIc > 0.19);    // the MEAN is still reported — only the claim is withheld
+
+        // Exactly at the floor, on the same data: a verdict appears.
+        var at = SignalTrendInference.Infer(StrongIc(600), 63, 63 * EffectiveSample.MinimumCount, 0.05, 0.05);
+        Assert.Equal(EffectiveSample.MinimumCount, at.Sample.Count);
+        Assert.NotEqual(TrendFlag.Insufficient, at.Flag);
+        Assert.NotNull(at.TStat);
+        Assert.NotNull(at.LevelCritical);
+    }
+
+    [Fact]
+    public void TheRampYearsAreTheLowDfCase_WhichIsWhyTheExactTReferenceMatters()
+    {
+        // A 5-year window is not full during the backfill's first years, so n_eff RAMPS up to it. The
+        // floor is therefore reached in the middle of the operating range, not at some extreme.
+        Assert.Equal(EffectiveSample.MinimumCount, new EffectiveSample(63 * 10, 63).Count);   // ~2.5y at k=63
+        Assert.Equal(EffectiveSample.MinimumCount, new EffectiveSample(21 * 10, 21).Count);   // ~10mo at k=21
+
+        // And at the floor the small-sample correction is still MATERIAL: trend df = 8, where t exceeds
+        // the normal critical value by ~18%. A normal reference would be wrong where the lab actually
+        // operates, not merely at the extreme D108 rejected.
+        var atFloor = new EffectiveSample(63 * EffectiveSample.MinimumCount, 63);
+        Assert.Equal(8, atFloor.TrendDf);
+        var t = StudentT.TwoSidedCritical(0.05, atFloor.TrendDf);
+        Assert.Equal(2.306004, t, 5);
+        Assert.True(t > 1.15 * 1.959964);
+    }
+
+    [Fact]
     public void TheVerdictCarriesItsOwnAudit_SampleAndBothCriticalValues()
     {
         // Whatever the flag says, a reader can recompute it: the effective sample and both critical

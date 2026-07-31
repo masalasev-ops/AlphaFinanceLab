@@ -31,6 +31,31 @@ public static class TrendFlag
 /// <param name="HorizonDays">The grade horizon k, which is also the NW lag.</param>
 public readonly record struct EffectiveSample(int WindowSessions, int HorizonDays)
 {
+    /// <summary>
+    /// The MINIMUM effective sample at which a verdict may be emitted at all. Below it the flag is
+    /// <see cref="TrendFlag.Insufficient"/> — explicitly not stable, not decaying, not gone.
+    ///
+    /// DERIVED, NOT CHOSEN — from the same leg of D108's argument that rejected the 1-year window, and
+    /// it is the leg a t reference cannot repair. Note the identity: because the NW lag IS the horizon,
+    ///
+    ///     lag/T = horizon / window = 1 / n_eff
+    ///
+    /// so a bound on the NW estimator's reliability IS a bound on n_eff, exactly. D108 recorded both
+    /// endpoints on that scale: lag/T = 0.25 (n_eff ≈ 4) is "far outside where NW is reliable", and
+    /// lag/T = 0.05 (n_eff ≈ 20) is sound. The standard practical guidance sitting between them — a HAC
+    /// bandwidth of at most about a TENTH of the sample — maps to <c>lag/T ≤ 0.10</c>, i.e.
+    /// <c>n_eff ≥ 10</c>. The floor is that inversion, not a preference.
+    ///
+    /// THIS IS NOT A HYPOTHETICAL REGIME. A 5-year window is not full during the first years of the
+    /// backfill, so n_eff RAMPS: at k = 63 the floor is not reached until ~630 sessions (~2.5 years) of
+    /// history exist, and at k = 21 until ~210 (~10 months). Those ramp years are precisely the low-df
+    /// case — at the floor, trend df = 8, where the t critical value still exceeds the normal one by
+    /// ~18 %. That is why <see cref="Numerics.StudentT"/> is computed exactly rather than approximated:
+    /// the small-sample correction is load-bearing in the OPERATING range, not just at the extreme
+    /// D108 rejected.
+    /// </summary>
+    public const int MinimumCount = 10;
+
     /// <summary>n_eff = window ÷ horizon, floored — the count of NON-OVERLAPPING observations.</summary>
     public int Count => HorizonDays <= 0 ? 0 : WindowSessions / HorizonDays;
 
@@ -40,8 +65,9 @@ public readonly record struct EffectiveSample(int WindowSessions, int HorizonDay
     /// <summary>Degrees of freedom for the TREND arm (a slope): n − 2.</summary>
     public double TrendDf => Count - 2;
 
-    /// <summary>Both arms need a positive df to be testable at all.</summary>
-    public bool CanInfer => TrendDf > 0;
+    /// <summary>Whether a verdict may be emitted: the effective sample must reach
+    /// <see cref="MinimumCount"/>. Below it the honest answer is "not yet", never a flag.</summary>
+    public bool CanInfer => Count >= MinimumCount;
 }
 
 /// <summary>
@@ -83,6 +109,9 @@ public static class SignalTrendInference
     {
         ArgumentNullException.ThrowIfNull(icSeries);
 
+        // Below the effective-sample floor there is NO verdict — not a provisional "stable". The
+        // rolling mean is still reported (a reader may look at the number); what is withheld is the
+        // significance CLAIM, which is the thing the sample cannot support.
         var sample = new EffectiveSample(windowSessions, horizonDays);
         if (icSeries.Count < 2 || !sample.CanInfer)
         {
