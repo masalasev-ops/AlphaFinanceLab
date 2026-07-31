@@ -55,6 +55,9 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `docs/alphalab_ux_mockups.html` (the single consolidated UX mockup — every screen; supersedes the earlier per-topic mockup files)
 - `docs/mockups/cohort_curve_panel.html` (UX-15 / D88) and `docs/mockups/signal_library_panel.html` (UX-16 / D91/D108) — standalone panel mockups added AFTER the consolidation; each is the "Reference look" its UX rule cites, and the consolidated file absorbs them when the UI workstream next regenerates.
 
+**Diagrams**
+- `docs/diagrams/alphalab-architecture.svg` — the architecture picture (projects, the sole-writer path, the Api/UI boundary). Visual companion to MASTER §21–22 and the CLAUDE.md solution layout; not part of any phase reading diet.
+
 **Revision history**
 - `docs/CHANGELOG_v1.9.md` — every consistency finding and decision, v1.9.1 through the last `## v1.9.x` heading in the file itself (no v1.9.44/v1.9.45 were issued). The file is the coverage statement; no endpoint is restated here.
 
