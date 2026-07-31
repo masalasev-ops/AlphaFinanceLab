@@ -16,8 +16,12 @@ namespace AlphaLab.Worker.Ops;
 public sealed record SignalBackfillRequest(string From, string To);
 
 /// <summary>What one backfill pass did. <paramref name="Elapsed"/> is MEASURED, never promised.</summary>
+/// <param name="SessionsSkippedComplete">Days whose full (signal × horizon) set was already stored and
+/// were therefore skipped WITHOUT scoring — the figure that makes resumability real rather than
+/// nominal (finding 300). A resumed run should report most of its window here.</param>
 public sealed record SignalBackfillOutcome(
-    int SessionsPlanned, int SessionsGraded, int GradesWritten, int GradesAlreadyPresent, TimeSpan Elapsed);
+    int SessionsPlanned, int SessionsGraded, int GradesWritten, int GradesAlreadyPresent, TimeSpan Elapsed,
+    int SessionsSkippedComplete = 0);
 
 /// <summary>
 /// Thrown when the trend-flag significance levels are not yet pinned. Its own type so the refusal is
@@ -95,7 +99,7 @@ public sealed class SignalBackfillRunner(
 
         var signalOptions = configuration.GetSection(SignalLibraryOptions.SectionName).Get<SignalLibraryOptions>()
                             ?? new SignalLibraryOptions();
-        var horizons = signalOptions.HorizonsDays;
+        var horizons = signalOptions.ResolvedHorizonsDays;   // finding 301: never read the raw property
         if (horizons.Count == 0)
         {
             throw new InvalidOperationException("SignalLibrary:HorizonsDays is empty — nothing to grade (fail closed).");
@@ -137,12 +141,32 @@ public sealed class SignalBackfillRunner(
             "signal-backfill: {Count} session(s) {From}..{To} at watermark {Watermark}; horizons [{Horizons}].",
             sessions.Count, sessions[0], sessions[^1], watermark, string.Join(", ", horizons));
 
+        var expectedPerDay = SignalRegistry.V1.Count * horizons.Count;
         var graded = 0;
         var written = 0;
         var alreadyPresent = 0;
+        var skipped = 0;
         foreach (var day in sessions)
         {
             ct.ThrowIfCancellationRequested();
+
+            // COVERAGE CHECK BEFORE SCORING (finding 300). A day whose full (signal × horizon) set is
+            // already stored is skipped WITHOUT scoring it. Grading it and discarding the rows at
+            // persist time produced the right table at the wrong cost — which made "resumable" true
+            // only on paper: a crashed multi-hour run resumed at the price of starting over.
+            //
+            // The check is deliberately for the FULL set, not "any row": a day partially graded when a
+            // run was interrupted mid-day, or graded before a signal was registered, must be revisited
+            // so the missing pairs land. Skipping on "any row present" would silently freeze those gaps
+            // in place, and no re-run would ever fill them.
+            var already = engine.GradedOn(day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+            if (already.Count >= expectedPerDay)
+            {
+                skipped++;
+                alreadyPresent += already.Count;
+                continue;
+            }
+
             var grades = engine.GradeDay(day, SignalRegistry.V1, horizons, allSessions, proxy);
             if (grades.Count == 0) continue;
 
@@ -158,12 +182,13 @@ public sealed class SignalBackfillRunner(
 
         stopwatch.Stop();
         _logger.LogInformation(
-            "signal-backfill complete: {Graded}/{Planned} session(s) graded, {Written} row(s) written, " +
-            "{Skipped} already present. Wall time {Elapsed} (MEASURED on this machine — a measurement, not a promise).",
-            graded, sessions.Count, written, alreadyPresent, stopwatch.Elapsed);
+            "signal-backfill complete: {Graded}/{Planned} session(s) graded, {SkippedDays} already-complete " +
+            "session(s) skipped WITHOUT scoring, {Written} row(s) written, {Present} row(s) already present. " +
+            "Wall time {Elapsed} (MEASURED on this machine — a measurement, not a promise).",
+            graded, sessions.Count, skipped, written, alreadyPresent, stopwatch.Elapsed);
 
         return await Task.FromResult(
-            new SignalBackfillOutcome(sessions.Count, graded, written, alreadyPresent, stopwatch.Elapsed))
+            new SignalBackfillOutcome(sessions.Count, graded, written, alreadyPresent, stopwatch.Elapsed, skipped))
             .ConfigureAwait(false);
     }
 

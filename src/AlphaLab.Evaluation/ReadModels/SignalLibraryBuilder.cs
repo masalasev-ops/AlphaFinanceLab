@@ -51,12 +51,12 @@ public sealed class SignalLibraryBuilder(AlphaLabDbContext db, SignalLibraryOpti
         }
 
         var (goneAlpha, decayAlpha, pinned) = ResolveThresholds(asOf);
-        var flagWindowYears = options.RollingWindowsYears.Count > 0 ? options.RollingWindowsYears.Max() : 5;
+        var flagWindowYears = options.ResolvedRollingWindowsYears.Max();   // finding 301
 
         var rows = new List<SignalPanelRow>();
         foreach (var signal in registry)
         {
-            foreach (var horizon in options.HorizonsDays)
+            foreach (var horizon in options.ResolvedHorizonsDays)
             {
                 // Grades are date-bounded by the as-of: a pinned read must not see a grade written for a
                 // later day, which is the leakage FX-PackNoLeak exists to forbid.
@@ -68,7 +68,7 @@ public sealed class SignalLibraryBuilder(AlphaLabDbContext db, SignalLibraryOpti
                     .ToList();
 
                 var windows = new List<SignalWindowGrade>();
-                foreach (var years in options.RollingWindowsYears.OrderBy(y => y))
+                foreach (var years in options.ResolvedRollingWindowsYears.OrderBy(y => y))
                 {
                     var take = years * SessionsPerYear;
                     var slice = series.Count <= take ? series : series.Skip(series.Count - take).ToList();
