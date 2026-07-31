@@ -68,13 +68,24 @@ public sealed class ScratchStore : IDisposable
     /// index_membership_log), or replay-only under the D37 quarantine (replay_regime_outcomes — a
     /// FORWARD day neither reads nor writes it, and reproduce-day reproduces forward days; a replay
     /// re-run manages its own generation via the D95 reset, not this rewind). `positions` and
-    /// `worker_state` are handled specially.</summary>
+    /// `worker_state` are handled specially.
+    ///
+    /// SIGNAL LIBRARY (signals, signal_ic — D91, M6): untouched because the daily pipeline does not
+    /// write them. `signals` is a frozen registry written once at registration; `signal_ic` is produced
+    /// by the FR-45 backfill verb, and FORWARD daily grading is NOT wired — it is gated on the
+    /// sp100→sp500 widen (finding 291), because forward grading that begins on a different universe
+    /// than the backfill graded puts a break in the series at the historical/forward join itself.
+    /// **TRIGGER, recorded here because this classification is what would silently go stale:** the day
+    /// forward grading IS wired into the daily pipeline, `signal_ic` becomes a table a daily run writes
+    /// and MUST move to <see cref="RewoundTables"/> — otherwise a reproduce-day run could compare a
+    /// session against its own surviving grades and pass vacuously, which is the exact failure this
+    /// classification exists to prevent.</summary>
     private static readonly string[] Untouched =
     [
         "config", "jobs", "securities", "ticker_history", "sector_changes", "bars",
         "corporate_actions", "index_membership_log", "index_membership", "trading_calendar",
         "api_usage_log", "strategies", "accounts", "control_populations", "trials_registry",
-        "journal_entries", "replay_regime_outcomes",
+        "journal_entries", "replay_regime_outcomes", "signals", "signal_ic",
     ];
 
     /// <summary>Handled by dedicated logic rather than a date filter: `positions` is restored from the

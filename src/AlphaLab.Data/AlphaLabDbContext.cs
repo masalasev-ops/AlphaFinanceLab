@@ -59,6 +59,10 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
     // ---- Phase 4 replay table (D89/FR-41; M5) ----
     public DbSet<ReplayRegimeOutcomeRow> ReplayRegimeOutcomes => Set<ReplayRegimeOutcomeRow>();
 
+    // ---- Phase 4.5 Signal Library (D91/FR-43,44; M6) ----
+    public DbSet<SignalRow> Signals => Set<SignalRow>();
+    public DbSet<SignalIcRow> SignalIc => Set<SignalIcRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -656,6 +660,33 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
             e.Property(x => x.EdgeAnn).HasColumnName("edge_ann");
             e.Property(x => x.MedianPercentile).HasColumnName("median_percentile");
             e.Property(x => x.NDays).HasColumnName("n_days").IsRequired();
+        });
+
+        // ---- signals (D91/FR-43; M6) ---- signal_id TEXT PK, so no autoincrement question (rule 14).
+        modelBuilder.Entity<SignalRow>(e =>
+        {
+            e.ToTable("signals");
+            e.HasKey(x => x.SignalId);
+            e.Property(x => x.SignalId).HasColumnName("signal_id");
+            e.Property(x => x.Family).HasColumnName("family").IsRequired();
+            e.Property(x => x.ConfigJson).HasColumnName("config_json").IsRequired();
+            e.Property(x => x.CodeVersion).HasColumnName("code_version").IsRequired();
+            e.Property(x => x.RegisteredOn).HasColumnName("registered_on").IsRequired();
+        });
+
+        // ---- signal_ic (D91/FR-44; M6) ---- PK (signal_id, as_of, horizon_days); composite, so no
+        // autoincrement question. NO run_kind by design (SCHEMA): a grade is a property of a signal and a
+        // date, not of a strategy run. signal_id REFERENCES signals — documentary, no EF FK (house
+        // precedent: the EF model declares no foreign keys and creates no shadow indexes).
+        modelBuilder.Entity<SignalIcRow>(e =>
+        {
+            e.ToTable("signal_ic");
+            e.HasKey(x => new { x.SignalId, x.AsOf, x.HorizonDays });
+            e.Property(x => x.SignalId).HasColumnName("signal_id");
+            e.Property(x => x.AsOf).HasColumnName("as_of");
+            e.Property(x => x.HorizonDays).HasColumnName("horizon_days");
+            e.Property(x => x.RankIc).HasColumnName("rank_ic").IsRequired();
+            e.Property(x => x.N).HasColumnName("n").IsRequired();
         });
     }
 }

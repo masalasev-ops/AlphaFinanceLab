@@ -1254,6 +1254,64 @@ namespace AlphaLab.Data.Migrations
                     b.ToTable("securities", (string)null);
                 });
 
+            modelBuilder.Entity("AlphaLab.Data.Entities.SignalIcRow", b =>
+                {
+                    b.Property<string>("SignalId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("signal_id");
+
+                    b.Property<string>("AsOf")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("as_of");
+
+                    b.Property<int>("HorizonDays")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("horizon_days");
+
+                    b.Property<int>("N")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("n");
+
+                    b.Property<double>("RankIc")
+                        .HasColumnType("REAL")
+                        .HasColumnName("rank_ic");
+
+                    b.HasKey("SignalId", "AsOf", "HorizonDays");
+
+                    b.ToTable("signal_ic", (string)null);
+                });
+
+            modelBuilder.Entity("AlphaLab.Data.Entities.SignalRow", b =>
+                {
+                    b.Property<string>("SignalId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("signal_id");
+
+                    b.Property<string>("CodeVersion")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("code_version");
+
+                    b.Property<string>("ConfigJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("config_json");
+
+                    b.Property<string>("Family")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("family");
+
+                    b.Property<string>("RegisteredOn")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("registered_on");
+
+                    b.HasKey("SignalId");
+
+                    b.ToTable("signals", (string)null);
+                });
+
             modelBuilder.Entity("AlphaLab.Data.Entities.StrategyRow", b =>
                 {
                     b.Property<string>("StrategyId")
