@@ -10,7 +10,13 @@ using Microsoft.Extensions.Logging;
 namespace AlphaLab.Worker.Ops;
 
 /// <summary>What a threshold pin was asked to write (checkpoint 4.5.2, D108).</summary>
-public sealed record SignalPinRequest(double GoneAlpha, double DecayAlpha);
+/// <param name="Power">
+/// The detection power the finding-305 detectability floors are quoted at. OPTIONAL, and the asymmetry
+/// with the two α values is deliberate: the α values gate a VERDICT and the backfill refuses to grade
+/// without them, whereas power governs only a published DIAGNOSTIC. Omitting it withholds the floors
+/// with a stated reason; it never blocks a run and never changes a flag.
+/// </param>
+public sealed record SignalPinRequest(double GoneAlpha, double DecayAlpha, double? Power = null);
 
 /// <summary>What one pin attempt did. <paramref name="AlreadyPinned"/> lists keys left untouched.</summary>
 public sealed record SignalPinOutcome(IReadOnlyList<string> Written, IReadOnlyList<string> AlreadyPinned);
@@ -47,6 +53,7 @@ public sealed class SignalThresholdPinner(
         ArgumentNullException.ThrowIfNull(request);
         RequireSignificanceLevel(request.GoneAlpha, nameof(request.GoneAlpha));
         RequireSignificanceLevel(request.DecayAlpha, nameof(request.DecayAlpha));
+        if (request.Power is { } pw) RequireSignificanceLevel(pw, nameof(request.Power));
 
         using var arenaScope = _logger.BeginArenaScope(arena);
         var resolved = DbPathResolver.ResolvePath(connectionString, arena.Id);
@@ -92,6 +99,22 @@ public sealed class SignalThresholdPinner(
             "computed at read time, with trend arm df = n_eff-2.",
             written, already);
 
+        if (request.Power is { } power)
+        {
+            Pin(db, PowerKey, power, stamp,
+                "Finding 305, checkpoint 4.5.4: the DETECTION POWER the published minimum-detectable-IC " +
+                "is quoted at. Derived from the lab's existing standard rather than chosen: Gate.Power " +
+                "= 0.80, the same power D48's MDE uses. The floor itself is NOT stored — it is " +
+                "(t_{1-alpha, df} + t_{power, df}) * se, computed at read time, because both the df and " +
+                "the standard error depend on the window actually available. The POWER TERM is what " +
+                "makes it a detectable EFFECT rather than a restatement of the critical value: without " +
+                "it the number would only say what mean would have cleared the bar, not what true edge " +
+                "the test could have found. A config ROW rather than an appsettings value for the same " +
+                "reason the two alphas are (finding 292: the read-model must resolve it as-of). NOT part " +
+                "of the FR-45 pin refusal - it governs a diagnostic, never a verdict.",
+                written, already);
+        }
+
         if (written.Count > 0) db.SaveChanges();
 
         foreach (var key in already)
@@ -108,6 +131,9 @@ public sealed class SignalThresholdPinner(
 
         return new SignalPinOutcome(written, already);
     }
+
+    /// <summary>The finding-305 power row. Named here so the pinner and the read-model cannot drift.</summary>
+    public const string PowerKey = "SignalLibrary.MinDetectablePower";
 
     private static void Pin(
         AlphaLabDbContext db, string key, double alpha, string stamp, string reason,

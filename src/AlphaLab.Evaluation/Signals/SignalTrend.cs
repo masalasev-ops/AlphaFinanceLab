@@ -94,9 +94,29 @@ public static class SignalTrendInference
     /// <param name="Sample">The effective independent sample the verdict rests on.</param>
     /// <param name="LevelCritical">The one-sided critical value used by the <c>gone</c> arm.</param>
     /// <param name="TrendCritical">The one-sided critical value used by the <c>decaying</c> arm.</param>
+    /// <param name="MinDetectableIc">
+    /// THE SMALLEST TRUE MEAN RANK-IC THIS TEST WOULD HAVE CAUGHT, at the pinned α and power
+    /// (finding 305). Null when power is unpinned or the sample cannot support the claim.
+    ///
+    /// Without it, <c>gone</c> and "too thin to tell" are the same string to a reader — which is the
+    /// exact confusion the effective-sample printing was added to prevent one level up. `gone` is a
+    /// FAILURE TO REJECT, and a failure to reject is only informative next to the effect size the test
+    /// had the power to find: a `gone` at 0.002 says the rule is dead, a `gone` at 0.060 says the
+    /// instrument is blind. Same discipline as D89 publishing an MDE beside a gate refusal.
+    /// </param>
+    /// <param name="MinDetectableTrendPerYear">
+    /// The counterpart for the <c>decaying</c> arm: the shallowest true decay, in rank-IC per YEAR,
+    /// this test would have caught. Annualized exactly as <c>MdeCalculator</c> annualizes its alpha MDE.
+    /// Published for the same reason as the level floor — <c>stable</c> is also a failure to reject,
+    /// so "we found no decay" needs the decay it could have found beside it.
+    /// </param>
+    /// <param name="SlopeStdError">NW standard error of the fitted slope, per grade-day. Published so
+    /// the two floors above are recomputable rather than merely asserted.</param>
     public readonly record struct Verdict(
         string Flag, double MeanIc, double StdError, double? TStat,
-        EffectiveSample Sample, double? LevelCritical, double? TrendCritical);
+        EffectiveSample Sample, double? LevelCritical, double? TrendCritical,
+        double? MinDetectableIc = null, double? MinDetectableTrendPerYear = null,
+        double? SlopeStdError = null);
 
     /// <summary>
     /// Infer the flag. <paramref name="icSeries"/> is the window's per-day rank-IC values (oldest
@@ -106,8 +126,16 @@ public static class SignalTrendInference
     /// mean is not distinguishable from zero is gone whatever its slope is doing — reporting "decaying"
     /// for it would describe the trajectory of something that is already indistinguishable from noise.
     /// </summary>
+    /// <param name="power">
+    /// The detection power the published floors are quoted at (<c>SignalLibrary.MinDetectablePower</c>,
+    /// a versioned config row). NULL means unpinned ⇒ the floors are withheld rather than defaulted,
+    /// the same fail-closed shape the α values use. It is NOT a verdict input: no flag depends on it,
+    /// which is why an absent power withholds a DIAGNOSTIC and never a verdict, and why the FR-45
+    /// backfill does not refuse to grade without it.
+    /// </param>
     public static Verdict Infer(
-        IReadOnlyList<double> icSeries, int horizonDays, int windowSessions, double goneAlpha, double decayAlpha)
+        IReadOnlyList<double> icSeries, int horizonDays, int windowSessions, double goneAlpha, double decayAlpha,
+        double? power = null)
     {
         ArgumentNullException.ThrowIfNull(icSeries);
 
@@ -142,25 +170,53 @@ public static class SignalTrendInference
 
         var t = mean / se;
 
-        // GONE: the mean is not significantly ABOVE zero (one-sided, at the level arm's df).
-        if (t <= levelCritical) return new Verdict(TrendFlag.Gone, mean, se, t, sample, levelCritical, trendCritical);
-
-        // DECAYING: the slope of the IC series is significantly negative (at the trend arm's df).
-        var slopeT = SlopeTStat(icSeries, horizonDays, sample.Count);
-        if (slopeT is { } st && st <= -trendCritical)
+        // ---- the detectability floors (finding 305) ----
+        // D48's convention, in rank-IC units instead of annualized alpha: MDE = (t_alpha + t_power)*se.
+        // The POWER TERM is what makes this an MDE rather than a restatement of the critical value.
+        // `levelCritical * se` would only be "the smallest mean that would have cleared the bar" — a
+        // fact about this sample, already derivable from the row. The question a reader actually has
+        // about a `gone` is "how big an edge could this test have FOUND", and that carries the power
+        // term. The t reference (not z) for the same reason D108 chose it: at these df the normal is
+        // wrong, and the power term is evaluated at the SAME df as the arm it belongs to.
+        var slope = SlopeFit_(icSeries, horizonDays, sample.Count);
+        double? minDetectableIc = null, minDetectableTrend = null;
+        if (power is { } p && p > 0 && p < 1)
         {
-            return new Verdict(TrendFlag.Decaying, mean, se, t, sample, levelCritical, trendCritical);
+            minDetectableIc = (levelCritical + StudentT.OneSidedCritical(1.0 - p, sample.LevelDf)) * se;
+            if (slope is { StdError: > 0 } fit)
+            {
+                minDetectableTrend =
+                    (trendCritical + StudentT.OneSidedCritical(1.0 - p, sample.TrendDf))
+                    * fit.StdError * SessionsPerYear;
+            }
         }
 
-        return new Verdict(TrendFlag.Stable, mean, se, t, sample, levelCritical, trendCritical);
+        Verdict Resolved(string flag) => new(
+            flag, mean, se, t, sample, levelCritical, trendCritical,
+            minDetectableIc, minDetectableTrend, slope?.StdError);
+
+        // GONE: the mean is not significantly ABOVE zero (one-sided, at the level arm's df).
+        if (t <= levelCritical) return Resolved(TrendFlag.Gone);
+
+        // DECAYING: the slope of the IC series is significantly negative (at the trend arm's df).
+        if (slope is { TStat: { } st } && st <= -trendCritical) return Resolved(TrendFlag.Decaying);
+
+        return Resolved(TrendFlag.Stable);
     }
+
+    /// <summary>Trading sessions per year — the annualization constant, matching `MetricsConstants`.</summary>
+    private const double SessionsPerYear = 252.0;
+
+    /// <summary>The fitted slope, its NW standard error, and the resulting t — all three, because the
+    /// error is now published (finding 305) and not merely divided by.</summary>
+    private readonly record struct SlopeFit(double Slope, double StdError, double TStat);
 
     /// <summary>
     /// t-statistic of the OLS slope of the rank-IC series on time, with the NW-corrected residual
     /// variance and the effective (not nominal) sample in the denominator — the same correction the
     /// level arm applies, for the same reason.
     /// </summary>
-    private static double? SlopeTStat(IReadOnlyList<double> y, int lag, int effectiveN)
+    private static SlopeFit? SlopeFit_(IReadOnlyList<double> y, int lag, int effectiveN)
     {
         var n = y.Count;
         if (n < 3 || effectiveN < 3) return null;
@@ -187,6 +243,8 @@ public static class SignalTrendInference
         // Var(slope) = σ²_LR / Sxx, rescaled from the nominal to the effective sample: the overlapping
         // series carries n points but only ~effectiveN independent ones.
         var varSlope = residualLrv / sxx * ((double)n / effectiveN);
-        return varSlope > 0 ? slope / Math.Sqrt(varSlope) : null;
+        if (varSlope <= 0) return null;
+        var seSlope = Math.Sqrt(varSlope);
+        return new SlopeFit(slope, seSlope, slope / seSlope);
     }
 }

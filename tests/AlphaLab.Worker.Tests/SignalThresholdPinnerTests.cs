@@ -103,6 +103,51 @@ public class SignalThresholdPinnerTests
     }
 
     [Fact]
+    public void ThePowerRow_IsOptional_PinnedOnce_AndCarriesTheDerivationOfTheFloorItScales()
+    {
+        // finding 305. Power governs the published minimum-detectable-IC, which is a DIAGNOSTIC and
+        // never a verdict input - so unlike the two alphas it is optional, and omitting it must leave
+        // the store in a state the backfill still accepts.
+        using var h = new PipelineHarness();
+        var cs = $"Data Source={h.DbPath}";
+
+        var withoutPower = Pinner().Run(cs, new SignalPinRequest(0.05, 0.05));
+        Assert.Equal(2, withoutPower.Written.Count);
+        using (var db = h.Open())
+        {
+            Assert.Empty(db.Config.Where(c => c.Key == SignalThresholdPinner.PowerKey).ToList());
+        }
+
+        // Pinning it later writes ONLY the new key - the two alphas are reported as already-pinned and
+        // are not re-stamped, which is what makes this safe to run after the alphas are already live.
+        var second = Pinner().Run(cs, new SignalPinRequest(0.05, 0.05, Power: 0.80));
+        Assert.Equal([SignalThresholdPinner.PowerKey], second.Written);
+        Assert.Equal(2, second.AlreadyPinned.Count);
+
+        using var check = h.Open();
+        var row = Assert.Single(check.Config.Where(c => c.Key == SignalThresholdPinner.PowerKey).ToList());
+        Assert.Equal(1, row.Version);
+        Assert.Equal("0.8", row.ValueJson);
+        // The derivation travels with the value, and it must say the thing that is easy to get wrong:
+        // that the POWER TERM is what makes the number a detectable effect rather than a critical value.
+        Assert.Contains("Gate.Power", row.Reason, StringComparison.Ordinal);
+        Assert.Contains("t_{power", row.Reason, StringComparison.Ordinal);
+        Assert.Contains("finding 305", row.Reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ANonProbabilityPower_IsRefused_NotClamped()
+    {
+        using var h = new PipelineHarness();
+        var cs = $"Data Source={h.DbPath}";
+        Assert.Throws<ArgumentOutOfRangeException>(() => Pinner().Run(cs, new SignalPinRequest(0.05, 0.05, 1.0)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Pinner().Run(cs, new SignalPinRequest(0.05, 0.05, 0.0)));
+
+        using var db = h.Open();
+        Assert.Empty(db.Config.Where(c => c.Key.StartsWith("SignalLibrary.")).ToList());
+    }
+
+    [Fact]
     public void TheVerbParses_AndRequiresBothAlphasExplicitly()
     {
         var cmd = WorkerCommandParser.Parse(
@@ -119,5 +164,15 @@ public class SignalThresholdPinnerTests
             ["signal-pin-thresholds", "--gone-alpha", "0", "--decay-alpha", "0.05"]));
         Assert.Throws<ArgumentException>(() => WorkerCommandParser.Parse(
             ["signal-pin-thresholds", "--gone-alpha", "x", "--decay-alpha", "0.05"]));
+
+        // --power is OPTIONAL (finding 305: it scales a diagnostic, not a verdict)...
+        Assert.Null(WorkerCommandParser.Parse(
+            ["signal-pin-thresholds", "--gone-alpha", "0.05", "--decay-alpha", "0.05"]).SignalPin!.Power);
+        Assert.Equal(0.80, WorkerCommandParser.Parse(
+            ["signal-pin-thresholds", "--gone-alpha", "0.05", "--decay-alpha", "0.05", "--power", "0.80"])
+            .SignalPin!.Power!.Value, 10);
+        // ...but a PRESENT-and-unparseable value is still refused, so a typo cannot become "omitted".
+        Assert.Throws<ArgumentException>(() => WorkerCommandParser.Parse(
+            ["signal-pin-thresholds", "--gone-alpha", "0.05", "--decay-alpha", "0.05", "--power", "eighty"]));
     }
 }

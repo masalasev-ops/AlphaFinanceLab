@@ -196,8 +196,13 @@ running.*
 
    ```
    dotnet run --project src/AlphaLab.Worker -c Release -- signal-pin-thresholds --arena sp500 \
-       --gone-alpha 0.05 --decay-alpha 0.05
+       --gone-alpha 0.05 --decay-alpha 0.05 --power 0.80
    ```
+
+   `--power` is OPTIONAL and scales the published minimum-detectable-IC (finding 305), which is a
+   diagnostic and never a verdict input - omitting it withholds that number with a stated reason
+   and blocks nothing. **Safe to run again if the two alphas are already pinned:** the verb writes
+   only the keys that are absent and reports the rest as already-pinned, untouched.
 
    This verb is the **ONLY sanctioned way** to write `SignalLibrary.TrendGoneAlpha` /
    `TrendDecayAlpha` — they are versioned `config` ROWS, not appsettings keys, and a hand `sqlite3`

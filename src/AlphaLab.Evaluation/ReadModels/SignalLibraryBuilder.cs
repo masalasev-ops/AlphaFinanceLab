@@ -39,6 +39,12 @@ public sealed class SignalLibraryBuilder(AlphaLabDbContext db, SignalLibraryOpti
     public const string DecayAlphaKey = "SignalLibrary.TrendDecayAlpha";
     public const string GoneAlphaKey = "SignalLibrary.TrendGoneAlpha";
 
+    /// <summary>The detection power the published floors are quoted at (finding 305). A config ROW for
+    /// the same reason the α values are: finding 292 needs it as-of resolvable, and appsettings is not.
+    /// Deliberately NOT part of the FR-45 pin refusal — it governs a diagnostic, never a verdict, so an
+    /// absent power must not block a 3-hour backfill.</summary>
+    public const string MinDetectablePowerKey = "SignalLibrary.MinDetectablePower";
+
     /// <param name="asOf">null = the live panel; a date = a pinned read (finding 292).</param>
     public SignalLibraryReadModel Build(string? asOf = null)
     {
@@ -51,6 +57,7 @@ public sealed class SignalLibraryBuilder(AlphaLabDbContext db, SignalLibraryOpti
         }
 
         var (goneAlpha, decayAlpha, pinned) = ResolveThresholds(asOf);
+        var power = ResolvePower(asOf);
         var flagWindowYears = options.ResolvedRollingWindowsYears.Max();   // finding 301
 
         var rows = new List<SignalPanelRow>();
@@ -104,13 +111,16 @@ public sealed class SignalLibraryBuilder(AlphaLabDbContext db, SignalLibraryOpti
                 }
 
                 var verdict = SignalTrendInference.Infer(
-                    flagIc, horizon, Math.Min(flagIc.Count, flagTake), goneAlpha, decayAlpha);
+                    flagIc, horizon, Math.Min(flagIc.Count, flagTake), goneAlpha, decayAlpha, power);
 
                 rows.Add(new SignalPanelRow(
                     signal.SignalId, signal.Family, horizon, signal.CodeVersion, windows,
                     verdict.Flag,
                     verdict.Flag == TrendFlag.Insufficient ? SignalPanelRow.ReasonBelowEffectiveSampleFloor : null,
-                    verdict.TStat, verdict.LevelCritical, verdict.TrendCritical));
+                    verdict.TStat, verdict.LevelCritical, verdict.TrendCritical,
+                    verdict.MinDetectableIc, verdict.MinDetectableTrendPerYear,
+                    verdict.TStat is null ? null : verdict.StdError, verdict.SlopeStdError,
+                    DetectabilityReason(power, verdict)));
             }
         }
 
@@ -129,6 +139,33 @@ public sealed class SignalLibraryBuilder(AlphaLabDbContext db, SignalLibraryOpti
     /// silently-defaulted significance level is precisely the "choosing thresholds by looking at the
     /// answer" that D108's pin-before-grade rule exists to prevent.
     /// </summary>
+    /// <summary>
+    /// Why the detectability floors are absent, when they are. Stated rather than left blank: a missing
+    /// number beside a verdict reads as "nothing to report", and the whole point of finding 305 is that
+    /// an absent floor is exactly what a reader must not silently accept.
+    /// </summary>
+    private static string? DetectabilityReason(double? power, SignalTrendInference.Verdict verdict)
+    {
+        if (verdict.MinDetectableIc is not null) return null;
+        if (power is null) return SignalPanelRow.ReasonPowerNotPinned;
+        return SignalPanelRow.ReasonBelowEffectiveSampleFloor;
+    }
+
+    /// <summary>The pinned detection power, resolved on the same as-of seam as the α values. Absent ⇒
+    /// null ⇒ the floors are withheld with their reason, never quoted at an unchosen power.</summary>
+    private double? ResolvePower(string? asOf)
+    {
+        var config = new ConfigReadService(db);
+        var raw = asOf is null
+            ? config.ResolveCurrent(MinDetectablePowerKey)
+            : config.ResolveAsOf(MinDetectablePowerKey, asOf);
+        if (raw is null) return null;
+        return double.TryParse(raw.Trim('"'), NumberStyles.Float, CultureInfo.InvariantCulture, out var p)
+               && p > 0 && p < 1
+            ? p
+            : null;
+    }
+
     private (double Gone, double Decay, bool Pinned) ResolveThresholds(string? asOf)
     {
         var config = new ConfigReadService(db);
