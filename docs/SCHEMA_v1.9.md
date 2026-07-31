@@ -351,7 +351,8 @@ CREATE TABLE feature_baselines (
 -- watermark (FX-SignalIcDeterminism), so signal_ic rows are re-derivable facts, not state.
 -- No run_kind: a grade is a property of a signal and a date, not of a forward/replay strategy run.
 -- The Worker remains the sole writer (D59). ~70k rows for the 20-year backfill (FR-45).
--- Recorded now; the EF migration lands with the Phase-4.5 build (checkpoint 4.5.1).
+-- EF migration LANDED with the Phase-4.5 build (M6 `Phase45SignalLibrary`, checkpoint 4.5.1); the
+-- live-arena apply is the operator step (PROGRESS, Phase 4.5).
 CREATE TABLE signals (                              -- the instrument registry (frozen rows, D91)
   signal_id     TEXT PRIMARY KEY,                   -- e.g. 'mom:L252s21'
   family        TEXT NOT NULL,                      -- catalog family: momentum|reversal|lowvol|breakout|resmom|bab
@@ -363,9 +364,9 @@ CREATE TABLE signals (                              -- the instrument registry (
 CREATE TABLE signal_ic (                            -- one row per grade (D91, FR-44)
   signal_id    TEXT NOT NULL REFERENCES signals(signal_id),
   as_of        TEXT NOT NULL,                       -- scoring day t (the grade is written once t+k resolves)
-  horizon_days INTEGER NOT NULL,                    -- k: 21|63 pre-registered; 126 open (PROGRESS P15)
+  horizon_days INTEGER NOT NULL,                    -- k: 21|63 pre-registered (126 CLOSED - rejected on the statistic, finding 290)
   rank_ic      REAL NOT NULL,                       -- Spearman rank correlation: scores at t vs t..t+k adjusted total returns
-  n            INTEGER NOT NULL,                    -- names contributing (Stage-1 pool as-of t; FX-SignalIcPit)
+  n            INTEGER NOT NULL,                    -- names that contributed - the SCORABLE set (finding 294): Stage-1 eligible as-of t, narrowed per signal by what that scorer could score and by t+k price availability; FX-SignalIcPit
   PRIMARY KEY (signal_id, as_of, horizon_days)
 );
 

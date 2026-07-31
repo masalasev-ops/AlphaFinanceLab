@@ -20,7 +20,8 @@ public static class TrendFlag
 /// independent, so a window of <c>WindowSessions</c> holds only about <c>WindowSessions / Horizon</c>
 /// independent observations. That count sets <c>df</c>, which sets the critical value, which decides
 /// the flag — so it is arithmetic the verdict rests on rather than a caveat printed beside it. It is
-/// STILL displayed (the D107 print-the-denominator discipline), but its status is input first.
+/// STILL displayed (finding 290's beside-the-flag requirement — a thin number must never read as a
+/// thick one), but its status is input first.
 ///
 /// THE TWO ARMS DIFFER BECAUSE THEY FIT DIFFERENT THINGS. The <c>gone</c> arm tests a MEAN
 /// (<c>df = n − 1</c>); the <c>decaying</c> arm fits a SLOPE (<c>df = n − 2</c>, one more parameter
@@ -49,8 +50,9 @@ public readonly record struct EffectiveSample(int WindowSessions, int HorizonDay
     /// THIS IS NOT A HYPOTHETICAL REGIME. A 5-year window is not full during the first years of the
     /// backfill, so n_eff RAMPS: at k = 63 the floor is not reached until ~630 sessions (~2.5 years) of
     /// history exist, and at k = 21 until ~210 (~10 months). Those ramp years are precisely the low-df
-    /// case — at the floor, trend df = 8, where the t critical value still exceeds the normal one by
-    /// ~18 %. That is why <see cref="Numerics.StudentT"/> is computed exactly rather than approximated:
+    /// case — at the floor, trend df = 8, where the ONE-SIDED t critical value still exceeds the normal
+    /// one by ~13 % (1.860 against 1.645 at α = 0.05 — the tail the trend arm actually uses; finding
+    /// 302). That is why <see cref="Numerics.StudentT"/> is computed exactly rather than approximated:
     /// the small-sample correction is load-bearing in the OPERATING range, not just at the extreme
     /// D108 rejected.
     /// </summary>

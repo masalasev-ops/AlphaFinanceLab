@@ -13,8 +13,8 @@ namespace AlphaLab.Core.ReadModels;
 /// One rolling window's grade for one (signal, horizon): the mean rank-IC with its Newey–West band.
 ///
 /// <see cref="EffectiveN"/> is an INPUT to the verdict, not a footnote (D108): it sets the degrees of
-/// freedom and therefore the critical value. It is rendered beside the flag for the same reason the
-/// D107 power limitation prints its denominator — a thin number must not read as a thick one.
+/// freedom and therefore the critical value. It is rendered beside the flag for the same reason any
+/// low-power check prints its denominator — a thin number must not read as a thick one (finding 290).
 /// </summary>
 /// <param name="WindowYears">The rolling window (1 or 5). The FLAG is inferred on 5y only (D108).</param>
 /// <param name="MeanRankIc">Mean rank-IC over the window.</param>

@@ -179,3 +179,54 @@ run_kind='replay', quarantined).
 The walk-forward seeding mode (`IBacktestEngine`) shares the replay generation rules: a seeding run
 over an evaluated generation (or vice versa) needs `--reset` — mixing evaluated and unevaluated days
 in one generation corrupts its cadence bookkeeping.
+
+## 8.5. Phase-4.5 sign-off: the Signal Library backfill
+
+*The OPERATOR run that earns the Phase-4.5 DoD, in the same shape as §8. It runs AFTER §8 steps 2–3:
+the backfill fails closed with "The store has no bars — nothing to grade" against an unseeded store,
+and the `--from 2006-01-01` start is only meaningful because §8 step 3's `--proxy-only` pass supplied
+the pre-2006 warm-up. Both verbs are WRITING verbs carrying `SoleWriterGate` — no Worker may be
+running.*
+
+1. **Apply M6 snapshot-first.** `pwsh tools/migrate.ps1 -Arena sp500` — applies `Phase45SignalLibrary`
+   (`signals`, `signal_ic`). The script takes its own snapshot and refuses to migrate without one
+   (rule 14). Verify with `dotnet ef migrations list` showing no `(Pending)`.
+
+2. **Pin the two D108 significance levels — BEFORE any grade row exists.**
+
+   ```
+   dotnet run --project src/AlphaLab.Worker -c Release -- signal-pin-thresholds --arena sp500 \
+       --gone-alpha 0.05 --decay-alpha 0.05
+   ```
+
+   This verb is the **ONLY sanctioned way** to write `SignalLibrary.TrendGoneAlpha` /
+   `TrendDecayAlpha` — they are versioned `config` ROWS, not appsettings keys, and a hand `sqlite3`
+   INSERT is a rule-15 violation (finding 299). α = 0.05 derives from `Gate.Confidence` = 0.95 and the
+   D56 `falseAlarmRate` = 0.05, the lab's one existing significance standard. Both α values are
+   explicit: a MISSING one is refused, never defaulted; a value outside (0,1) is refused rather than
+   clamped; an already-pinned key is left untouched and reported, so a re-run is a no-op and never a
+   new version. The derivation is recorded in each row's `reason`.
+
+3. **Run the backfill.**
+
+   ```
+   dotnet run --project src/AlphaLab.Worker -c Release -- signal-backfill --arena sp500 \
+       --from 2006-01-01 --to 2026-01-01
+   ```
+
+   Then record its **measured** wall time in PROGRESS's 4.5.3 box. That blank stays blank until the
+   measurement exists — promise no duration here.
+
+**Skipping step 1 or 2 fails loudly, never silently:** a pending migration is refused by name, and the
+backfill REFUSES to grade a single day while either α row is absent, naming the missing keys.
+
+**Resumption is the OPPOSITE of §8's, and the contrast matters.** A replay re-launch destroys the run
+and needs `tools\resume-calibration.ps1`; `signal-backfill` has no `--reset` and needs none. The
+written `(signal_id, as_of, horizon_days)` rows ARE the progress marker, and since finding 300 the
+coverage check runs BEFORE scoring — so **to resume an interrupted run, re-run the same command**. A
+resumed run should report most of its window as already-complete (`SessionsSkippedComplete`); if it
+does not, the skip path is not working and the run is silently paying to redo finished days.
+
+**One warning not to scroll past:** if no market proxy resolves, the backfill WARNS rather than fails,
+and `resmom:L252` and `bab:L252` then emit no scores. The run completes looking successful with two of
+seven signals silently ungraded.

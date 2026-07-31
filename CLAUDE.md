@@ -14,7 +14,7 @@ envelope, 202+job_id for long-running commands, read-models stamped run_id+water
 money as strings/minor-units (never floats).
 
 ## Documentation map (read the phase's diet per docs/README_v1.9.md §3 — not everything)
-- docs/MASTER_DESIGN_v1.9.md — decisions D1–D99, architecture, golden rules, math appendix, UI boundary (§21–22), the Signal Library (§24)
+- docs/MASTER_DESIGN_v1.9.md — the decision register (§2 is the register AND the count — never restate the range here), architecture, golden rules, math appendix, UI boundary (§21–22), the Signal Library (§24)
 - docs/ARENA_ARCHITECTURE_v1.9.3.md — multi-arena isolation (D71): one universe per arena, arena-namespaced storage, arena-scoped calibration, the no-merge frontend rule
 - docs/STRATEGY_CATALOG_v1.9.md — IModel contracts + per-strategy acceptance criteria
 - docs/DESIGN_IMPROVEMENTS_v1.9.md — metrics math, costs/sizing, LLM economics, Arena Replay
@@ -28,14 +28,15 @@ money as strings/minor-units (never floats).
 - docs/DB_RELOCATION.md — ops runbook: relocating the SQLite file(s) to another directory/drive (config edit + file move; ConfigConsistencyTests guards the four connection-string edit spots + Arena:Id agreement)
 - docs/FUTURE_DB_MIGRATION.md — contingency: leaving SQLite for a server RDBMS (a different job from relocation; closed until needed)
 - docs/REBUILD.md — ops runbook: from a fresh clone to a working arena (the data bootstrap, sibling to DB_RELOCATION/FUTURE_DB_MIGRATION; --preflight live-source check, sp500-widening caveat)
-- docs/UX_GUIDELINES_v1.9.md — interface rules UX-1..UX-15 as build specs
+- docs/UX_GUIDELINES_v1.9.md — interface rules UX-1..UX-16 as build specs
+- docs/UX_DESIGN_SYSTEM_v1.9.md — the component catalogue: each honesty read-model field → its Blazor component/element/token treatment (entries 1–18); the visual-assembly layer under UX_GUIDELINES
 - docs/SETUP_v1.9.md — prerequisites, D49 launch tier, secrets, day-zero checklist
 - docs/DESIGN_IMPROVEMENTS_EXPLAINED.md — plain-language "why" companion to DESIGN_IMPROVEMENTS (section numbers match the spec)
 - docs/POST_PHASE8_IMPROVEMENTS.md - post-Phase-8 roadmap: what each improvement is and why it earns its slot (companion: POST_PHASE8_PLAN.md holds the sequence)
 - docs/POST_PHASE8_PLAN.md - post-Phase-8 build sequence: the passes in order + the hooks that exist when post-8 begins (incl. the Phase 4.5 signal digest, D91)
-- docs/CHANGELOG_v1.9.md — every consistency finding + decision (D1–D99), the provenance trace
+- docs/CHANGELOG_v1.9.md — every consistency finding + decision (MASTER §2 is the register AND the count), the provenance trace
 - Navigation (not part of any phase diet): START_HERE.md (entry point), docs/README_v1.9.md (file map + build workflow), docs/MANIFEST.md (package manifest + revision state)
-- Mockups (visual direction for the GUI): docs/alphalab_ux_mockups.html — the single consolidated UX mockup (every screen)
+- Mockups (visual direction for the GUI): docs/alphalab_ux_mockups.html — the consolidated UX mockup (every screen, as of v1.9.26); docs/mockups/cohort_curve_panel.html and docs/mockups/signal_library_panel.html — the two standalone panel mockups added since (the UX-15 and UX-16 "reference look"), which the consolidated file absorbs at the next UI-workstream regeneration
 
 ## Hard rules (violations are bugs, not style)
 1. Forward paper P&L judges strategies. Replay (`run_kind='replay'`) judges only the

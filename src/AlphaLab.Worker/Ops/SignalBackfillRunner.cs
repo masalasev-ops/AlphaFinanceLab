@@ -50,8 +50,13 @@ public sealed class SignalThresholdsNotPinnedException(IReadOnlyList<string> mis
 /// A grade is a property of a signal and a date; there is one market history to grade.
 ///
 /// RESUMABLE + IDEMPOTENT with no cursor table: the already-written `(signal_id, as_of, horizon_days)`
-/// rows ARE the progress marker (the `HistoricalBackfill` "expected vs stored" shape). An interrupted
-/// run resumes by not re-grading what it already wrote, and a completed run re-run writes nothing.
+/// rows ARE the progress marker (the `HistoricalBackfill` "expected vs stored" shape — INCLUDING its
+/// ORDERING, which is the half that did not survive the first port: finding 300). The coverage check
+/// runs BEFORE scoring, and the unit it skips is the DAY: a day whose FULL (signal × horizon) set is
+/// stored is skipped WITHOUT being graded (`SessionsSkippedComplete` counts those days), while a
+/// PARTIALLY graded day is re-graded in full so its missing pairs can land — `Persist` then discards
+/// the pairs already there, since the day-level check is the optimisation and the persist-time skip is
+/// the correctness rule. A completed run re-run therefore scores nothing and writes nothing.
 /// </summary>
 public sealed class SignalBackfillRunner(
     IConfiguration configuration,
@@ -102,7 +107,14 @@ public sealed class SignalBackfillRunner(
         var horizons = signalOptions.ResolvedHorizonsDays;   // finding 301: never read the raw property
         if (horizons.Count == 0)
         {
-            throw new InvalidOperationException("SignalLibrary:HorizonsDays is empty — nothing to grade (fail closed).");
+            // Unreachable by construction: ResolvedHorizonsDays falls back to the non-empty
+            // DefaultHorizonsDays constant, so an empty or absent SignalLibrary:HorizonsDays now means
+            // "use [21, 63]" (finding 301), NOT "refuse". Kept as a belt — if it ever fires it is a
+            // defect in the default itself, not an operator misconfiguration, and the message must not
+            // send them looking at appsettings for a key that is doing what it should.
+            throw new InvalidOperationException(
+                "SignalLibrary horizons resolved EMPTY — SignalLibraryOptions.DefaultHorizonsDays is " +
+                "itself empty (a code defect, not an unconfigured key); nothing to grade (fail closed).");
         }
 
         // The registry is frozen; registering is idempotent and leaves existing rows untouched.

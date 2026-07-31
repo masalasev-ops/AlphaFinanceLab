@@ -180,21 +180,22 @@ public class SignalTrendTests
         Assert.Equal(EffectiveSample.MinimumCount, new EffectiveSample(63 * 10, 63).Count);   // ~2.5y at k=63
         Assert.Equal(EffectiveSample.MinimumCount, new EffectiveSample(21 * 10, 21).Count);   // ~10mo at k=21
 
-        // And at the floor the small-sample correction is still MATERIAL: trend df = 8, where t exceeds
-        // the normal critical value by ~18%. A normal reference would be wrong where the lab actually
-        // operates, not merely at the extreme D108 rejected.
+        // And at the floor the small-sample correction is still MATERIAL: trend df = 8, where the
+        // ONE-SIDED t exceeds the normal critical value by ~13%. It must be the one-sided tail, because
+        // that is the tail SignalTrend actually uses (finding 302) - asserting the two-sided one here
+        // would let the flag's reference drift without ever reddening this test.
         var atFloor = new EffectiveSample(63 * EffectiveSample.MinimumCount, 63);
         Assert.Equal(8, atFloor.TrendDf);
-        var t = StudentT.TwoSidedCritical(0.05, atFloor.TrendDf);
-        Assert.Equal(2.306004, t, 5);
-        Assert.True(t > 1.15 * 1.959964);
+        var t = StudentT.OneSidedCritical(0.05, atFloor.TrendDf);
+        Assert.Equal(1.859548, t, 5);
+        Assert.True(t > 1.12 * 1.6448536);
     }
 
     [Fact]
     public void TheVerdictCarriesItsOwnAudit_SampleAndBothCriticalValues()
     {
         // Whatever the flag says, a reader can recompute it: the effective sample and both critical
-        // values travel with the verdict (the D107 print-the-denominator discipline).
+        // values travel with the verdict (finding 290's print-the-denominator discipline).
         var ic = new List<double>();
         for (var i = 0; i < FiveYears; i++) ic.Add(0.05);
 

@@ -11,9 +11,9 @@ namespace AlphaLab.Worker.Ops;
 /// which guards only the hosted path — an ops verb dispatches before the Generic Host exists, so no
 /// hosted guard has run, yet a WRITING verb still writes.
 ///
-/// Extracted here because there is now more than one writing verb (`replay-calibrate` and the FR-45
-/// signal backfill). Two copies of a fail-closed concurrency check is exactly the shape where one gets
-/// fixed and the other does not.
+/// Extracted here because writing verbs keep arriving — `replay-calibrate`, the FR-45 `signal-backfill`
+/// and `signal-pin-thresholds` (finding 299) all dispatch this way. Duplicated copies of a fail-closed
+/// concurrency check are exactly the shape where one gets fixed and the rest do not.
 ///
 /// A FRESH heartbeat under run_in_progress=1 means another Worker is actively writing this arena ⇒
 /// refuse. A STALE flag is a crash orphan ⇒ mark its run failed and clear it, so the caller sees a

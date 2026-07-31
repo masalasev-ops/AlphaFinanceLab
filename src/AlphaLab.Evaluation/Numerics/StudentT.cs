@@ -59,9 +59,10 @@ public static class StudentT
 
     /// <summary>
     /// The TWO-SIDED critical value at significance level <paramref name="alpha"/>:
-    /// <c>t_{1−α/2, df}</c>. This is what the trend flag compares a statistic against, and the reason
-    /// the pinned config constant is α rather than the critical value itself (D108) — the critical
-    /// value depends on df, which depends on the effective sample, so it cannot be authored in advance.
+    /// <c>t_{1−α/2, df}</c>. Its consumer is the DISPLAYED Newey–West band on a window's rolling mean
+    /// rank-IC (<c>SignalLibraryBuilder</c>), which is an INTERVAL and therefore two-tailed. It is a
+    /// presentation artefact, NOT the flag's test — the flag's arms are directional and use
+    /// <see cref="OneSidedCritical"/> (finding 302).
     /// </summary>
     public static double TwoSidedCritical(double alpha, double df)
     {
@@ -71,7 +72,10 @@ public static class StudentT
 
     /// <summary>The ONE-SIDED critical value at significance level <paramref name="alpha"/>:
     /// <c>t_{1−α, df}</c>. The trend flag's arms are directional (decaying = significantly NEGATIVE;
-    /// gone = not significantly ABOVE zero), so one-sided is the honest test for them.</summary>
+    /// gone = not significantly ABOVE zero), so one-sided is the honest test for them — THIS is what the
+    /// flag compares its statistic against, and the reason the pinned config constant is α rather than
+    /// the critical value itself (D108): the critical value depends on df, which depends on the
+    /// effective sample, so it cannot be authored in advance.</summary>
     public static double OneSidedCritical(double alpha, double df)
     {
         if (alpha is <= 0 or >= 1) throw new ArgumentOutOfRangeException(nameof(alpha), alpha, "alpha must be in (0,1).");

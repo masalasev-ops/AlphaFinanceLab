@@ -32,8 +32,11 @@ public sealed class SignalLibraryOptions
 
     /// <summary>Configured grade horizons k, in trading days. EMPTY means "use
     /// <see cref="DefaultHorizonsDays"/>" — read <see cref="ResolvedHorizonsDays"/>, never this
-    /// directly. 126 is CLOSED — rejected for v1 (finding 290): NW lag = horizon against a 1-year
-    /// window leaves ~2 effective observations.</summary>
+    /// directly. 126 is CLOSED — rejected for v1 (finding 290) and LEFT closed by D108, which moved
+    /// the flag to the 5-year window and superseded the original 1-year arithmetic: at 5y, k = 126 caps
+    /// at n_eff = 1260/126 = 10, exactly the <c>EffectiveSample.MinimumCount</c> floor and never above
+    /// it, so it would read `insufficient` for the whole ramp and sit at trend df = 8 forever after
+    /// (finding 303).</summary>
     public IReadOnlyList<int> HorizonsDays { get; set; } = [];
 
     /// <summary>Configured rolling windows, in years. EMPTY means "use
