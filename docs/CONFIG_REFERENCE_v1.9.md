@@ -243,7 +243,9 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
   // The pinned constant is the SIGNIFICANCE LEVEL, never a critical value: the critical value is
   // t_{1-alpha/2, df} computed at read time, where df comes from the effective independent sample
   // (n_eff = window/horizon; df = n_eff-1 for the level arm, n_eff-2 for the trend arm, which fits a
-  // slope). Renamed from TrendDecayZ/TrendGoneZ, which named a normal-reference z that D108 replaced.
+  // slope). Below n_eff = 10 NO verdict is emitted at all - the state is 'insufficient' (D108; the floor
+  // derives from lag/T = 1/n_eff and the same reliability bound that rejected the 1-year window).
+  // Renamed from TrendDecayZ/TrendGoneZ, which named a normal-reference z that D108 replaced.
   // Pinning them AFTER the 20y backfill exists would be choosing thresholds by looking at the answer.
   // That a later change is cheap to re-score (D106, over stored signal_ic rows) is a cost fact, NEVER a
   // licence to defer the pinning. ResolveCurrent for the live panel; ResolveAsOf for a pinned consumer.
