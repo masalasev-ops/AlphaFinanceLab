@@ -121,9 +121,10 @@ The decision numbers are stable identifiers used throughout the build. The table
 | v1.9.38 signal-library | **D91** | the Signal Library registered as Phase 4.5 — descriptive only |
 | v1.9.39 Phase-4 build (Arena Replay) | **D92–D99** | the D95 frozen-watermark contract; `run_kind` on the regime tables (D93); calibrated curves as versioned config rows (D98); the `422 detectability_refused` outcome (D99) |
 | v1.9.42 two-pass calibration | **D100–D101** | stop acting on uncalibrated verdicts + record the would-be retires; D63-conformant flat anchors; curve-based out-of-sample metrics; the per-cadence plant ladder with a rule-selected primary |
-| v1.9.46 freeze-gate | **D102** | `joint_false_alarm` is reported, never freeze-gating — resolving the finding-251 ∧ amendment-C1 deadlock that made the D98 config freeze unreachable |
+| v1.9.46 freeze-gate | **D102** | *(superseded by D107 pre-implementation)* `joint_false_alarm` is reported, never freeze-gating — resolving the finding-251 ∧ amendment-C1 deadlock that made the D98 config freeze unreachable |
 | v1.9.47 AI decision transparency | **D104–D105** | the AI seat's record must be complete enough that re-execution is never required (§23.8); `reproduce-day` replays the logged AI decision rather than re-calling the model |
 | v1.9.48 recompute-harness | **D106** | monitor-rule and metric changes are scored by recomputing from stored rows rather than re-simulating (§25) |
+| v1.9.50 category freeze-gate | **D107** | checks ASSERTING properties of the pass-1 flat-anchor monitor are reported-only, never freeze-gating — `joint_false_alarm`, `would_be_edge_survival_5y`, `anti_detection_speed`; membership by what a check asserts, never what it reads; every reported-only check cites its decision number in code, and a test pins the exact set — *supersedes D102* |
 
 | # | Decision | Rationale |
 |---|----------|-----------|

@@ -1169,7 +1169,7 @@ This **supersedes** the earlier and weaker argument from `PlantEquityStep` (`equ
 | `Calibration.DetectionPower` (the C-1 sweep) | **does NOT** | it is a promotion count, and promotions come from `PromotionGate.Decide(gap, …)` at `EvaluationStep.cs:89` — the raw-gap path |
 | `promotions_le_chance` | **does NOT** | gate-derived, same path |
 | `edge_plant_detected` | **does NOT** | gate-derived, same path |
-| `days_to_indistinguishability` | **does NOT** | read from persisted monitor status, which the finding-280 flat-anchor rule drove |
+| `days_to_indistinguishability` | **does NOT** | ~~read from persisted monitor status, which the finding-280 flat-anchor rule drove~~ **CORRECTED (v1.9.50 audit): reads promotions** (`PromotedAmong`, `ReplayVerification.cs:146`), not statuses — the does-not-survive conclusion stands via the raw-gap promotion channel (finding 285); the stated mechanism was wrong |
 | `anti_detection_speed` | **does NOT** | same — status-derived |
 
 Short form: **the curves survive, the verification numbers do not.**
@@ -1311,3 +1311,71 @@ D103's premise was that the EVER form would Fail at full scale and block the fre
 ### The freeze caveat, recorded in advance of the freeze (finding 285 §4 — attached to this run's record)
 
 `promotions_le_chance` (Pass, 0/50) and `edge_plant_detected` (Pass, 43/50) were computed from promotions produced by the **raw-gap alpha** (finding 285). The survival reasoning, written as an argument rather than assumed: every D64 plant is an overlay on a population member and is therefore **beta-matched to its own base**; the raw gap and Jensen's alpha differ by a term in (β−1) against the benchmark's excess return, and because every plant shares the same base construction **that term is common to the edge and no-edge cohorts alike** — it shifts the absolute level of both cohorts and preserves the *separation between them*, which is exactly the quantity these two checks measure. So the verdicts are expected to hold; **generation 2 confirms it — this generation does not.** **This caveat attaches to the freeze record when the freeze happens:** whichever pass eventually writes frozen config rows must carry it beside the two check verdicts it qualifies.
+
+---
+
+## v1.9.50 — the category decision: pass-1-verdict metrics are reported-only (D107, supersedes D102)
+
+*Recorded 2026-07-31 on `feat/freeze-gate-category` off the merged v1.9.49 main. This section is the decision (Phase B, docs); the implementation (Phase C), the freeze (Phase D) and the sign-off (Phase E) follow in the same PR as separate commits.*
+
+**The Phase-A gate-wiring audit this rests on (read-only, 2026-07-31; established from code, not memory):**
+
+1. **Wiring:** `NoFailures` = `Checks.All(c => c.Outcome != CheckOutcome.Fail)` (`ReplayVerification.cs:51`); `willFreeze = !reportOnly && verification.NoFailures` (`CalibrationOrchestrator.cs:157`); a Fail also exits 1 **before** any config write (`:185-190`). The freeze itself is one transaction of five append-only keys (`PNoiseCurve`, `PEdgeCurve`, `DetectionPower`, `S6AutoRetireEvals` first-freeze-only, `ReportRef`). **No per-check exemption mechanism exists anywhere in the code — `NoFailures` treats all twelve checks identically.** D102 was confirmed unimplemented: `joint_false_alarm`'s Fail flowed into the gate like any other.
+2. **The full data-source map** of the twelve checks: verification-time **verdict readers** (`SuspectEver` over `overfitting_status`; `WouldRevert` over `go_live_log`); **gate-promotion readers** (`PromotedAmong` — the finding-285 raw-gap channel); **calibrated-analogue/structural readers** (S3 percentile values vs learn-built curves; existence checks); plus the allocator's **generation-time** verdict influence (`AllocationStep.cs:37-61`: the suspect-decay clamp and `EffectiveStatus` filtering consumed flat-anchor Suspects while the sessions were being written).
+3. **The resume path:** committed sessions are skipped (`ReplayRunner.cs:139-162`), so unblocking costs a **re-invocation** — curve build + verification + freeze, minutes not days; the watermark pin file exists and matches the generation (`2026-07-24T22:00:00Z`).
+
+### D107 — the membership test, stated before the membership
+
+A check belongs to the reported-only category by **what it ASSERTS, never what data it READS** — the same discriminator that keeps `FX-PackNoLeak` distinct from `FX-PackWatermark` (two claims over one artifact: admissibility vs stability). A check asserting a property of the **pass-1 flat-anchor monitor** asserts a property of an instrument that is uncalibrated **by construction** during the very run that judges it (D100; amendment C1) — its verdict is not evidence about the curves being frozen. A check that merely reads pass-1 rows while asserting something else stays gating.
+
+### The category — THREE members, reported-only, never freeze-gating [D107]
+
+| Member | Asserts | This run |
+|---|---|---|
+| `joint_false_alarm` | a property of the pass-1 monitor (its ever-Suspect rate on no-edge plants) | Fail 50/50 |
+| `would_be_edge_survival_5y` | a property of the pass-1 monitor (its would-kill rate on small real edges) | Fail 28 % |
+| `anti_detection_speed` | how fast the pass-1 monitor catches anti plants, under flat anchors | **Pass** |
+
+**Why the third member matters, recorded:** `anti_detection_speed` PASSED this run. Including it is what shows the category was drawn on principle rather than around the failures — a category containing only the two failing checks is indistinguishable from removing what failed; one that also contains a passing member cannot be read that way.
+
+### Two verdict-touching checks STAY in the gating set, reasons recorded
+
+- **`edge_retires_logged`** — reads pass-1 `WouldRevert` rows but asserts **LOG INTEGRITY**: every would-be retire carries its triggering signal. That property holds regardless of calibration state, so a Fail means a recording regression. The data source is incidental to the claim.
+- **`allocator_value_add`** — its subject is the **ALLOCATOR**, not the monitor; verdicts were an input, not the thing asserted. **Direction caveat recorded with it:** the measured 24.17 %/yr against an MDE of 11.78 % was produced while the monitor was flagging 43/50 no-edge plants — this reading is a **LOWER BOUND under adverse inputs**, and calibrated inputs should not worsen it.
+
+### Justification, relationship to D102, and the guard
+
+**Justification for the category:** the pre-registered amendment-C1 caveat (pass-1 verdicts are non-comparable and not independent validation), plus the fact that each failing member has a **calibrated analogue which PASSED** — `curve_based_edge_survival` **98/100** and `noedge_curve_breach_validate` **6 %**. **This is the third check to leave the gate**, and that is stated rather than buried: **a category leaving is defensible where three individual removals would not be** — the category has a written membership test, a passing member, and a guard; three case-by-case removals would be the finding-279/281 pattern (discovering the members one failure at a time) relocated into the gating set itself.
+
+**Relationship to D102 — SUPERSEDES, per the corpus convention** (D5/D19/D46: the superseded row is annotated in place, the new number carries the rule): D102 was adopted docs-only and never reached code; D107 subsumes its single-member removal into the category rule **before implementation**, so D102 will never be implemented as itself. D102's justification (the finding-251 ∧ amendment-C1 deadlock) carries forward intact as the category's founding case.
+
+**The mechanism reality [from the audit, recorded in the decision]:** because no per-check exemption exists, **Phase C CREATES the mechanism** — a reported-only marking on the check record, consumed by `NoFailures` — rather than flipping a flag. Anyone expecting a one-line change is reading D102's "removed from the gating set" as if the set were data; it is code, and the set's members are decided at each check's construction site.
+
+**The guard [D107]:** every check flagged reported-only **cites its decision number in code**, and a test pins the **exact** reported-only set — no check can leave the gating set without a recorded decision behind it, and a new member reddens the test until the addition is deliberate.
+
+**What Phase C must add (recorded so it is not discovered later):** `CalibrationReportInputs` carries a single `BuildConfiguration` and no code-vintage field — nothing records that this generation's **sessions** came from the pre-change build while its **verification and freeze** come from the post-change build. Phase C adds the generation-provenance line (sessions committed this invocation vs pre-existing, plus the verifying build); the exact commit hashes land in the sign-off entries. The generation is legitimately assembled from two builds — the replay completed before the change, and the change is verification-stage only (zero residue, corrected 283(b) cost map) — but that provenance is **written down rather than inferred later**.
+
+**Explicitly out of scope: S6 patience recalibration.** A replay-path change costing a fresh multi-day run, it would invalidate the very records this pass uses, and the flat-anchor path stops being used the moment these curves freeze. Finding 280 keeps its existing trigger, bundled with finding 285 into generation 2.
+
+**Two corrections from the audit (applied in this pass):**
+
+- **(a)** the finding-285-cont survives/does-not table said `days_to_indistinguishability` reads persisted monitor status; **the code reads promotions** (`PromotedAmong`, `ReplayVerification.cs:146`). Its does-not-survive conclusion stands via the raw-gap promotion channel (finding 285), but the stated mechanism was wrong — corrected in place, because a wrong mechanism in a table people consult is worse than a wrong conclusion they would check.
+- **(b)** `tools/resume-calibration.ps1`'s guard-2 message told the operator any rebuild "needs a `--reset` re-run" — over-broad against the corrected 283(b) cost map (verification-stage changes have **zero residue**), and it pointed at the one command that destroys 5,031 committed sessions. Fixed in the same commit: the message now distinguishes replay-path changes (fresh `--reset` generation, deliberately) from verification-stage changes (commit and resume — never `--reset`).
+
+## v1.9.50 (cont.) — the freeze record: five rows, the 285 caveat attached, Phase 4 SIGNED OFF (2026-07-31)
+
+**Phase D, confirmed at every step.** The snapshot was verified CURRENT before the re-invoke (the 07:55Z snapshot is byte-identical in size and mtime to the live store — nothing wrote between the run's completion and the resume), satisfying the finding-251 discipline without duplicating 3.9 GB. `tools/resume-calibration.ps1` (never `--reset` by construction; watermark auto-pinned from `calibration-generation.txt`) launched the committed D107 build; the Worker reported **"5031 session(s) … (5031 already committed will be skipped)"** and then **"replay complete: 0 committed, 5031 already-committed skipped"** — **zero sessions recomputed**, the generation untouched. The post-replay stage then rebuilt the curves, re-ran verification (**AllGreen=True over the gating set — 9/9 gating checks Pass**), archived the report, and froze — ONE append-only transaction at `changed_on = 2026-07-31T12:57:26Z`, DB-confirmed read-only, all version 1:
+
+| Frozen key | value bytes |
+|---|---|
+| `Monitor.S3.PNoiseCurve.daily` | 9,424 |
+| `Monitor.S3.PEdgeCurve.daily` | 9,718 |
+| `Calibration.DetectionPower` | 28,195 |
+| `Monitor.S6.AutoRetireEvals` | 1 (the D98 initial patience, 4 — seeded from the FIRST freeze only) |
+| `Calibration.ReportRef` | 181 (report path + sha256 `ec2395b1debf…`) |
+
+**The regenerated report** landed at the tracked `docs/calibration/sp500/2026-07-31-calibration.md` — the same UTC-dated filename as the morning pre-freeze version, which it **supersedes in place** (git history preserves the pre-freeze artifact at commit `b990a4e`). It carries the frozen-keys line (no longer "(none…)"), every reported-only verdict **with its citation** (*"Fail (reported-only per D107 — never freeze-gating)"*), and the **generation-provenance line**: *5031 sessions pre-existing · 0 committed by this invocation; curves, verification and freeze computed by THIS build (Release)*. The two builds, named: the **sessions** were computed by the pre-D107 machinery (`src/` is identical from `78ef75e` through `20dc8c1` — PRs #17–19 after the launch touched no `src/`), the **verification + freeze** by `3b1127e` (the D107 mechanism). Written down, not inferred.
+
+**The finding-285 freeze caveat — ATTACHED to this freeze record, as pre-registered in v1.9.49.** `promotions_le_chance` (Pass, 0/50) and `edge_plant_detected` (Pass, 43/50) — both in the gating set that authorized this freeze — were computed from promotions produced by the **raw-gap alpha** (finding 285). The survival argument, stated as an argument: every D64 plant is an overlay on a population member and is therefore beta-matched to its own base; the raw gap and Jensen's alpha differ by a term in (β−1) against the benchmark's excess return, common to the edge and no-edge cohorts alike — it shifts both cohorts' absolute levels and preserves the separation between them, which is the quantity both checks measure. **Generation 2 confirms it; this generation does not.** The frozen curves themselves are beta-adjusted throughout (`SafeAlpha` → `JensenAlpha`, finding 285-cont §1) and do not carry the defect.
+
+**Phase 4 — SIGNED OFF (2026-07-31).** The RUNBOOK §8 DoD is met: migrations applied snapshot-first (2026-07-23); the D70 historical backfill + proxy-only warm-up done; the full-scale run complete (**5031/5031, one vintage, one watermark, 0 plants retired across 20 years**); the report archived + committed with every mandatory section, Release-stamped, provenance-stamped; **the D56 curves, detection power, patience seed and report ref frozen as five append-only config rows**; the Phase-4 gate box filled with the measured numbers; the D87 item recorded (v1.9.49, three statements — MidCap 400 as a separate arena; the 1500 stays closed). **Standing obligations that survive sign-off, each with its existing trigger:** generation 2 (findings 280 + 285 — before Phase 6 registers real strategies; the D106 harness first), P16/P17 (the 93-security coverage set), P18 (the calibrated-null-vs-operating-null routes), D103 (latent, twin triggers recorded), and the post-sign-off forward widen (rule 22 — a separate deliberate action, not triggered by this freeze).

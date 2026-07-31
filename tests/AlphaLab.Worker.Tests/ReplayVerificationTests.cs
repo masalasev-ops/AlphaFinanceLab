@@ -61,6 +61,54 @@ public class ReplayVerificationTests
         Assert.Equal(AllocatorValueAddKpi.EqualWeightId, pair.StrategyB);
     }
 
+    // D107 DoD (the category form of D102's two specified cases): a Fail in a REPORTED-ONLY check —
+    // one asserting a property of the pass-1 flat-anchor monitor — never blocks the freeze bar; a
+    // Fail in a GATING check always does. The mechanism is the check-level citation, because the
+    // Phase-A audit established no per-check exemption existed (NoFailures treated all twelve equally).
+    [Fact]
+    public void D107_ReportedOnlyFail_NeverBlocks_GatingFailBlocks()
+    {
+        var kpis = new ReplayKpis(null, null, null, null, null, new Dictionary<string, int>(), null, null, null, null);
+
+        var reportedOnlyFails = new ReplayVerificationReport(
+        [
+            new VerificationCheck("joint_false_alarm", CheckOutcome.Fail, "50/50 ever Suspect", 1.0,
+                ReplayVerification.ReportedOnlyDecision),
+            new VerificationCheck("would_be_edge_survival_5y", CheckOutcome.Fail, "28% vs floor 90%", 0.28,
+                ReplayVerification.ReportedOnlyDecision),
+            new VerificationCheck("noedge_curve_breach_validate", CheckOutcome.Pass, "3/50", 0.06),
+        ], kpis);
+        Assert.True(reportedOnlyFails.NoFailures);   // the freeze proceeds — the Fails are archived evidence
+        Assert.True(reportedOnlyFails.AllGreen);     // the DoD bar reads the GATING set only
+
+        var gatingFail = new ReplayVerificationReport(
+        [
+            new VerificationCheck("joint_false_alarm", CheckOutcome.Fail, "reported-only", 1.0,
+                ReplayVerification.ReportedOnlyDecision),
+            new VerificationCheck("noedge_curve_breach_validate", CheckOutcome.Fail, "gating", 0.2),
+        ], kpis);
+        Assert.False(gatingFail.NoFailures);         // a gating Fail still blocks the freeze
+        Assert.False(gatingFail.AllGreen);
+    }
+
+    // The D107 GUARD: the reported-only set is EXACTLY the decision's three members, each citing a
+    // decision number — no check can leave the gating set without a recorded decision behind it, and
+    // a new member reddens this pin until the addition (and its decision) is deliberate.
+    [Fact]
+    public void D107_Guard_ReportedOnlySet_PinnedToTheDecisionMembers()
+    {
+        using var h = new PipelineHarness();
+        using var db = h.Open();
+        var report = new ReplayVerification(db, new GateOptions(), new VerdictsOptions(), new ReplayOptions(), new PlantOptions())
+            .Run(Specs(), learnThrough: null, builtPNoise: null);
+
+        var reportedOnly = report.Checks.Where(c => c.ReportedOnlyPer is not null)
+            .Select(c => c.Name).OrderBy(n => n, StringComparer.Ordinal).ToList();
+        Assert.Equal(new[] { "anti_detection_speed", "joint_false_alarm", "would_be_edge_survival_5y" }, reportedOnly);
+        Assert.All(report.Checks.Where(c => c.ReportedOnlyPer is not null),
+            c => Assert.Matches(@"^D\d+$", c.ReportedOnlyPer!));
+    }
+
     // Phase-4 review: the finding-113 survival floor judges the MIN-ALPHA D64 cohort (daily survival + monthly
     // base), NEVER pooled with the higher monthly ladder rungs (the C-1 detection-power sweep). Fixture:
     // SeedsPerPlant=5 -> floor cohort 10 (daily-2% ×5 + monthly-2% ×5), sweep 15 (monthly 4/8/16 ×5).

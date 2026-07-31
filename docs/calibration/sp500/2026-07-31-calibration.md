@@ -4,9 +4,10 @@
 - Frozen replay watermark (D95): `2026-07-24T22:00:00Z`
 - Replay run span: run 1..5032
 - Seeds per plant: 50 · population M: 200
-- Generated: 2026-07-31T08:35:16Z
+- Generated: 2026-07-31T12:57:26Z
 - Build configuration: **Release** (finding 278: the sign-off artifact records which build produced these numbers)
-- Config rows frozen this run: (none — report-only, or a verification failure blocked the freeze)
+- Generation provenance (D107): 5031 session(s) pre-existing from earlier invocation(s)/build(s) · 0 committed by THIS invocation; the curves, verification and any freeze below are computed by THIS build (**Release**). The generation's sessions and its verification therefore come from two builds — legitimate for a verification-stage change (zero session residue), and recorded here rather than inferred.
+- Config rows frozen this run: Monitor.S3.PNoiseCurve.daily, Monitor.S3.PEdgeCurve.daily, Calibration.DetectionPower, Monitor.S6.AutoRetireEvals, Calibration.ReportRef
 
 ## D56 trajectory curves (S3)
 
@@ -1527,13 +1528,13 @@ Median sessions to promotion: 861
 |---|---|---|
 | promotions_le_chance | **Pass** | 0/50 no-edge plants promoted; chance bound 4 at p=0.0250 |
 | edge_plant_detected | **Pass** | 43/50 PRIMARY edge plants promoted (window 5031 sessions); detection-power by rung — daily@2%:0/50, monthly@2%:1/50, monthly@4%:5/50, monthly@8%:26/50, monthly@16%:43/50 |
-| joint_false_alarm | **Fail** | 50/50 no-edge plants ever Suspect (bound 10 %) |
-| anti_detection_speed | **Pass** | median 126 sessions to first Suspect; 50/50 anti plants caught |
+| joint_false_alarm | **Fail** *(reported-only per D107 — never freeze-gating)* | 50/50 no-edge plants ever Suspect (bound 10 %) |
+| anti_detection_speed | **Pass** *(reported-only per D107 — never freeze-gating)* | median 126 sessions to first Suspect; 50/50 anti plants caught |
 | days_to_indistinguishability | **Pass** | 50/50 no-edge plants unpromoted at the 252-day chip threshold |
 | noedge_pnoise_breach_validate | **Pass** | 216/3600 validate-period no-edge points below P_noise (target ≈ 5 %) |
 | noedge_curve_breach_validate | **Pass** | 3/50 no-edge plants sustain-breach P_noise on validate (bound 10 %) |
 | curve_based_edge_survival | **Pass** | 98/100 floor-edge plants do not sustain-breach P_noise on validate (floor 90 %); 72/100 sustain-clear P_edge (distinguishable) |
-| would_be_edge_survival_5y | **Fail** | 28 % of 100 min-alpha D64 edge plants (daily survival + monthly base; sweep excluded) would-survive 5y (floor 90 % over n=100 — read the denominator, 0.90 over a small cohort is noisy; a floor failure recalibrates S6's patience, never the plant) |
+| would_be_edge_survival_5y | **Fail** *(reported-only per D107 — never freeze-gating)* | 28 % of 100 min-alpha D64 edge plants (daily survival + monthly base; sweep excluded) would-survive 5y (floor 90 % over n=100 — read the denominator, 0.90 over a small cohort is noisy; a floor failure recalibrates S6's patience, never the plant) |
 | edge_retires_logged | **Pass** | 78 would-be edge retire(s) logged; 0 missing a triggering signal |
 | allocator_value_add | **Pass** | blend−EW gap 24.17 %/yr (MDE 11.78 %, Promoted, T=5010); mean weight edge 0.4% vs anti 0.0% |
 | cohort_s3_paths_present | **Pass** | persisted replay S3 percentile paths exist for cohort reconstruction |
