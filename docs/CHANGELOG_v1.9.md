@@ -1360,6 +1360,39 @@ A check belongs to the reported-only category by **what it ASSERTS, never what d
 **Two corrections from the audit (applied in this pass):**
 
 - **(a)** the finding-285-cont survives/does-not table said `days_to_indistinguishability` reads persisted monitor status; **the code reads promotions** (`PromotedAmong`, `ReplayVerification.cs:146`). Its does-not-survive conclusion stands via the raw-gap promotion channel (finding 285), but the stated mechanism was wrong — corrected in place, because a wrong mechanism in a table people consult is worse than a wrong conclusion they would check.
+## v1.9.52 — the Phase-4.5 build opens: D108 (trend-flag inference) + finding 294 (the pool defect)
+
+*Recorded 2026-07-31 on `feat/phase4.5-signal-library` off the merged v1.9.51 main (`9e2ab0c`). The plan-approval pass: the two questions that would otherwise have been decided **inside** checkpoint 4.5.2 are settled first, in the open. Register verified before writing: next-free finding **294**, next-free decision **D108** (D103 remains reserved-and-unassigned), next-free interface rule **UX-16** (reserved by name in v1.9.51; its rule text is still unwritten and lands at 4.5.4).*
+
+### D108 — the trend flag's window and reference distribution
+
+Adopted: **a uniform 5-year window for BOTH horizons, against a t reference whose df derive from the effective independent sample.** Finding 290 had left this stated-but-undecided as a §24.2 spec change; it falls due the moment 4.5.2 implements the flag, so it is taken now and carries a decision number rather than folding into the checkpoint.
+
+**Three defects resolved together — finding 290 named only the first:**
+
+| | 1y window, k=63 | 5y window, k=63 |
+|---|---|---|
+| effective independent observations | **~4** | ~20 |
+| reference distribution | normal is wrong: t(df≈3)=**3.182** vs z=1.96; a nominal 5 % test has actual size ≈ **15 %** | t(df≈19)=2.093 vs z=1.96 (+7 %) |
+| **the NW estimator's own reliability** (`lag/T`) | 63/252 = **0.25** — far outside where NW is reliable (standard bandwidth at T=252 is ~4–5 lags) | 63/1260 = **0.05** |
+
+The third is the one a reference change alone cannot fix: correcting z→t would put a correct critical value on an **unreliable standard error**. Blind pinning stays legitimate throughout *because* the thresholds are significance units — a significance level can be chosen without seeing data; an IC magnitude cannot.
+
+**The decisive reason: the trend arm fits a slope, so it needs more data than the level arm, and the window must satisfy the harder arm.** And responsiveness is not the cost it appears — the trend arm fires *within* the window, so window length does not set detection lag the way it would for a level-only test: a downward slope inside a 5-year window is detectable while the 5-year mean is still positive.
+
+**Rejected on the record:** keeping 1y with a t reference (defect 3 survives); per-horizon windows (tailored, but the two flags become claims about different spans of history); dropping the significance claim (self-defeating — it forces an IC-magnitude cutoff, which cannot be blind-pinned, reintroducing exactly the curve-fitting the pin-before-any-grade-row rule exists to prevent).
+
+**Two consequences that are part of the decision, not follow-on work:**
+
+1. **The pinned constant becomes α, not a critical value.** The critical value is `t_{1−α/2, df}` computed at read time, because df depends on the effective sample. So `SignalLibrary.TrendDecayZ`/`TrendGoneZ` are renamed **`TrendDecayAlpha`/`TrendGoneAlpha`** — the `*Z` names described a normal reference that no longer exists — and they become **versioned config ROWS rather than appsettings values**, because finding 292 requires the read-model to resolve them through `ResolveAsOf` and an appsettings value is not as-of resolvable (the known `GateOptions` limit, D106).
+2. **Effective n is promoted from a printed caveat to a load-bearing INPUT.** It sets df and therefore the critical value. A quantity that determines a verdict earns its own derivation fixture rather than a display test, and the derivation must be exact — the two arms differ because they fit different things: **level `df = n_eff − 1`, trend `df = n_eff − 2`**. At 5y/k=63 that is t = 2.093 and 2.101. It is still printed beside the flag (the D107 power-limitation discipline), but its status is input first.
+
+| # | Finding | Resolution | Where |
+|---|---------|-----------|-------|
+| 294 | **§24.2 left the IC pool ambiguous by citing two paths in one sentence — and the ambiguity had a determinable answer, not a preference.** The sentence names the **Stage-1 eligible pool** (as-of membership ∩ priced-at-asOf, `Eligibility.cs:69-100`) and, in the same breath, *"the adjusted series the control populations compound on"* — whose path (`PopulationMarket.cs:31-37`) resolves membership **rawly, with no priced filter**. Read together the two read as two competing pool definitions, which is exactly how a from-scratch reading of the spec took them. Left open it would have been settled by whichever call the IC engine happened to make, changing `n` on every row and therefore every rank-IC | **Settled on correctness, not preference: the pool is the SCORABLE set.** An unpriced name yields no score and therefore cannot enter a ranking, so the priced filter is **implied by the ranking operation** rather than chosen beside it. The same rule narrows **per signal** — a scorer without sufficient history emits nothing for that name (`lowvol:L252` needs 252 sessions, `rev:L21` needs 21), the existing "absence is the honest answer" idiom — and `signal_ic.n` records the result per (signal, day, horizon), which the schema already accommodates. §24.2 is corrected to state which clause governs the **pool** and which governs the **return series**. **Burden of proof placed where it belongs:** any pool other than the scorable one now needs its own justification; the scorable one needs none | `MASTER §24.2`; `Eligibility.cs:69-100`; `PopulationMarket.cs:31-37`; `signal_ic.n`; `FX-SignalIcPit` |
+
+---
+
 - **(b)** `tools/resume-calibration.ps1`'s guard-2 message told the operator any rebuild "needs a `--reset` re-run" — over-broad against the corrected 283(b) cost map (verification-stage changes have **zero residue**), and it pointed at the one command that destroys 5,031 committed sessions. Fixed in the same commit: the message now distinguishes replay-path changes (fresh `--reset` generation, deliberately) from verification-stage changes (commit and resume — never `--reset`).
 
 ## v1.9.50 (cont.) — the freeze record: five rows, the 285 caveat attached, Phase 4 SIGNED OFF (2026-07-31)
