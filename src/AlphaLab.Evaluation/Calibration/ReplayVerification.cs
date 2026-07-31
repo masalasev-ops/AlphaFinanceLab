@@ -18,7 +18,13 @@ public enum CheckOutcome
     Insufficient,
 }
 
-public sealed record VerificationCheck(string Name, CheckOutcome Outcome, string Detail, double? Value = null);
+/// <summary><paramref name="ReportedOnlyPer"/> is the D107 mechanism: non-null marks the check
+/// REPORTED-ONLY — computed, archived, rendered with its citation, and NEVER freeze-gating. The value
+/// is the decision number that removed it from the gating set (the guard: no check leaves the gating
+/// set without a recorded decision behind it). Membership is by what a check ASSERTS, never what data
+/// it reads — a check asserting a property of the pass-1 flat-anchor monitor judges an instrument
+/// that is uncalibrated by construction during the run (D100, amendment C1).</summary>
+public sealed record VerificationCheck(string Name, CheckOutcome Outcome, string Detail, double? Value = null, string? ReportedOnlyPer = null);
 
 /// <summary>The §1.2 allocator value-add KPI (v1.9.23 phasing: validated HERE, in replay, against the
 /// D64 plants): the D51 blend vs static equal-weight over the same roster, paired with its own NW-MDE.</summary>
@@ -44,11 +50,16 @@ public sealed record ReplayKpis(
 
 public sealed record ReplayVerificationReport(IReadOnlyList<VerificationCheck> Checks, ReplayKpis Kpis)
 {
-    /// <summary>The full-scale DoD bar: every check evaluated AND green.</summary>
-    public bool AllGreen => Checks.All(c => c.Outcome == CheckOutcome.Pass);
+    /// <summary>The full-scale DoD bar: every GATING check evaluated AND green. Reported-only checks
+    /// (D107) are outside the bar — at full scale the pass-1-verdict metrics are EXPECTED to read Fail
+    /// (amendment C1) and must not hold the DoD hostage to an instrument the freeze itself replaces.</summary>
+    public bool AllGreen => Checks.All(c => c.ReportedOnlyPer is not null || c.Outcome == CheckOutcome.Pass);
 
-    /// <summary>The CI-mini bar: nothing FAILED (Insufficient is honest, not green).</summary>
-    public bool NoFailures => Checks.All(c => c.Outcome != CheckOutcome.Fail);
+    /// <summary>The freeze/CI bar: no GATING check failed (Insufficient is honest, not green). A Fail
+    /// in a reported-only check (D107) is archived with its citation and never blocks — that is the
+    /// per-check exemption mechanism the Phase-A audit found missing (before D107, all twelve checks
+    /// fed this equally and D102 was unimplementable as a flag flip).</summary>
+    public bool NoFailures => Checks.All(c => c.Outcome != CheckOutcome.Fail || c.ReportedOnlyPer is not null);
 }
 
 /// <summary>
@@ -65,6 +76,11 @@ public sealed class ReplayVerification(
 {
     private const string Replay = "replay";
     private const int SessionsPerYear = 252;
+
+    /// <summary>The decision every reported-only check cites (the D107 guard). The reported-only SET is
+    /// pinned by test — a check can only leave the gating set together with a recorded decision, and a
+    /// new member reddens the pin until the addition is deliberate.</summary>
+    public const string ReportedOnlyDecision = "D107";
 
     public ReplayVerificationReport Run(
         IReadOnlyList<PlantSpec> specs, string? learnThrough, S3Curve? builtPNoise, S3Curve? builtPEdge = null)
@@ -84,7 +100,8 @@ public sealed class ReplayVerification(
         {
             checks.Add(new VerificationCheck("promotions_le_chance", CheckOutcome.Insufficient, "no replay evaluations ran"));
             checks.Add(new VerificationCheck("edge_plant_detected", CheckOutcome.Insufficient, "no replay evaluations ran"));
-            checks.Add(new VerificationCheck("joint_false_alarm", CheckOutcome.Insufficient, "no replay evaluations ran"));
+            checks.Add(new VerificationCheck("joint_false_alarm", CheckOutcome.Insufficient, "no replay evaluations ran",
+                ReportedOnlyPer: ReportedOnlyDecision));
         }
         else
         {
@@ -114,23 +131,30 @@ public sealed class ReplayVerification(
                 Invariant($"detection-power by rung — {string.Join(", ", perRung)}"), detectedEdge));
 
             // ---- joint any-signal false alarm (finding 114): no-edge plants EVER Suspect/Retired ----
+            // Reported-only [D107, superseding D102]: asserts a property of the PASS-1 flat-anchor
+            // monitor (its ever-Suspect rate), which is uncalibrated by construction during this run.
             var alarmed = SuspectEver(ids.noEdge);
             jointFalseAlarm = ids.noEdge.Count == 0 ? 0 : alarmed.Count / (double)ids.noEdge.Count;
             checks.Add(new VerificationCheck("joint_false_alarm",
                 jointFalseAlarm <= replay.JointFalseAlarmMaxFrac ? CheckOutcome.Pass : CheckOutcome.Fail,
                 Invariant($"{alarmed.Count}/{ids.noEdge.Count} no-edge plants ever Suspect (bound {replay.JointFalseAlarmMaxFrac:P0})"),
-                jointFalseAlarm));
+                jointFalseAlarm, ReportedOnlyPer: ReportedOnlyDecision));
         }
         var perSignal = FalseAlarmContributions(ids.noEdge);
 
         // ---- anti-predictive detection speed (D63 KPI) ----
+        // Reported-only [D107]: asserts how fast the PASS-1 flat-anchor monitor catches anti plants.
+        // It PASSED at full scale — included in the category on the membership test (what it asserts),
+        // which is precisely what shows the category was drawn on principle, not around the failures.
         var antiSpeed = MedianSessionsToFirstSuspect(ids.anti);
         var antiSuspect = SuspectEver(ids.anti);
         checks.Add(antiSpeed is { } speed
             ? new VerificationCheck("anti_detection_speed",
                 antiSuspect.Count * 2 >= ids.anti.Count ? CheckOutcome.Pass : CheckOutcome.Fail,
-                Invariant($"median {speed:F0} sessions to first Suspect; {antiSuspect.Count}/{ids.anti.Count} anti plants caught"), speed)
-            : new VerificationCheck("anti_detection_speed", CheckOutcome.Insufficient, "no anti plant reached Suspect (short window?)"));
+                Invariant($"median {speed:F0} sessions to first Suspect; {antiSuspect.Count}/{ids.anti.Count} anti plants caught"), speed,
+                ReportedOnlyPer: ReportedOnlyDecision)
+            : new VerificationCheck("anti_detection_speed", CheckOutcome.Insufficient, "no anti plant reached Suspect (short window?)",
+                ReportedOnlyPer: ReportedOnlyDecision));
 
         // ---- days-to-indistinguishability (D63 KPI): no-edge plants earn the chip at the honest cadence ----
         double? daysToChip = null;
@@ -235,13 +259,18 @@ public sealed class ReplayVerification(
         // 'retired' status — otherwise the exemption would make this trivially 1.00 (the vacuous trap). This
         // retained finding-113 metric keeps its own EdgePlantSurvivalFloor5y key; the curve-based analogue
         // (curve_based_edge_survival, below) is the independent out-of-sample check with its own key.
+        // Reported-only [D107]: asserts a property of the PASS-1 flat-anchor monitor (its would-kill
+        // rate on small real edges — the finding-280 S6 misfire quantified on the edge side). Its
+        // calibrated analogue with its own key, curve_based_edge_survival, IS the gating instrument.
         var (survival5, survival10) = WouldBeEdgeSurvival(ids.floorEdge, windowSessions);
         checks.Add(survival5 is { } s5
             ? new VerificationCheck("would_be_edge_survival_5y",
                 s5 >= replay.EdgePlantSurvivalFloor5y ? CheckOutcome.Pass : CheckOutcome.Fail,
                 Invariant($"{s5:P0} of {ids.floorEdge.Count} min-alpha D64 edge plants (daily survival + monthly base; sweep excluded) would-survive 5y ") +
-                Invariant($"(floor {replay.EdgePlantSurvivalFloor5y:P0} over n={ids.floorEdge.Count} — read the denominator, 0.90 over a small cohort is noisy; a floor failure recalibrates S6's patience, never the plant)"), s5)
-            : new VerificationCheck("would_be_edge_survival_5y", CheckOutcome.Insufficient, Invariant($"window {windowSessions} < 5y")));
+                Invariant($"(floor {replay.EdgePlantSurvivalFloor5y:P0} over n={ids.floorEdge.Count} — read the denominator, 0.90 over a small cohort is noisy; a floor failure recalibrates S6's patience, never the plant)"), s5,
+                ReportedOnlyPer: ReportedOnlyDecision)
+            : new VerificationCheck("would_be_edge_survival_5y", CheckOutcome.Insufficient, Invariant($"window {windowSessions} < 5y"),
+                ReportedOnlyPer: ReportedOnlyDecision));
         // finding 113 audit: every WOULD-BE edge retire is logged WITH its triggering signal (Change 1
         // writes the 'WouldRevert' row and the s2/s3/s6 contributions atomically). Guards against a
         // regression that records the would-be retire but drops the signal that caused it.

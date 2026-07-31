@@ -52,6 +52,10 @@ public class CalibrationRunTests
             // finding 278: the report records which build produced its numbers (the sign-off DoD).
             Assert.Contains("Build configuration:", text);
             Assert.Contains(CalibrationOrchestrator.BuildConfiguration(), text);
+            // D107: the reported-only members carry their citation in the outcome cell, and the
+            // generation-provenance line records which build computed the verification.
+            Assert.Contains("reported-only per D107", text);
+            Assert.Contains("Generation provenance (D107)", text);
 
             using var db = h.Open();
             // The frozen rows: v1 of each D98 key, append-only.

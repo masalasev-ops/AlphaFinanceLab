@@ -175,7 +175,8 @@ public sealed class CalibrationOrchestrator(
             request.LearnThrough, vintage.MembershipSource,
             calibration.Plant.SeedsPerPlant, populations.Size,
             pEdge, pNoise, naiveEdge, maxGap, calibration.Plant.SensitivityMaxGapPts,
-            detectionPower, verification, frozenKeys, BuildConfiguration()), generatedAt);
+            detectionPower, verification, frozenKeys, BuildConfiguration(),
+            outcome.SessionsCommitted, outcome.SessionsSkippedAlreadyCommitted), generatedAt);
         await File.WriteAllTextAsync(reportPath, report, ct).ConfigureAwait(false);
         var reportSha = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(report)));
         _logger.LogInformation("replay-calibrate: report archived at {Path} (sha256 {Sha}…).", reportPath, reportSha[..12]);

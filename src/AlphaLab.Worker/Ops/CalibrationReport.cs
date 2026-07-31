@@ -25,7 +25,9 @@ public sealed record CalibrationReportInputs(
     IReadOnlyDictionary<double, DetectionPowerCurve> DetectionPower,
     ReplayVerificationReport Verification,
     IReadOnlyList<string> FrozenConfigKeys,
-    string BuildConfiguration);
+    string BuildConfiguration,
+    int SessionsCommittedThisInvocation,
+    int SessionsPreexisting);
 
 /// <summary>One C-1 detection-power curve: P(promoted by t | α) on the eval grid + the median.</summary>
 public sealed record DetectionPowerCurve(
@@ -50,6 +52,15 @@ public static class CalibrationReport
         sb.AppendLine($"- Seeds per plant: {r.SeedsPerPlant} · population M: {r.PopulationM}");
         sb.AppendLine($"- Generated: {generatedAtIso}");
         sb.AppendLine($"- Build configuration: **{r.BuildConfiguration}** (finding 278: the sign-off artifact records which build produced these numbers)");
+        // The D107 generation-provenance line: a resume that recomputes ONLY the post-replay stage
+        // (curves + verification + freeze) legitimately assembles one generation from two builds —
+        // the sessions from the build(s) that committed them, the verification from THIS build.
+        // Written down rather than inferred later (findings 282-283(b): zero session residue).
+        sb.AppendLine(Invariant($"- Generation provenance (D107): {r.SessionsPreexisting} session(s) pre-existing from earlier invocation(s)/build(s) · ") +
+                      Invariant($"{r.SessionsCommittedThisInvocation} committed by THIS invocation; the curves, verification and any freeze below are computed by THIS build (**{r.BuildConfiguration}**).") +
+                      (r.SessionsPreexisting > 0 && r.SessionsCommittedThisInvocation == 0
+                          ? " The generation's sessions and its verification therefore come from two builds — legitimate for a verification-stage change (zero session residue), and recorded here rather than inferred."
+                          : ""));
         sb.AppendLine($"- Config rows frozen this run: {(r.FrozenConfigKeys.Count == 0 ? "(none — report-only, or a verification failure blocked the freeze)" : string.Join(", ", r.FrozenConfigKeys))}");
         sb.AppendLine();
 
@@ -106,7 +117,12 @@ public static class CalibrationReport
         sb.AppendLine("|---|---|---|");
         foreach (var c in r.Verification.Checks)
         {
-            sb.AppendLine($"| {c.Name} | **{c.Outcome}** | {c.Detail.Replace("|", "\\|", StringComparison.Ordinal)} |");
+            // D107: a reported-only check renders its citation IN the outcome cell — the reader sees
+            // in one glance that this verdict is archived evidence, never a freeze input.
+            var outcome = c.ReportedOnlyPer is null
+                ? $"**{c.Outcome}**"
+                : $"**{c.Outcome}** *(reported-only per {c.ReportedOnlyPer} — never freeze-gating)*";
+            sb.AppendLine($"| {c.Name} | {outcome} | {c.Detail.Replace("|", "\\|", StringComparison.Ordinal)} |");
         }
         sb.AppendLine();
         var k2 = r.Verification.Kpis;
