@@ -26,6 +26,11 @@ public enum WorkerCommandKind
     /// stored history. WRITES `signal_ic` — hence a Worker verb, not a tools/Backfill mode (D59). It is
     /// NOT a replay generation (D95) and refuses to run until the D108 thresholds are pinned.</summary>
     SignalBackfill,
+
+    /// <summary>Pin the two D108 trend-flag significance levels as versioned config rows (checkpoint
+    /// 4.5.2) — the one sanctioned way to satisfy the backfill's pin refusal, since rule 15 forbids
+    /// editing the store by hand. Pinned once; an existing key is left untouched.</summary>
+    SignalPinThresholds,
 }
 
 /// <summary>The parsed command. <see cref="Date"/> is set only for
@@ -33,7 +38,8 @@ public enum WorkerCommandKind
 /// <see cref="WorkerCommandKind.ReplayCalibrate"/>.</summary>
 public sealed record WorkerCommand(
     WorkerCommandKind Kind, string? Date = null, string? ArenaId = null, ReplayRequest? Replay = null,
-    bool ReportOnly = false, SignalBackfillRequest? SignalBackfill = null);
+    bool ReportOnly = false, SignalBackfillRequest? SignalBackfill = null,
+    SignalPinRequest? SignalPin = null);
 
 /// <summary>
 /// Pure parsing of the Worker's command line (the <see cref="WorkerModeParser"/> precedent —
@@ -57,6 +63,7 @@ public static class WorkerCommandParser
     public const string VerifyWalVerb = "verify-wal";
     public const string ReplayCalibrateVerb = "replay-calibrate";
     public const string SignalBackfillVerb = "signal-backfill";
+    public const string SignalPinThresholdsVerb = "signal-pin-thresholds";
 
     public static WorkerCommand Parse(string[] args)
     {
@@ -111,11 +118,37 @@ public static class WorkerCommandParser
                 SignalBackfill: new SignalBackfillRequest(from, to));
         }
 
+        if (string.Equals(verb, SignalPinThresholdsVerb, StringComparison.OrdinalIgnoreCase))
+        {
+            var gone = RequireAlpha(SignalPinThresholdsVerb, "--gone-alpha", ValueOf(args, "--gone-alpha"));
+            var decay = RequireAlpha(SignalPinThresholdsVerb, "--decay-alpha", ValueOf(args, "--decay-alpha"));
+            return new WorkerCommand(WorkerCommandKind.SignalPinThresholds, null, arena,
+                SignalPin: new SignalPinRequest(gone, decay));
+        }
+
         throw new ArgumentException(
             $"Unknown command '{verb}'. Expected '{ReproduceDayVerb}', '{VerifyWalVerb}', " +
-            $"'{ReplayCalibrateVerb}', '{SignalBackfillVerb}', or no verb at all (the daily launch). Refusing " +
-            "to fall through to the daily run on a typo — that would start the sole DB writer against the " +
-            "live arena.");
+            $"'{ReplayCalibrateVerb}', '{SignalBackfillVerb}', '{SignalPinThresholdsVerb}', or no verb at " +
+            "all (the daily launch). Refusing to fall through to the daily run on a typo — that would start " +
+            "the sole DB writer against the live arena.");
+    }
+
+    /// <summary>A significance level must be present and strictly inside (0,1). Both halves are explicit
+    /// rather than defaulted: a MISSING alpha silently defaulting to 0.05 would defeat the whole
+    /// pin-before-grade discipline, which requires the operator to state the value deliberately.</summary>
+    private static double RequireAlpha(string verb, string flag, string? value)
+    {
+        if (value is null ||
+            !double.TryParse(value, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var alpha))
+        {
+            throw new ArgumentException($"{verb} requires {flag} <0..1> (got '{value ?? "(none)"}').");
+        }
+        if (alpha is <= 0 or >= 1)
+        {
+            throw new ArgumentException($"{verb}: {flag} must be strictly between 0 and 1 (got {value}).");
+        }
+        return alpha;
     }
 
     private static string RequireDate(string verb, string flag, string? value)

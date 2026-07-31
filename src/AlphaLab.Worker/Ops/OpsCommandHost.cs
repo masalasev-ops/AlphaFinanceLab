@@ -41,6 +41,8 @@ public static class OpsCommandHost
                 await ReplayCalibrateAsync(command, configuration, arena, connectionString, loggerFactory, ct).ConfigureAwait(false),
             WorkerCommandKind.SignalBackfill =>
                 await SignalBackfillAsync(command, configuration, arena, connectionString, loggerFactory, ct).ConfigureAwait(false),
+            WorkerCommandKind.SignalPinThresholds =>
+                SignalPinThresholds(command, configuration, arena, connectionString, loggerFactory),
             _ => throw new ArgumentOutOfRangeException(nameof(command), command.Kind, "Not an ops verb."),
         };
     }
@@ -102,6 +104,37 @@ public static class OpsCommandHost
         catch (Exception ex)
         {
             logger.LogCritical(ex, "replay-calibrate could not run.");
+            return 1;
+        }
+    }
+
+    // Checkpoint 4.5.2 (D108): pin the two trend-flag significance levels as versioned config rows. A
+    // WRITING verb, so it runs here with its own liveness gate. It exists because the FR-45 backfill's
+    // pin refusal had no sanctioned way to be satisfied otherwise — rule 15 forbids hand-editing the
+    // store, and every other config write is a code path that owns its own value.
+    private static int SignalPinThresholds(
+        WorkerCommand command,
+        IConfiguration configuration,
+        ArenaOptions arena,
+        string connectionString,
+        ILoggerFactory loggerFactory)
+    {
+        var logger = loggerFactory.CreateLogger("AlphaLab.Worker.SignalPinThresholds");
+        try
+        {
+            var outcome = new SignalThresholdPinner(configuration, arena, loggerFactory)
+                .Run(connectionString, command.SignalPin!);
+            if (outcome.Written.Count == 0)
+            {
+                logger.LogInformation(
+                    "signal-pin-thresholds: nothing written — all {Count} key(s) were already pinned.",
+                    outcome.AlreadyPinned.Count);
+            }
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            logger.LogCritical(ex, "signal-pin-thresholds could not run.");
             return 1;
         }
     }
