@@ -282,17 +282,50 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
   // re-stamped). The verb records each row's DERIVATION in its own `reason` (key rule 3).
 
   "Llm": {                                         // D24/D46
-    "Tasks": {
-      "news_extraction": { "Model": "claude-haiku-4-5-20251001" },
-      "regime_brief":    { "Model": "claude-sonnet-4-6" },
-      "research_brief":  { "Model": "claude-sonnet-4-6" },
-      "skeptic":         { "Model": "claude-sonnet-4-6" }
+    "Tasks": {                                     // PER-TASK TIER RE-PINNED 2026-08-01 at Phase-5 prep (v1.9.60).
+                                                   // The prompt requires this to be a deliberate build-time CHOICE with its
+                                                   // date, not an inheritance: the previous regime_brief/research_brief/
+                                                   // skeptic value (claude-sonnet-4-6) was SUPERSEDED and was being carried
+                                                   // forward unreviewed. Rationale for the split: the three reasoning tasks
+                                                   // are where a wrong answer is least visible (a plausible brief and a
+                                                   // plausible-but-wrong brief read alike), and Batches is already half
+                                                   // price, so the top tier is bought exactly where judgment is the product;
+                                                   // news_extraction is a mechanical shape-transform with a checkable output.
+      "news_extraction": { "Model": "claude-haiku-4-5" },
+      "regime_brief":    { "Model": "claude-opus-5" },
+      "research_brief":  { "Model": "claude-opus-5" },
+      "skeptic":         { "Model": "claude-opus-5" }
     },
+    // CLIENT CONSEQUENCES OF THE OPUS-5 TIER, verified against the current API contract at the same date
+    // (they are build constraints, not trivia - each one silently breaks something if missed):
+    //   - SAMPLING PARAMETERS DO NOT EXIST on this tier (temperature/top_p/top_k are rejected). D104
+    //     artefact (d) says "model string, prompt version, and sampling parameters" - what there IS to
+    //     persist here is the EFFORT LEVEL and THINKING CONFIG. Persist those under that field.
+    //   - THINKING IS ON BY DEFAULT and max_tokens caps thinking + response text TOGETHER. A max_tokens
+    //     sized for the answer alone truncates the brief mid-sentence.
+    //   - stop_reason "refusal" must be handled BEFORE reading content (it is an HTTP 200 with empty or
+    //     partial content, not an error).
+    //   - The server-side `fallbacks` parameter is REJECTED on the Batches API - there is no fallback on
+    //     the scheduled path; an exhausted or refused read degrades per DegradationOrder instead.
+    //   - The prompt-cache minimum on this tier is 512 tokens; the L0 static block (~1,500) caches.
+    // OPEN (Phase-5 prep, deliberately NOT decided here): whether these four strings MOVE from appsettings
+    // to versioned config ROWS. The Phase-5 prompt wants a model change to be "a recorded, dated event, not
+    // a config edit", citing rule 24's append-only versioning - which appsettings cannot give, and which
+    // would also make them as-of resolvable through D96 (the D106 GateOptions limit). Relocating a
+    // documented key's home is a mechanism change, so it needs its own number or an explicit finding; it is
+    // NOT done silently as part of a re-pin.
     "UseBatchesApiForScheduled": true,
     "PromptCacheStaticBlock": true,
     "NewsBudget": { "MaxArticlesPerRead": 25, "MaxCharsPerArticle": 2000,
                     "DedupeBy": "title_hash" },
-    "DailyBudget": { "MaxCostUsd": 1.00, "MaxCalls": 10 },
+    "DailyBudget": { "MaxCostUsd": 1.00, "MaxCalls": 10 },   // OPEN [finding 320, v1.9.60]: D24 and MASTER §7 both
+                                                   // describe the cap as "tokens/calls/cost" and `llm_budget_log` carries a
+                                                   // `tokens` column, but there is no MaxTokens key here - so the documented
+                                                   // third ceiling has no knob and the log column has no enforcer. Either add
+                                                   // the key at checkpoint 5.1 or state that cost subsumes it (it nearly does,
+                                                   // since cost is a function of tokens - but not across a per-task tier
+                                                   // change, which is exactly what v1.9.60 just did). Decide with the budget
+                                                   // enforcement, not after it.
     "DegradationOrder": ["held_positions", "cached", "neutral_fallback"],
     "ScopeLevel": 1                               // 1 market-read; 2 shortlist(<=20); 3 unreachable
   },

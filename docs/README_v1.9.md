@@ -56,7 +56,8 @@ These are **static visual references, not code to run or deploy**. Open any of t
    - Phase 3.5: RUNBOOK §3–4
    - Phase 4: DESIGN_IMPROVEMENTS §5, MONITOR §0 + App. A, MASTER §20.7, TEST_PLAN §5
    - Phase 4.5: MASTER §24, SCHEMA (signals + signal_ic), CONFIG (SignalLibrary), TEST_PLAN §5
-   - Phase 5: MASTER §7 + §20.4, DESIGN_IMPROVEMENTS §4, INTEGRATIONS §5, CONFIG (Llm)
+   - Phase 5: MASTER **§23 (the authoritative AI-seat spec, incl. §23.8)** + §7 + §20.4 + §24.6, DESIGN_IMPROVEMENTS §4, INTEGRATIONS §5, CONFIG (Llm, Ai, Research), SCHEMA (`analysis_cache`, `news_items`, `llm_budget_log`, `ai_context_packs`, `ai_decisions`, `journal_entries`, `jobs`), TEST_PLAN §6
+     *(this line listed only the first four entries until v1.9.60 — it predated D79–D82, D104/D105 and D110, so the diet omitted the section that is now authoritative for the phase, finding 316)*
    - Phase 6: CATALOG §6, §8–9, DESIGN_IMPROVEMENTS §1.3–1.4, §3, INTEGRATIONS §3–4
    - Phase 7: MASTER §15 + §20.6, RUNBOOK, UX_GUIDELINES UX-7..11 + UX-16, `alphalab_ux_mockups.html` + the standalone panel mockups under `docs/mockups/` (`cohort_curve_panel.html`, `signal_library_panel.html`)
    - Phase 8: CATALOG §7 (the gate first), INTEGRATIONS §1 (fundamentals row)
