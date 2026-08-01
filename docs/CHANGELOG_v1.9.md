@@ -1575,3 +1575,58 @@ All 14 (signal × horizon) still read `gone`. **But the floors now show why, and
 | every other pair | \|IC\| < 0.021 | 0.041–0.118 | floor exceeds signal by 1.5–4× |
 
 **In every case the detectability floor exceeds the measured signal.** Published cross-sectional equity anomalies live at an IC of 0.02–0.05; the two strongest here sit squarely in that band, with t ≈ 1.3 against a threshold of 1.73. So the honest verdict is **not** "these anomalies are dead" but "**this instrument cannot resolve signals of the size that are actually present**" — which is precisely the distinction finding 305 was built to make visible, arriving on its first real use. Without the floor, fourteen `gone` verdicts would have read as fourteen dead anomalies.
+
+## v1.9.55 — a register row is changed only by another register row (D109, rule 25; supersedes D87)
+
+*Recorded 2026-07-31 on `fix/signal-se-overlap-doublecount`. A STRUCTURAL pass, not a reconciliation: no corpus sweep was performed, deliberately. Three sweeps (v1.9.51, v1.9.52, v1.9.52-cont) each cleared defects that were present the whole time, because a per-document audit asks "is this recorded" and the D87 defect was **relational** — every document was internally consistent and each recorded exactly what it claimed to. Register verified before writing: next-free decision **D109**; next-free finding **307** (none taken).*
+
+### D109 — the rule, the column, and the checks
+
+**Rule 25 (CLAUDE.md).** A decision in MASTER §2 is superseded or amended ONLY by another §2 row. No finding, no PROGRESS entry, no checkpoint note, no changelog paragraph and no conversation may change what a decision says. Work that changes a decision **takes a decision number** and names the row it supersedes, and that row's Status cell is updated in the same commit.
+
+**The Status column.** All 109 register rows now carry `active`, `superseded-by <D>`, `amended-by <D>` or `reserved`. This is what makes the relation *visible* rather than inferable from prose, and it is the precondition for check 3b. Nine rows are non-active: D5, D19, D46, D87, D102 superseded; D41, D70, D91 amended; D103 reserved.
+
+**`tools/check-register.ps1`, run by `ci.ps1`.** Four checks, replacing checklist items that had been run and passed while the defect was present:
+
+| | check | proven to fire by |
+|---|---|---|
+| **3a** | every `D<n>` cited in `docs/`, the root `.md` files or `src/` resolves to a §2 row | injecting a `D999` citation |
+| **3b** | no document cites a **superseded** row without naming its successor | 63 live hits; and a probe citing D87 alone |
+| **3c** | register numbering is contiguous — a deliberate gap is a ROW with status `reserved`/`withdrawn`, never an absence | deleting D50's row |
+| **3d** | a pinned constant in a doc matches the value **read from the code at run time** | drifting `[ 21, 63 ]` to `[ 21, 99 ]` |
+
+Each was demonstrated to FIRE, not merely to pass — the discipline the repo already applies to its greps, and the only way to distinguish a working check from a vacuous one.
+
+**Two limitations, stated rather than hidden.**
+
+1. **3b applies to `superseded-by` only, never `amended-by`.** A superseded row no longer holds, so citing it without its successor misdirects a reader. An amended row still holds — the amendment changed a clause. Applying it to amendments produced **200+ violations that were all legitimate citations** (D41 for its factor-lag rules, D70 for its sourcing rules), which would have made the check noise and therefore ignored.
+2. **3d cannot be a general scanner** and is not pretended to be. Most numbers in prose are not constants and most constants are never named in prose. What it does instead: read the value from the **code** at run time and assert the doc agrees — so the value is never duplicated inside the check and a code change cannot leave it stale. Only *adding* a pin is manual. It catches every pinned constant drifting; it cannot catch a constant nobody pinned. Note that **finding 302 was a formula, not a numeric constant**, so 3d as specified would only have caught it had the critical values themselves been pinned.
+
+**The baseline is a ratchet, not an exemption.** The 63 pre-existing violations are recorded in `tools/register-baseline.txt` and reported on every run, but do not fail the build — they predate the check, and **fixing and detecting in one commit would make it impossible to tell whether the check works**. Anything not in that file fails immediately, so the rule binds on all new work from the moment it lands. The file may only shrink; a resolved entry is reported as stale so it can be deleted.
+
+### D109 as the worked example — the widening target
+
+**The decision: breadth arrives as SEPARATE ARENAS under D71, not as an in-place S&P 1500 widen.** Four arguments, recorded separately because they are not the same argument and do not carry equal weight:
+
+1. **D87's own ground was the arena's SELECTION POOL**, and it already disclaimed the Grinold √(1500/500) ≈ 1.73× IR figure as a bet-count overclaim (breadth = bets, not names). So D87 never rested on a statistical-power claim and cannot be defended with one.
+2. **The cohort curve is what overturns D87 on the arena's own terms (D88/FR-39):** cohort accumulation carries no universe-size term, and widening mid-experiment confounds the curve by mixing admission cohorts drawn from different universes — the same in-place-change confound that already rules out an in-place widen for that curve. **This argument is decisive and internal to the arena.**
+3. **`n_eff` = window ÷ horizon carries no name count**, so more names add no independent observations to the Signal Library's trend test. This concerns a **different instrument** and is corroboration only — *it does not by itself overturn D87*, which was never about that instrument.
+4. **Arenas never pool (rule 23, UX-13)**, so separate arenas buy **independent replication** rather than precision. One rule confirmed separately in sp500, sp400 and russell2000 is stronger evidence than the same rule in one larger sample, because replication across universes, liquidity regimes and cost structures is what distinguishes a real effect from a fitted one.
+
+**The Russell 2000 rejection is NARROWED, not lifted.** Rule 22 rejected it as a **widening target**, because an unverified-depth historical-membership source cannot be folded into an arena whose replay window already rests on verified membership. That is silent on Russell 2000 as a **separate arena**, where D71 isolation means a shallower membership history degrades only that arena's own calibration and can never contaminate `sp500`. A russell2000 arena needs its own D70-style sourcing gate at **its own** Phase-4 sign-off, not rule 22's.
+
+**The D87-note prerequisite checklist (10 items) is VOID as written** — items 1–9 presuppose an in-place widen; the per-arena equivalents are the D71 registration steps in `ARENA_ARCHITECTURE §6`.
+
+### What the checks found — reported, NOT fixed in this pass
+
+**63 violations, all check 3b.** None is fixed here, deliberately.
+
+| decision | status | citations lacking the successor |
+|---|---|---|
+| **D87** | superseded-by D109 | **38** — incl. `CLAUDE.md` rule 22, `MASTER §24`/glossary, `BUILD_AND_PROMPTS`, `RUNBOOK §8`, `PROGRESS` |
+| **D102** | superseded-by D107 | **13** — incl. `CLAUDE.md:140`, `RUNBOOK:153`, `ReplayVerification.cs:61`, 7× `PROGRESS` |
+| **D46** | superseded-by D79–D82 | **12** — incl. `INTEGRATIONS` ×3, `CONFIG_REFERENCE` ×2, `SETUP`, `TEST_PLAN` |
+
+**3a, 3c and 3d found nothing on the current corpus** — reported as a result, not as an absence of effort: all three were separately proven to fire.
+
+**Two pre-existing table defects found while adding the column, also reported not fixed:** `D70` has no Rationale cell (given an empty one so the Status column aligns; the missing rationale stands), and `D58`/`D66` contain unescaped `|` characters in their text, which split them into spurious columns in any markdown renderer.

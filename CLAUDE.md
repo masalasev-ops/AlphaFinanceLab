@@ -130,6 +130,20 @@ money as strings/minor-units (never floats).
     versioned: a change INSERTs (key, version+1); never UPDATE or DELETE a config row
     (finding 108); the current value is MAX(version) per key.
 
+25. A REGISTER ROW IS CHANGED ONLY BY ANOTHER REGISTER ROW (v1.9.55, D109).
+    A decision in MASTER §2 is superseded or amended ONLY by another §2 row. No finding, no
+    PROGRESS entry, no checkpoint note, no changelog paragraph and no conversation may change
+    what a decision says. If work changes a decision, it TAKES A DECISION NUMBER and names the
+    row it supersedes or amends; the named row's Status cell is updated in the same commit.
+    Every §2 row carries a Status: `active`, `superseded-by <D>`, `amended-by <D>`, or `reserved`.
+    Why this is a rule and not a convention: the corpus already did it sometimes (D107 supersedes
+    D102; D103 was re-scoped under its own number) and D87 is what happens when it lapses — the
+    sign-off work recorded a different widening target outside the register while D87's row still
+    read in-place S&P 1500, so BOTH readings were live and either could be quoted in good faith.
+    A per-document audit cannot catch that: each document was internally consistent and each
+    recorded what it claimed to record. The defect was RELATIONAL, which is why the enforcement
+    is `tools/check-register.ps1` (run by ci.ps1) and not a review checklist — three prior sweeps
+    passed while it was present.
 ## Coding conduct (behavioral guidelines — judgment, not invariants)
 
 *Adapted from the Karpathy-derived CLAUDE.md (github.com/multica-ai/andrej-karpathy-skills). These bias toward caution over speed and are about HOW to work, distinct from the "Hard rules" above (which are project invariants and D-numbered). Where a guideline here and a Hard rule or a design decision conflict, the Hard rule / decision wins.*
