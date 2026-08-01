@@ -1630,3 +1630,60 @@ Each was demonstrated to FIRE, not merely to pass — the discipline the repo al
 **3a, 3c and 3d found nothing on the current corpus** — reported as a result, not as an absence of effort: all three were separately proven to fire.
 
 **Two pre-existing table defects found while adding the column, also reported not fixed:** `D70` has no Rationale cell (given an empty one so the Status column aligns; the missing rationale stands), and `D58`/`D66` contain unescaped `|` characters in their text, which split them into spurious columns in any markdown renderer.
+
+## v1.9.56 — the Signal Library's first full-scale read: fourteen `gone` verdicts, and the floor exceeds the signal in every one (finding 307)
+
+*Recorded 2026-07-31 on `docs/phase4.5-signal-panel-result`, after PR #25 merged. The measurement is the CHECKPOINT'S PRIMARY RESULT and is recorded as a finding on the finding-288 precedent (the C-1 detection-power ladder was recorded the same way, for the same reason: a calibration number that the phase exists to produce is a result, not a defect). Analysis run against the live arena store opened READ-ONLY (`mode=ro`, rule 15); no DB write occurred. Register verified before writing: next-free finding **307**; **no decision number is taken, and no register row is changed** — the one implication that WOULD change a decision is recorded below as an open question, per rule 25 (D109).*
+
+### The panel, on the pinned D108 configuration
+
+Last 1,260 sessions (2020-12-24 → 2025-12-31), α = 0.05 one-sided, power = 0.80, both horizons:
+
+| signal | k | mean rank-IC | se | t | bar | MDIC | \|mean\|/MDIC | floor ÷ signal |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `rev:L21` | 63 | +0.02364 | 0.01802 | +1.312 | 1.729 | 0.04667 | 0.507 | **1.97×** |
+| `resmom:L252` | 63 | +0.03164 | 0.02524 | +1.253 | 1.729 | 0.06538 | 0.484 | 2.07× |
+| `bab:L252` | 21 | −0.02042 | 0.03034 | −0.673 | 1.671 | 0.07642 | 0.267 | 3.74× |
+| … the other eleven | | \|mean\| < 0.021 | | \|t\| < 1.1 | | 0.041–0.118 | < 0.45 | 2.4–116× |
+| `brk:L252` | 63 | +0.00052 | 0.02334 | +0.022 | 1.729 | 0.06045 | 0.009 | 116.5× |
+
+**14 of 14 read `gone`. 0 of 14 carry a mean above their own floor.** The single most favourable comparison available anywhere in the library — the **smallest** floor (0.04139) against the **largest** mean (0.03164), which are not even the same pair — still has the floor ahead by **1.31×**. Median floor-over-signal is **6.9×**.
+
+| # | Finding | Resolution | Where |
+|---|---------|-----------|-------|
+| 307 | **The Signal Library, run at full scale on twenty years of real grades, cannot resolve a signal of the size that is actually present — and now says so in its own output.** All fourteen (signal × horizon) pairs read `gone`; in all fourteen the published minimum-detectable IC exceeds the measured \|mean IC\|, by 1.97× at best and 116× at worst. **This is a statement about the INSTRUMENT, not about the anomalies.** Published cross-sectional equity anomalies live at an IC of roughly 0.02–0.05; `rev:L21` k=63 (+0.0236) and `resmom:L252` k=63 (+0.0316) sit squarely inside that band, with t ≈ 1.3 against a 1.729 bar. A `gone` verdict here means *failure to reject*, and the floor is what makes that readable — exactly the distinction finding 305 was built to publish, now arriving on its first full-scale use. **Without the floor, fourteen `gone` verdicts would have read as fourteen dead anomalies**, which is the false conclusion the phase was designed to prevent | **Recorded as the measurement, with NO threshold changed and NO parameter tuned.** The floors are what the pinned D108 configuration implies; adjusting α, the power, the window or the horizon set to move a verdict off `gone` would be tuning the instrument against its own reading (rule 8 at instrument level), and is not done. The result is entered as evidence about the lab's resolution, alongside the C-1 detection ladder (finding 288) which measures the same limit one level up the stack. **The two instruments agree**: C-1 says a 4 %/yr edge is promoted 10 % of the time; the library says every measured rule sits 2–116× under its detection floor | `SignalTrend.cs`; `SignalLibraryBuilder.cs`; `GET /api/v1/signals`; the panel above |
+
+### The `n_eff ≥ 10` floor is load-bearing, and there is a real row that proves it
+
+The floor is gated as the **first statement** of `Infer`, with one production call site, and it flips at exactly row 210 (k=21) and row 630 (k=63) for all fourteen pairs — no exceptions across the full history.
+
+The demonstration that matters is not that it passes but that it **catches something**. `brk:L252`, k=21, **2007-10-30**: 209 IC rows in the store, `n_eff` = 9, verdict `insufficient`. Remove the gate and that same row publishes a confident-looking **`stable`** at t = **+2.272** against a 1.860 bar — a green verdict resting on nine independent observations, from an instrument whose detectable floor at that point was 0.0947. A real historical row, not a constructed one.
+
+### It is not the window — and the twenty-year sweep is what settles it
+
+Two sweeps, both against the full store:
+
+- **224 five-year (signal × horizon × window) combinations across 2010–2025:** only **7 escaped `gone`** — **3.1 %**, at or below what a true null yields at α = 0.05. All seven still sat below their own floors (\|mean\|/MDIC ≤ 0.843), i.e. statistically flagged but not of detectable size.
+- **The entire twenty-year store treated as one window: 14 of 14 still `gone`.** Floors fall to 0.019–0.065 as expected; the largest \|mean\| anywhere is 0.0127. **The floor still exceeds the signal using every day of data that exists.**
+
+**Window length is nevertheless the only lever that moves the number, and one earlier estimate of its size was wrong.** A 15-year window reduces MDIC by **30.5 % on average (18.4–42.6 %)**; a 10-year window gives MDIC ratios of 0.724 (k=21) and 0.831 (k=63). An intermediate analysis had put the 15-year gain at 2.8 % — that figure counted only the critical-value multiplier `(t_{1−α,df} + t_{power,df})` and omitted the `1/√T` term in `se`, which is where nearly all of the gain lives. **Corrected here rather than left in a working note, because the wrong number would have argued against the one lever that works.**
+
+### Two corroborations, recorded as corroboration and not as new claims
+
+**More names do nothing.** `n_eff` = window ÷ horizon carries **no name count**, so tripling the universe changes it by exactly **0**; and cross-sectional sampling noise accounts for only **2.7–8.5 %** of daily IC variance, so a wider cross-section cannot materially shrink the daily grade's error either. This is empirical corroboration of D109's third argument, which was recorded there as corroboration only — its status is unchanged by this measurement.
+
+**Seven signals carry about two signals' worth of independent evidence.** Two principal components explain 80 % of the panel's variance (PC80 = 2) and the participation ratio gives N_eff ≈ **2.1** (family-wise M_eff ≈ 4.0). Recorded because it bears directly on the trials tax: seven correlated pre-registered rules are not seven independent tests, and any future multiple-testing correction over this library should say so rather than divide by seven.
+
+### A refuted claim, recorded because it was made and acted on in analysis
+
+An intermediate reading held that the seven signals **flip sign by regime**, and that the era structure was the diagnosis for the weak means. **Refuted on the data.** Between-era variation accounts for **0.4 %–3.6 %** of daily IC variance (η², four 5-year eras) — 96–99.6 % of the variance is *within* era — and a block bootstrap gives **p ≥ 0.104** for every signal, so the era pattern is **not statistically distinguishable from a stationary constant-mean process**. The co-movement across signals is real and is quantified above as PC80 = 2; the era-flipping story layered on top of it was not supported and is withdrawn. *(Recorded per the corpus habit of keeping refuted intermediate claims visible: the era table was real, the interpretation was not, and a reader who saw only the table could reconstruct the same wrong story.)*
+
+### One open question that would change a decision — NOT decided here
+
+The lab's working definition of a consistent edge has a leg for **rule corroboration**, and the Signal Library is that leg's instrument. This measurement says the leg can presently **rule a rule out** (an anti-predictive IC is visible) but **cannot corroborate one** — it has no power to distinguish an IC of 0.01 from 0.03, which is the entire range where real rules live.
+
+The tempting response is to re-scope the library from *descriptive* to *veto*. **That is a change to the D91/§24.5 boundary and therefore requires its own decision row under rule 25 (D109) — it is not taken here, and §24's "never feeds a verdict" stands unchanged.** Recorded as the open question, with the measurement as its evidence, so that whoever takes the number takes it deliberately.
+
+### Method note
+
+Thirty-six independent analysis agents over the read-only store; **23 claims confirmed, 7 refuted**, every refutation carried above rather than dropped. Two date facts worth pinning because they were misstated in intermediate work: the panel is complete for **IC rows** from **2007-02-05** (94.97 % of pairs), but complete for **verdicts** only from **2007-12-03** (k=21) and **2009-08-04** (k=63) — the `n_eff` floor is why the two dates differ, and quoting the first as if it were the second overstates the usable history by up to two and a half years.
