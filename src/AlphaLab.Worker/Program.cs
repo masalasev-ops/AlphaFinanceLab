@@ -68,6 +68,11 @@ builder.Logging.AddSimpleConsole(o =>
 // membership graph, Stage 1 and the orchestrator. Shared with `reproduce-day` (v1.9.37) so a past
 // session is re-run through THIS graph, not a hand-assembled lookalike that could drift from it.
 builder.Services.AddDailyPipelineCore(builder.Configuration, arena, connectionString, ensureDirectory: true);
+// Stage 3 (D53/FR-21): the FORWARD host is the ONLY composition that registers a model provider.
+// ReplayRunner and ReproduceDay call AddDailyPipelineCore and deliberately do NOT call this — a replay
+// or reproduction therefore cannot reach a model, by absence rather than by a guard
+// (FR21_Replay_HasNoAnalysisPath, FX-ReproduceDay-AiSession).
+builder.Services.AddForwardLlmStage(builder.Configuration);
 
 // EODHD provider (finding D — the Worker needs its OWN Eodhd section; CONFIG previously scoped it to
 // the Backfill CLI). The token is read DEFENSIVELY (hard rule 11 — the gitignored Secrets file only):

@@ -1959,3 +1959,34 @@ Truncation runs last because it only affects admitted articles, and the title ha
 
 Not what the feed returned — that question is answerable from the raw cache if it is ever asked. `truncated_chars` is persisted per article so the budget's effect on what the model saw is measurable rather than assumed: a read that admitted 25 of 25 and one that admitted 25 of 800 are very different days, and only the counts distinguish them.
 
+---
+
+## v1.9.63 — Phase 5 checkpoint 5.3: Stage 3 of the D53 pipeline (FR-29)
+
+*Recorded 2026-08-01 on `feat/phase5.2-news-budget` (5.2 and 5.3 share a branch). Tests **987 → 994**; no migration; `ci.ps1` green.*
+
+### The post-commit boundary, and what it buys
+
+`IPostCommitStage` + `RegimeBriefStage`: the batch is submitted **after** the Stage-2 commit, in its own transaction.
+
+**Why the boundary exists at all.** The invariant is one atomic write transaction per trading day (golden rule 16). If the LLM stage ran inside it, a slow or failed model call would roll back a day's committed trades — the arena's state would become hostage to a vendor's latency. Post-commit inverts that: a late or failed batch is a **no-read day and nothing else**, and forward-only (D16) is what makes that safe rather than merely tolerable, since the read would only ever have informed *subsequent* days.
+
+The corollary is recorded on the interface for future implementers: **Stage 3 must never write anything Stage 2 reads.** If it did, "its own transaction" would be a fiction.
+
+### It runs AFTER `run_in_progress` clears — a deliberate ordering
+
+The 21-day evaluation runs *before* the flag clears, so the API's 409 liveness guard stays live through its writes. Stage 3 is the opposite: **a batch may legitimately take up to 24 hours**, and holding `run_in_progress` for that would turn rule 19's liveness guard into a lock that 409s every operator command for the duration. It is safe there because Stage 3 writes only `analysis_cache` / `llm_budget_log` / `news_items` — tables no command races and Stage 2 never reads.
+
+### Structural absence, not a flag
+
+`AddDailyPipelineCore` registers **no** model provider; only `AddForwardLlmStage` does, and only `Program.cs` calls it. `ReplayRunner` and `ReproduceDay` share the core composition and never call it, so a replay or reproduction cannot reach a model **by absence**.
+
+`FR21_Replay_HasNoAnalysisPath` therefore asserts the **service collection**, not runtime behaviour: a guard can be bypassed by a future caller, a missing registration cannot. Its **positive half** ships alongside — without it the test would pass on a build where the LLM was never wired anywhere at all, which is a green test proving nothing.
+
+A `try/catch` around the Stage-3 call is the structural guarantee that a vendor failure never turns a committed day into a failed one, independent of any implementation's own error handling.
+
+### Two smaller rails
+
+- **An empty admitted-news set skips the call**: spending tokens to be told there was nothing to read is the one outcome that costs money and buys nothing.
+- **The L1 lesson-set layer is present but empty.** Memory Option A makes it part of the frozen policy (D81 rule 5) and no seat is registered yet — but the layer exists now so the cache boundary is already in its final position. Moving it later would invalidate every cached prefix, which is the single edit this layering exists to avoid.
+

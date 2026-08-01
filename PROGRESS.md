@@ -164,7 +164,7 @@
 - [x] **5.2 (v1.9.62):** the D46 news budget — `EodhdNewsProvider` (Data, the raw feed) wrapped by `BudgetedNewsProvider` (Llm) as a DECORATOR so the budget cannot be bypassed; relevance filter -> title-hash dedupe -> 25-cap -> 2,000-char truncation, all pre-token; `news_items` records what the budget ADMITTED. `FR22_NewsBudget_CapsAndDedupes` + `FR22_Budget_DegradesInOrder` green
 - [ ] All §6 TEST_PLAN tests green (the AI-seat fixtures land at 5.4-5.7)
 - [ ] One mocked month under budget: $___ ; live smoke test passed
-- [ ] LLM runs as Stage 3 (post-commit, own transaction); assistant outputs land as journal entries
+- [x] **5.3 (v1.9.63):** LLM runs as Stage 3 (post-commit, own transaction) — `IPostCommitStage` seam + `RegimeBriefStage`; registered ONLY by the forward composition, so replay and reproduce-day cannot reach a model **by absence rather than by a guard** (`FR21_Replay_HasNoAnalysisPath` asserts the service collection). Runs after `ClearRunInProgress` so a slow batch cannot 409 operator commands for hours; catch-up never runs it. *(Assistant outputs as journal entries land at 5.6)*
 - [ ] (v1.9.23, finding 178) `ContextPackBuilder` + `ai_context_packs`/`ai_decisions` (D80/D81); L0/L1/L2 layering; per-seat budgets abstain on exhaustion — `FX-PackWatermark`, `FX-AiDecisionIsTheRow`, `FX-BudgetAbstain` green
 - [ ] (v1.9.23, finding 178) Researcher seat (D82): hypotheses endpoint 422s without parent evidence; draft lands unlocked; `Research.*` budget renders beside the trials count — `FR23_Hypotheses_RequireParentEvidence` green; researcher-yield KPI measured from here
 

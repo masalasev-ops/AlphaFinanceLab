@@ -72,7 +72,10 @@ public sealed class DailyPipeline(
     TimeProvider clock,
     ILogger<DailyPipeline> logger,
     IEnumerable<IPipelineDayExtension> extensions,
-    PipelineEvaluationToggle evaluationToggle)
+    PipelineEvaluationToggle evaluationToggle,
+    // Stage 3 (D53). NULL in the REPLAY and backtest compositions, which register none — that structural
+    // absence is what FR21_Replay_HasNoAnalysisPath asserts, in preference to a runtime guard.
+    IPostCommitStage? postCommit = null)
 {
     // The daily fetch window: enough sessions of context that the FR-6 outlier / reconciliation checks
     // have neighbours around the just-closed bar. NOT a config knob (it is an internal fetch bound, not a
@@ -220,6 +223,34 @@ public sealed class DailyPipeline(
 
         // ---- Step 4: small txn — clear run_in_progress (success only; AFTER the evaluation write). ----
         ClearRunInProgress();
+
+        // ---- Stage 3 (D53/FR-29): the LLM batch, post-commit, in its own transaction. ----
+        // AFTER ClearRunInProgress, deliberately: a batch may legitimately take up to 24 hours, and
+        // holding run_in_progress for that would 409 every operator command for the duration (rule 19's
+        // liveness guard turned into a lock). It is safe here because Stage 3 writes only analysis_cache /
+        // llm_budget_log / news_items — tables no command races and Stage 2 never reads.
+        // Only FORWARD LIVE days: catch-up replays past sessions and a past day's read would be a model
+        // that has already seen the future (D16). Replay never reaches here at all, because the replay
+        // composition registers no IPostCommitStage.
+        if (postCommit is not null && string.Equals(runKind, RunKindLive, StringComparison.Ordinal))
+        {
+            try
+            {
+                // A fresh read-only view at the same watermark: `features` inside Stage 2 is scoped to
+                // that transaction, and Stage 3 must not reach into it.
+                var postCommitFeatures = new BarFeatureView(barReads, calendar, asOfDate, watermark, costs);
+                await postCommit
+                    .RunAsync(new PipelineDayContext(asOf, asOfDate, watermark, runKindToken, postCommitFeatures), ct)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // The day is ALREADY COMMITTED and correct. A Stage-3 failure is a no-read day and must
+                // never turn a good day into a failed one — this catch is the structural guarantee of
+                // that, independent of any implementation's own error handling.
+                logger.LogWarning(ex, "{AsOf}: Stage 3 (LLM) failed post-commit — treated as a no-read day.", asOf);
+            }
+        }
 
         // Canary for the sp500 widen + replay scale: a day whose write transaction runs long enough to
         // approach the stale threshold is worth a warning even when it succeeds (D72). 3× the heartbeat

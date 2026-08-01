@@ -1,6 +1,11 @@
+using System.Globalization;
 using AlphaLab.Core.Config;
+using AlphaLab.Core.Llm;
 using AlphaLab.Data;
+using AlphaLab.Data.Http;
+using AlphaLab.Data.Providers;
 using AlphaLab.Data.Services;
+using AlphaLab.Llm;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -74,7 +79,84 @@ public static class PipelineComposition
         services.AddScoped<DailyPipeline>();
         // The evaluation cadence runs by default; ONLY the seeding backtest engine overrides (4.10).
         services.TryAddSingleton(new PipelineEvaluationToggle());
+        // NOTE: no IPostCommitStage is registered HERE. Stage 3 (the LLM) is added only by the FORWARD
+        // composition (AddForwardLlmStage) — the replay and backtest graphs share this core and must be
+        // provably model-free, which is what FR21_Replay_HasNoAnalysisPath asserts by ABSENCE rather than
+        // by a guard. Registering it here "for convenience" is exactly the edit that would break that.
         return services;
+    }
+
+    /// <summary>
+    /// Stage 3 of the D53 pipeline (FR-21/FR-29), registered by the **forward** composition only.
+    ///
+    /// This is the one place a model provider enters the graph. The replay composition never calls it, so
+    /// a replay run cannot reach a model even by mistake: `FR21_Replay_HasNoAnalysisPath` asserts the
+    /// absence of the registration rather than the behaviour of a runtime check, because a guard can be
+    /// bypassed and a missing registration cannot.
+    /// </summary>
+    public static IServiceCollection AddForwardLlmStage(
+        this IServiceCollection services, IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        var llm = Bind<LlmOptions>(configuration, LlmOptions.SectionName);
+        services.AddSingleton(llm);
+
+        var anthropic = new AnthropicTransportOptions
+        {
+            // D67: the ONLY source. No env vars, no user secrets.
+            ApiKey = configuration["Secrets:AnthropicApiKey"] ?? "",
+        };
+        services.AddSingleton(anthropic);
+
+        services.AddScoped<IAnalysisCache, AnalysisCacheStore>();
+        services.AddScoped<ILlmBudgetLedger, LlmBudgetLedger>();
+        services.AddScoped<IAdmittedNewsStore, AdmittedNewsStore>();
+
+        services.AddScoped<IModelTransport>(sp => new AnthropicHttpTransport(
+            sp.GetRequiredService<IResilientHttpSender>(),
+            sp.GetRequiredService<AnthropicTransportOptions>()));
+
+        // The budget decorator wraps the raw provider — composition is the ONLY place the unbudgeted
+        // provider is visible, which is what makes the D24 rail unbypassable rather than merely present.
+        services.AddScoped<IAnalysisProvider>(sp => new BudgetedAnalysisProvider(
+            new AnthropicAnalysisProvider(
+                sp.GetRequiredService<IModelTransport>(),
+                sp.GetRequiredService<LlmOptions>()),
+            sp.GetRequiredService<IAnalysisCache>(),
+            sp.GetRequiredService<ILlmBudgetLedger>(),
+            sp.GetRequiredService<LlmOptions>(),
+            () => DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
+
+        // Same shape for news: the D46 budget decorates the raw EODHD feed.
+        services.AddScoped<INewsProvider>(sp => new BudgetedNewsProvider(
+            new EodhdNewsProvider(
+                sp.GetRequiredService<IResilientHttpClient>(),
+                sp.GetRequiredService<EodhdOptions>()),
+            sp.GetRequiredService<IAdmittedNewsStore>(),
+            sp.GetRequiredService<LlmOptions>(),
+            // The relevance filter matches SYMBOLS; membership is keyed by security_id, so resolve
+            // through `securities`. Current membership (not as-of): the news read is a live operational
+            // act on today's roster, not a point-in-time reconstruction.
+            () => ResolveCurrentSymbols(sp)));
+
+        services.AddScoped<IPostCommitStage, RegimeBriefStage>();
+        return services;
+    }
+
+    /// <summary>Bare tickers of the arena's current members, for the D46 relevance filter.</summary>
+    private static IReadOnlySet<string> ResolveCurrentSymbols(IServiceProvider sp)
+    {
+        var db = sp.GetRequiredService<AlphaLabDbContext>();
+        var today = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var ids = sp.GetRequiredService<IIndexMembershipRead>().MembersAsOf(today).ToHashSet();
+        if (ids.Count == 0) return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        return db.Securities
+            .Where(x => ids.Contains(x.SecurityId))
+            .Select(x => x.CurrentSymbol)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     private static T Bind<T>(IConfiguration configuration, string section) where T : new() =>
