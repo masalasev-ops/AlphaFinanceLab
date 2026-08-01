@@ -50,9 +50,29 @@ public class AnthropicLiveSmokeTests
             : key;
     }
 
-    [Fact]
+    /// <summary>
+    /// The tiers the lab actually pins (v1.9.60), each exercised live.
+    ///
+    /// **`claude-opus-5` is the one that matters and was the one originally missed (finding 329).** All
+    /// FOUR dispatched tasks — the Stage-3 regime brief, and the researcher seat's brief, skeptic and
+    /// hypotheses — resolve to Opus 5. `news_extraction` is pinned to Haiku and **dispatched by nothing**:
+    /// the D46 news budget is deterministic C#, so no code path calls that task at all. The first live run
+    /// therefore verified the wire contract on the only tier the lab never calls.
+    /// </summary>
+    public static TheoryData<string, int> PinnedTiers => new()
+    {
+        // Opus 5 first, because it serves 100% of real traffic. max_tokens is sized with HEADROOM, not
+        // for the answer: thinking is on by default on this tier and max_tokens caps thinking AND response
+        // together, so a limit sized for "reply with one word" can be consumed entirely by thinking and
+        // return empty content. That is the specific failure a Haiku call cannot surface.
+        { "claude-opus-5", 2048 },
+        { "claude-haiku-4-5", 64 },
+    };
+
+    [Theory]
+    [MemberData(nameof(PinnedTiers))]
     [Trait("Category", "LiveSmoke")]
-    public async Task LiveSmoke_BatchesEndpoint_AcceptsARequest_AndReturnsUsage()
+    public async Task LiveSmoke_BatchesEndpoint_AcceptsARequest_AndReturnsUsage(string model, int maxOutputTokens)
     {
         var key = ApiKey();
         Assert.True(
@@ -69,22 +89,17 @@ public class AnthropicLiveSmokeTests
 
         var llm = new Core.Config.LlmOptions
         {
-            Tasks = { ["regime_brief"] = new Core.Config.LlmTaskOptions { Model = "claude-haiku-4-5" } },
+            Tasks = { ["regime_brief"] = new Core.Config.LlmTaskOptions { Model = model } },
             Pricing =
             {
-                ["claude-haiku-4-5"] = new Core.Config.ModelPriceOptions
-                {
-                    InputPerMTok = 1m,
-                    OutputPerMTok = 5m,
-                },
+                [model] = new Core.Config.ModelPriceOptions { InputPerMTok = 5m, OutputPerMTok = 25m },
             },
         };
 
-        // Deliberately the CHEAP tier and a tiny prompt: this proves the wire contract, not the model.
         var provider = new AnthropicAnalysisProvider(
             transport, llm, new AnthropicProviderOptions
             {
-                MaxOutputTokens = 64,
+                MaxOutputTokens = maxOutputTokens,
                 PollInterval = TimeSpan.FromSeconds(5),
                 PollTimeout = TimeSpan.FromMinutes(10),
             });
@@ -103,14 +118,32 @@ public class AnthropicLiveSmokeTests
         // failure — the assertion is that the round trip WORKED, whatever the model chose to say.
         Assert.True(
             r.Outcome is AnalysisOutcome.Succeeded or AnalysisOutcome.Refused,
-            $"unexpected live outcome {r.Outcome}: {r.Detail}");
+            $"unexpected live outcome {r.Outcome} on {model}: {r.Detail}");
 
         if (r.Outcome is AnalysisOutcome.Succeeded)
         {
-            Assert.NotEmpty(r.RawOutput);
+            // On Opus 5 an empty RawOutput is the SPECIFIC failure to watch for: thinking is on by
+            // default and shares the max_tokens ceiling, so a too-small limit returns a well-formed
+            // response with nothing in it. A green test over an empty answer would be worse than a red one.
+            Assert.False(string.IsNullOrWhiteSpace(r.RawOutput),
+                $"{model} returned an EMPTY answer. On a thinking-by-default tier this usually means " +
+                $"max_tokens ({maxOutputTokens}) was consumed by thinking — size it with headroom, not " +
+                "for the visible answer (INTEGRATIONS §5).");
             Assert.True(r.Usage.InputTokens > 0, "the API must report input tokens");
             Assert.True(r.Usage.CostUsd > 0m, "a real call must cost something");
             Assert.False(string.IsNullOrEmpty(r.ModelVersion), "the served model must be recorded (D104 (d))");
+
+            // findings 328 + 329, checked on BOTH pinned tiers because ONE observation was not enough.
+            //
+            // The served model MAY be the bare alias or MAY be a dated snapshot, and it is per-family:
+            // live, `claude-opus-5` comes back as `claude-opus-5` while `claude-haiku-4-5` comes back as
+            // `claude-haiku-4-5-20251001`. The first live run saw only Haiku and the snapshot form was
+            // generalised into a rule; running the tier that actually serves traffic refuted it.
+            //
+            // So the ONLY safe assertion is the prefix — which is exactly why `PricingFor` resolves
+            // exact-first-then-longest-prefix: that rule is correct under BOTH forms, and any rule
+            // assuming one of them is wrong half the time.
+            Assert.StartsWith(model, r.ModelVersion, StringComparison.Ordinal);
         }
     }
 }

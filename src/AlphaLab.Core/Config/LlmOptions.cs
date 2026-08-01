@@ -135,14 +135,46 @@ public sealed class LlmOptions
                 $"Llm.Tasks:{taskWireName}:Model is not configured. Every task's model tier is a deliberate, " +
                 "dated build-time choice (CONFIG_REFERENCE Llm.Tasks) — it is never defaulted or inherited.");
 
-    /// <summary>The rates for a model. **Fails closed** (rule 10): an unpriced model throws rather than
-    /// costing zero, because a zero cost is indistinguishable from a free cache hit in
-    /// <c>llm_budget_log</c> and would make the D24 ceiling unenforceable exactly when a newly-pinned
-    /// model started spending.</summary>
-    public ModelPriceOptions PricingFor(string model) =>
-        Pricing.TryGetValue(model, out var p)
-            ? p
+    /// <summary>
+    /// The rates for a model, resolving an ALIAS to the DATED SNAPSHOT the API reports (finding 328).
+    ///
+    /// **Exact match first, then the longest configured key that the served model starts with.** The
+    /// Anthropic API resolves an alias (`claude-haiku-4-5`) to a dated snapshot
+    /// (`claude-haiku-4-5-20251001`) and reports the SNAPSHOT in the response — so a pinned alias is
+    /// never the string that comes back. Costing "the model that actually served the call" (D104 artefact
+    /// (d)) and looking that string up by exact key are each correct on their own and together made every
+    /// live call throw. Prefix resolution is what reconciles them: the snapshot is the alias plus a date
+    /// suffix, so the alias is a prefix of it by construction.
+    ///
+    /// **Longest, not first**, because the families nest: `claude-opus-4-6` is a prefix of nothing here
+    /// today, but `claude-opus-4` would be a prefix of `claude-opus-4-8-...`, and a shortest-match rule
+    /// would price an Opus 4.8 call at Opus 4 rates silently. Longest-match cannot cross a family
+    /// boundary that a configured key does not already draw.
+    ///
+    /// **STILL FAILS CLOSED** (rule 10), which is the property this must not lose: a model matching no
+    /// configured prefix throws rather than costing zero. A zero cost is indistinguishable from a free
+    /// cache hit in <c>llm_budget_log</c> and would make the D24 ceiling unenforceable exactly when a
+    /// newly-pinned model started spending. The relaxation is from "exact key" to "known family", not
+    /// from "known" to "anything".
+    /// </summary>
+    public ModelPriceOptions PricingFor(string model)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(model);
+
+        if (Pricing.TryGetValue(model, out var exact)) return exact;
+
+        var alias = Pricing.Keys
+            .Where(k => k.Length > 0 && model.StartsWith(k, StringComparison.Ordinal))
+            .OrderByDescending(k => k.Length)
+            .FirstOrDefault();
+
+        return alias is not null
+            ? Pricing[alias]
             : throw new InvalidOperationException(
-                $"Llm.Pricing:{model} is not configured. A model with no recorded rate cannot be costed, " +
-                "and an uncosted call would silently bypass the D24 ceiling (CONFIG_REFERENCE Llm.Pricing).");
+                $"Llm.Pricing:{model} is not configured, and no configured rate is a prefix of it. A model " +
+                "with no recorded rate cannot be costed, and an uncosted call would silently bypass the " +
+                "D24 ceiling (CONFIG_REFERENCE Llm.Pricing). Note the API reports the DATED SNAPSHOT an " +
+                "alias resolves to, so the key to configure is the alias (e.g. 'claude-haiku-4-5'), which " +
+                "prices every snapshot of it.");
+    }
 }
