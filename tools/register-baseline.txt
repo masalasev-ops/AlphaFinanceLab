@@ -1,76 +1,86 @@
-﻿# register-baseline.txt - violations of tools/check-register.ps1 that PREDATE the check (D109, rule 25).
+# register-baseline.txt - violations of tools/check-register.ps1 that PREDATE the check (D109, rule 25).
 #
-# This is a RATCHET, not an exemption list. Everything here was already in the corpus when the check
-# was written; recorded rather than fixed in the same commit, because fixing and detecting together
-# makes it impossible to tell whether the check works. Anything NOT listed here fails the build.
+# WHY THIS FILE EXISTS. The four checks landed with 63 violations already present. Fixing them in the
+# same commit that introduced the checks would have made it impossible to tell whether the checks work,
+# so they are grandfathered here: reported on every run, but not build-failing. Anything NOT listed
+# fails immediately, so the rule binds on all new work. THIS FILE MAY ONLY SHRINK.
 #
-# The file may only shrink. When a line is fixed, the check reports it as stale - delete it then.
+# FORMAT - KEYED BY (check, decision, FILE) WITH NO LINE NUMBER (finding 310, v1.9.57).
+# One line per grandfathered OCCURRENCE, so N identical lines mean N occurrences in that file, and the
+# COUNT is the ratchet. Line numbers were removed because a line-anchored baseline is broken by
+# construction: inserting any line above a grandfathered violation shifts it, and the same violation
+# then reads as BOTH 'no longer occurs' AND 'new'. The first docs pass after the check shipped produced
+# 10 such false positives and 0 real ones - and a guard that cries wolf on every edit is a guard that
+# gets switched off.
 #
-# All 63 are check 3b: a document cites a SUPERSEDED decision without naming its successor.
-#   D87  -> D109    (38)  the worked example: the widening target moved to separate arenas
-#   D102 -> D107    (13)  the freeze-gate category decision
-#   D46  -> D79-D82 (12)  the retired daily-sentiment framing
+# WHAT IS STILL CAUGHT: the first occurrence in a file not listed here, and an ADDITIONAL occurrence in
+# a file that is (the count goes over budget).
+# WHAT IS NOT, STATED NOT HIDDEN: moving a violation WITHIN a file that already carries one. That is the
+# price of dropping the line number, and it is worth paying - the line bought detection of a case nobody
+# has hit while breaking on a case every docs pass hits.
+#
+# To retire an entry: fix the citation (name the successor decision), then delete ONE matching line.
 
-[3b] D102 is superseded-by D107 but is cited without naming its successor at CLAUDE.md:140
-[3b] D102 is superseded-by D107 but is cited without naming its successor at docs\MANIFEST.md:229
-[3b] D102 is superseded-by D107 but is cited without naming its successor at docs\MANIFEST.md:230
-[3b] D102 is superseded-by D107 but is cited without naming its successor at docs\MANIFEST.md:237
-[3b] D102 is superseded-by D107 but is cited without naming its successor at docs\RUNBOOK_v1.9.md:153
-[3b] D102 is superseded-by D107 but is cited without naming its successor at PROGRESS.md:10
-[3b] D102 is superseded-by D107 but is cited without naming its successor at PROGRESS.md:11
-[3b] D102 is superseded-by D107 but is cited without naming its successor at PROGRESS.md:12
-[3b] D102 is superseded-by D107 but is cited without naming its successor at PROGRESS.md:17
-[3b] D102 is superseded-by D107 but is cited without naming its successor at PROGRESS.md:19
-[3b] D102 is superseded-by D107 but is cited without naming its successor at PROGRESS.md:203
-[3b] D102 is superseded-by D107 but is cited without naming its successor at PROGRESS.md:24
-[3b] D102 is superseded-by D107 but is cited without naming its successor at src\AlphaLab.Evaluation\Calibration\ReplayVerification.cs:61
-[3b] D46 is superseded-by D79-D82 but is cited without naming its successor at docs\BUILD_AND_PROMPTS_v1.9.md:15
-[3b] D46 is superseded-by D79-D82 but is cited without naming its successor at docs\BUILD_AND_PROMPTS_v1.9.md:54
-[3b] D46 is superseded-by D79-D82 but is cited without naming its successor at docs\CONFIG_REFERENCE_v1.9.md:17
-[3b] D46 is superseded-by D79-D82 but is cited without naming its successor at docs\CONFIG_REFERENCE_v1.9.md:274
-[3b] D46 is superseded-by D79-D82 but is cited without naming its successor at docs\DESIGN_IMPROVEMENTS_v1.9.md:150
-[3b] D46 is superseded-by D79-D82 but is cited without naming its successor at docs\INTEGRATIONS_v1.9.md:18
-[3b] D46 is superseded-by D79-D82 but is cited without naming its successor at docs\INTEGRATIONS_v1.9.md:31
-[3b] D46 is superseded-by D79-D82 but is cited without naming its successor at docs\INTEGRATIONS_v1.9.md:74
-[3b] D46 is superseded-by D79-D82 but is cited without naming its successor at docs\MANIFEST.md:174
-[3b] D46 is superseded-by D79-D82 but is cited without naming its successor at docs\SCHEMA_v1.9.md:374
-[3b] D46 is superseded-by D79-D82 but is cited without naming its successor at docs\SETUP_v1.9.md:32
-[3b] D46 is superseded-by D79-D82 but is cited without naming its successor at docs\TEST_PLAN_v1.9.md:93
-[3b] D87 is superseded-by D109 but is cited without naming its successor at CLAUDE.md:114
-[3b] D87 is superseded-by D109 but is cited without naming its successor at CLAUDE.md:116
-[3b] D87 is superseded-by D109 but is cited without naming its successor at CLAUDE.md:140
-[3b] D87 is superseded-by D109 but is cited without naming its successor at CLAUDE.md:141
-[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\BUILD_AND_PROMPTS_v1.9.md:113
-[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\BUILD_AND_PROMPTS_v1.9.md:122
-[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\BUILD_AND_PROMPTS_v1.9.md:199
-[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\BUILD_AND_PROMPTS_v1.9.md:211
-[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\BUILD_AND_PROMPTS_v1.9.md:224
-[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\BUILD_AND_PROMPTS_v1.9.md:30
-[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\CONFIG_REFERENCE_v1.9.md:340
-[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\CONFIG_REFERENCE_v1.9.md:36
-[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\INTEGRATIONS_v1.9.md:35
-[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\INTEGRATIONS_v1.9.md:54
-[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\INTEGRATIONS_v1.9.md:56
-[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\INTEGRATIONS_v1.9.md:57
-[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\MASTER_DESIGN_v1.9.md:117
-[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\POST_PHASE8_IMPROVEMENTS.md:33
-[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\POST_PHASE8_PLAN.md:46
-[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\REBUILD.md:178
-[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\REBUILD.md:194
-[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\REBUILD.md:196
-[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\RUNBOOK_v1.9.md:166
-[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\RUNBOOK_v1.9.md:175
-[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\SETUP_v1.9.md:15
-[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\STRATEGY_CATALOG_v1.9.md:120
-[3b] D87 is superseded-by D109 but is cited without naming its successor at ORIENTATION.md:9
-[3b] D87 is superseded-by D109 but is cited without naming its successor at PROGRESS.md:201
-[3b] D87 is superseded-by D109 but is cited without naming its successor at PROGRESS.md:203
-[3b] D87 is superseded-by D109 but is cited without naming its successor at PROGRESS.md:248
-[3b] D87 is superseded-by D109 but is cited without naming its successor at PROGRESS.md:25
-[3b] D87 is superseded-by D109 but is cited without naming its successor at PROGRESS.md:32
-[3b] D87 is superseded-by D109 but is cited without naming its successor at PROGRESS.md:33
-[3b] D87 is superseded-by D109 but is cited without naming its successor at PROGRESS.md:6
-[3b] D87 is superseded-by D109 but is cited without naming its successor at PROGRESS.md:922
-[3b] D87 is superseded-by D109 but is cited without naming its successor at PROGRESS.md:948
-[3b] D87 is superseded-by D109 but is cited without naming its successor at src\AlphaLab.Data\Services\HistoricalBackfill.cs:20
-[3b] D87 is superseded-by D109 but is cited without naming its successor at src\AlphaLab.Data\Services\HistoricalBackfill.cs:82
+[3b] D102 is superseded-by D107 but is cited without naming its successor at CLAUDE.md
+[3b] D102 is superseded-by D107 but is cited without naming its successor at PROGRESS.md
+[3b] D102 is superseded-by D107 but is cited without naming its successor at PROGRESS.md
+[3b] D102 is superseded-by D107 but is cited without naming its successor at PROGRESS.md
+[3b] D102 is superseded-by D107 but is cited without naming its successor at PROGRESS.md
+[3b] D102 is superseded-by D107 but is cited without naming its successor at PROGRESS.md
+[3b] D102 is superseded-by D107 but is cited without naming its successor at PROGRESS.md
+[3b] D102 is superseded-by D107 but is cited without naming its successor at PROGRESS.md
+[3b] D102 is superseded-by D107 but is cited without naming its successor at docs\MANIFEST.md
+[3b] D102 is superseded-by D107 but is cited without naming its successor at docs\MANIFEST.md
+[3b] D102 is superseded-by D107 but is cited without naming its successor at docs\MANIFEST.md
+[3b] D102 is superseded-by D107 but is cited without naming its successor at docs\RUNBOOK_v1.9.md
+[3b] D102 is superseded-by D107 but is cited without naming its successor at src\AlphaLab.Evaluation\Calibration\ReplayVerification.cs
+[3b] D46 is superseded-by D79-D82 but is cited without naming its successor at docs\BUILD_AND_PROMPTS_v1.9.md
+[3b] D46 is superseded-by D79-D82 but is cited without naming its successor at docs\BUILD_AND_PROMPTS_v1.9.md
+[3b] D46 is superseded-by D79-D82 but is cited without naming its successor at docs\CONFIG_REFERENCE_v1.9.md
+[3b] D46 is superseded-by D79-D82 but is cited without naming its successor at docs\CONFIG_REFERENCE_v1.9.md
+[3b] D46 is superseded-by D79-D82 but is cited without naming its successor at docs\DESIGN_IMPROVEMENTS_v1.9.md
+[3b] D46 is superseded-by D79-D82 but is cited without naming its successor at docs\INTEGRATIONS_v1.9.md
+[3b] D46 is superseded-by D79-D82 but is cited without naming its successor at docs\INTEGRATIONS_v1.9.md
+[3b] D46 is superseded-by D79-D82 but is cited without naming its successor at docs\INTEGRATIONS_v1.9.md
+[3b] D46 is superseded-by D79-D82 but is cited without naming its successor at docs\MANIFEST.md
+[3b] D46 is superseded-by D79-D82 but is cited without naming its successor at docs\SCHEMA_v1.9.md
+[3b] D46 is superseded-by D79-D82 but is cited without naming its successor at docs\SETUP_v1.9.md
+[3b] D46 is superseded-by D79-D82 but is cited without naming its successor at docs\TEST_PLAN_v1.9.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at CLAUDE.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at CLAUDE.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at CLAUDE.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at CLAUDE.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at ORIENTATION.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at PROGRESS.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at PROGRESS.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at PROGRESS.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at PROGRESS.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at PROGRESS.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at PROGRESS.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at PROGRESS.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at PROGRESS.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at PROGRESS.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\BUILD_AND_PROMPTS_v1.9.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\BUILD_AND_PROMPTS_v1.9.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\BUILD_AND_PROMPTS_v1.9.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\BUILD_AND_PROMPTS_v1.9.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\BUILD_AND_PROMPTS_v1.9.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\BUILD_AND_PROMPTS_v1.9.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\CONFIG_REFERENCE_v1.9.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\CONFIG_REFERENCE_v1.9.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\INTEGRATIONS_v1.9.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\INTEGRATIONS_v1.9.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\INTEGRATIONS_v1.9.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\INTEGRATIONS_v1.9.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\MASTER_DESIGN_v1.9.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\POST_PHASE8_IMPROVEMENTS.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\POST_PHASE8_PLAN.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\REBUILD.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\REBUILD.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\REBUILD.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\RUNBOOK_v1.9.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\RUNBOOK_v1.9.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\SETUP_v1.9.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at docs\STRATEGY_CATALOG_v1.9.md
+[3b] D87 is superseded-by D109 but is cited without naming its successor at src\AlphaLab.Data\Services\HistoricalBackfill.cs
+[3b] D87 is superseded-by D109 but is cited without naming its successor at src\AlphaLab.Data\Services\HistoricalBackfill.cs
