@@ -1547,3 +1547,31 @@ A second guard exists because the plausible wrong implementation is silent: the 
 ### An operator step, small and non-blocking
 
 The two α rows were pinned before the completed backfills and are untouched. Adding the power row is a re-run of the same verb with the new flag — it writes only the absent key and reports the α rows as already-pinned. Until it is run, the panel shows every flag exactly as before, with `power_not_pinned` where the floor will go.
+
+## v1.9.54 — the overlap correction was applied twice: every signal standard error was √k too wide (finding 306)
+
+*Recorded 2026-07-31 on `fix/signal-se-overlap-doublecount`, immediately after the 20-year backfill completed (67,580 rows, 5,010 sessions, 2006-02-02 → 2025-12-31). Found by the finding-305 detectability floor on its first contact with real data — which is exactly what that floor was built to do. Register verified before writing: next-free finding **307**; no decision number (D108's derivation is untouched).*
+
+**The floor caught it by reductio, before any theory.** With 5 years of real grades, the published minimum-detectable-IC came back at **1.03** for `bab:L252`. A rank correlation is bounded in [−1, +1]. A detectability floor above 1.0 asserts that the test could only have detected a *better-than-perfect* correlation — impossible on its face, whatever the correct variance formula turns out to be. That single number proved a defect existed without needing to argue about statistics at all, and it is now a standing property guard.
+
+| # | Finding | Resolution | Where |
+|---|---------|-----------|-------|
+| 306 | **The Newey–West overlap correction was applied twice, inflating every Signal-Library standard error by √k — 7.9× at k=63, 4.6× at k=21.** `NeweyWest.LongRunVariance` returns σ²_LR = γ₀ + 2Σw_k·γ_k, the LONG-RUN variance, in which the serial correlation induced by overlapping k-day returns is **already** accounted for. The textbook result is then `Var(ȳ) = σ²_LR / T` with **T nominal** — and the lab's own `MdeCalculator` does exactly that (`σ_LR·252/√T`, D48). `SignalTrend` instead divided by `n_eff`, applying the overlap penalty a second time. The same error appeared in three places: the level arm's `se`, the slope arm's `varSlope` (multiplied by `n/effectiveN`), and the displayed band in `SignalLibraryBuilder`. **The reasoning in the comment I wrote is the trap:** "not by `icSeries.Count`, which would treat overlapping observations as independent and shrink the error by ~√k" is correct against the RAW variance γ₀ — `Var(ȳ) ≈ γ₀/n_eff` is the standard effective-sample shortcut — and wrong against σ²_LR, which has already done that work. Two valid formulas, silently combined into an invalid one. **Consequence on real data:** every one of the 14 (signal × horizon) verdicts read `gone` with floors of 0.35–1.03, i.e. the instrument reported that it could not have detected any correlation a rank statistic is capable of producing | **Divide by the nominal count in all three places; `n_eff` keeps its other job untouched.** The distinction is the substance of the fix: `n_eff` no longer scales the VARIANCE (σ²_LR already did that) but still sets the **df**, because df measures how much independent information constrains the variance *estimate* — a different question from the variance of the mean. **D108's df derivation is therefore untouched**, and so is the `n_eff ≥ 10` floor. **Two regression guards, deliberately of different kinds:** a *pinned* test on an i.i.d. series, where σ²_LR collapses to γ₀ and the answer can only be `sd/√T` (the old code failed it by 794 %); and a *property* test asserting the floor never exceeds 1.0 for any horizon or noise level — which cannot be satisfied by tuning a constant and fires for any future change that inflates the variance, not merely this one. **No re-grade was needed:** the defect is in the read-model path, and `signal_ic` stores only `rank_ic` and `n`, so the 3-hour run stands (D106's recompute-don't-re-simulate property, earning its keep on the first occasion it could) | `SignalTrend.cs` (level `se`, `SlopeFit_`); `SignalLibraryBuilder.cs` (the band); `MdeCalculator.cs` (the correct reference implementation); `SignalDetectabilityTests` |
+
+### Two test fixtures were pathological, and only the corrected error exposed them
+
+`Stable_WhenTheMeanIsClearlyPositiveAndFlat` and the detectability suite's `stable` case both built their series as a **perfect alternation** (`0.20 ± 0.001`). An alternating series' autocovariances flip sign and very nearly cancel inside the Bartlett sum, so its residual long-run variance collapses toward zero — and the tiny endpoint-driven slope of an even-length alternation then reads as a significant decay. Both fixtures flipped to `decaying` the moment the slope error stopped being 8× too wide.
+
+They were not wrong tests catching a wrong fix; they were **weak fixtures that the inflated error had been concealing**. Both now use seeded Gaussian noise, which is the shape the NW estimator is built for. Recorded because the general lesson is not obvious: *an inflated error bar hides fixture defects as effectively as it hides real effects*, so a variance fix should be expected to redden tests that had nothing to do with it.
+
+### What the corrected numbers say — recorded here because it is the phase's actual result
+
+All 14 (signal × horizon) still read `gone`. **But the floors now show why, and the answer is not "the signals are dead":**
+
+| | mean IC (5y) | MDIC | ratio |
+|---|---|---|---|
+| `rev:L21` k=63 | 0.0236 | 0.0467 | signal is **half** the floor |
+| `resmom:L252` k=63 | 0.0316 | 0.0654 | signal is **half** the floor |
+| every other pair | \|IC\| < 0.021 | 0.041–0.118 | floor exceeds signal by 1.5–4× |
+
+**In every case the detectability floor exceeds the measured signal.** Published cross-sectional equity anomalies live at an IC of 0.02–0.05; the two strongest here sit squarely in that band, with t ≈ 1.3 against a threshold of 1.73. So the honest verdict is **not** "these anomalies are dead" but "**this instrument cannot resolve signals of the size that are actually present**" — which is precisely the distinction finding 305 was built to make visible, arriving on its first real use. Without the floor, fourteen `gone` verdicts would have read as fourteen dead anomalies.

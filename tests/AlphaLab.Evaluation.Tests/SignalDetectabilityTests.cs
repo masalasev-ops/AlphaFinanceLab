@@ -34,6 +34,29 @@ public class SignalDetectabilityTests
         return ic;
     }
 
+    /// <summary>
+    /// A REALISTIC flat series: a given mean plus seeded pseudo-random noise, no trend.
+    ///
+    /// Needed because <see cref="Series"/>'s perfect alternation is pathological for the SLOPE arm: its
+    /// autocovariances alternate in sign and very nearly cancel inside the Bartlett sum, so the
+    /// residual long-run variance collapses toward zero and an arbitrarily small slope reads as
+    /// significant. A real rank-IC series does not alternate. Deterministic seed, so this is still a
+    /// fixture and not a random test.
+    /// </summary>
+    private static List<double> NoisySeries(double level, double sd, int seed = 20260731, int n = FiveYears)
+    {
+        var rng = new Random(seed);
+        var ic = new List<double>(n);
+        // Box-Muller, so the noise is Gaussian rather than uniform — the shape the NW estimator expects.
+        for (var i = 0; i < n; i++)
+        {
+            var u1 = 1.0 - rng.NextDouble();
+            var u2 = rng.NextDouble();
+            ic.Add(level + sd * Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Cos(2.0 * Math.PI * u2));
+        }
+        return ic;
+    }
+
     [Fact]
     public void TheFloorIsAnMDE_NotARestatementOfTheCriticalValue()
     {
@@ -106,7 +129,7 @@ public class SignalDetectabilityTests
         // "We found no decay" is the same kind of claim as "we found no edge", and deserves the same
         // treatment: the shallowest decay the test could have caught, annualized the way D48 annualizes
         // its alpha MDE.
-        var v = SignalTrendInference.Infer(Series(0.05, 0.01), 63, FiveYears, Alpha, Alpha, Power);
+        var v = SignalTrendInference.Infer(NoisySeries(0.05, 0.02), 63, FiveYears, Alpha, Alpha, Power);
 
         Assert.Equal(TrendFlag.Stable, v.Flag);
         Assert.NotNull(v.MinDetectableTrendPerYear);
@@ -125,8 +148,8 @@ public class SignalDetectabilityTests
         // absent alpha withholds a VERDICT. Quoting a floor at a power nobody chose would be the same
         // defect as a silently-defaulted significance level; blocking the flag on it would be worse,
         // since no flag depends on power.
-        var withPower = SignalTrendInference.Infer(Series(0.05, 0.01), 63, FiveYears, Alpha, Alpha, Power);
-        var without = SignalTrendInference.Infer(Series(0.05, 0.01), 63, FiveYears, Alpha, Alpha, power: null);
+        var withPower = SignalTrendInference.Infer(NoisySeries(0.05, 0.02), 63, FiveYears, Alpha, Alpha, Power);
+        var without = SignalTrendInference.Infer(NoisySeries(0.05, 0.02), 63, FiveYears, Alpha, Alpha, power: null);
 
         Assert.Equal(withPower.Flag, without.Flag);                   // the verdict is untouched…
         Assert.Equal(withPower.TStat, without.TStat);
@@ -136,11 +159,61 @@ public class SignalDetectabilityTests
     }
 
     [Fact]
+    public void TheStandardErrorDividesByTheNOMINALCount_NotTheEffectiveOne()
+    {
+        // FINDING 306, the regression guard. `NeweyWest.LongRunVariance` returns the LONG-RUN variance -
+        // gamma_0 + 2*sum(w_k*gamma_k) - so the overlap correction is ALREADY inside it, and the
+        // textbook result is Var(mean) = sigma^2_LR / T with T NOMINAL. Dividing by n_eff instead
+        // applied the penalty twice and inflated every standard error by sqrt(k).
+        //
+        // Pinned on a series with NO autocorrelation, where the answer is unambiguous: there,
+        // sigma^2_LR collapses to gamma_0 and the standard error of the mean is simply sd/sqrt(T).
+        // Under the old code this assertion failed by a factor of sqrt(63) = 7.94.
+        var rng = new Random(20260731);
+        var ic = new List<double>(FiveYears);
+        for (var i = 0; i < FiveYears; i++) ic.Add(rng.NextDouble() - 0.5);   // iid, mean ~0
+
+        var v = SignalTrendInference.Infer(ic, 63, FiveYears, Alpha, Alpha, Power);
+
+        var mean = ic.Average();
+        var gamma0 = ic.Sum(x => (x - mean) * (x - mean)) / ic.Count;
+        var expected = Math.Sqrt(gamma0 / ic.Count);        // sd / sqrt(T), the only defensible answer
+
+        // 12% tolerance: the Bartlett sum still adds a little noise at lag 63 even on an iid draw.
+        // The DEFECT was 794%, so this band separates "correct" from "double-counted" decisively.
+        Assert.InRange(v.StdError, expected * 0.88, expected * 1.12);
+    }
+
+    [Fact]
+    public void ADetectabilityFloorCanNeverExceedOne_BecauseARankCorrelationCannot()
+    {
+        // The reductio that caught finding 306, kept as a standing property guard. rank-IC is bounded
+        // in [-1, +1], so a "smallest true IC this test could have detected" above 1.0 asserts that the
+        // test could only have found a better-than-perfect correlation - impossible on its face,
+        // whatever the right variance formula turns out to be.
+        //
+        // This is deliberately a PROPERTY, not a pinned number: it cannot be satisfied by adjusting a
+        // constant, and it fires for ANY future change that inflates the variance, not just the one
+        // that caused it. On real 2006-2025 data the old code published floors up to 1.03.
+        foreach (var horizon in new[] { 21, 63 })
+        {
+            foreach (var wobble in new[] { 0.02, 0.10, 0.30 })
+            {
+                var v = SignalTrendInference.Infer(
+                    Series(0.0, wobble), horizon, FiveYears, Alpha, Alpha, Power);
+                Assert.True(v.MinDetectableIc < 1.0,
+                    $"k={horizon} wobble={wobble}: floor {v.MinDetectableIc} exceeds the maximum " +
+                    "possible rank correlation - the standard error is inflated");
+            }
+        }
+    }
+
+    [Fact]
     public void BelowTheFloor_NoVerdictAndNoFalsePrecision()
     {
         // Below n_eff = 10 there is no critical value, so there is no floor either. An `insufficient`
         // row must not publish a detectability number: it would imply a test was run.
-        var v = SignalTrendInference.Infer(Series(0.05, 0.01, 300), 63, 300, Alpha, Alpha, Power);
+        var v = SignalTrendInference.Infer(NoisySeries(0.05, 0.02, n: 300), 63, 300, Alpha, Alpha, Power);
 
         Assert.Equal(TrendFlag.Insufficient, v.Flag);
         Assert.True(v.Sample.Count < 10);
