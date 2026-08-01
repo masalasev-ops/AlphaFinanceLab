@@ -348,6 +348,16 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
                                                    // tokens - and the exception is exactly what v1.9.60 did: a per-task
                                                    // tier change moves the tokens-per-dollar ratio, so a cost ceiling alone
                                                    // silently changes how much the lab reads whenever a model is re-pinned.
+                                                   // TWO PROCESSES READ DailyBudget (v1.9.66, checkpoint 5.6). The Worker
+                                                   // enforces it when it spends; the Api reads it to answer an FR-23 command
+                                                   // with 503 when the day is already spent (rule 13: before any token). It is
+                                                   // therefore committed in BOTH src/AlphaLab.Worker/appsettings.json and
+                                                   // src/AlphaLab.Api/appsettings.json, and
+                                                   // ConfigConsistencyTests.Config_LlmDailyBudget_AgreesAcrossProcesses holds
+                                                   // them equal - a divergence would have the Api accept a command the Worker
+                                                   // then refuses to run, i.e. a queued job failing for a reason the caller was
+                                                   // told did not apply. The Api reads NOTHING else under Llm: it binds no
+                                                   // provider and, under the ci.ps1 reference graph, could not.
     "DegradationOrder": ["held_positions", "cached", "neutral_fallback"],
     "ScopeLevel": 1                               // 1 market-read; 2 shortlist(<=20); 3 unreachable
   },
@@ -376,8 +386,20 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
 
   "Research": {                                    // D82 — the trials budget that rations self-improvement's deflated-Sharpe spend (S2)
     "ForkBudgetPerYear": 6,                        // fork cadence; surfaced beside the trials count in the research UI
-    "MaxConcurrentCandidates": 3                   // matches the "1 Live + 2-3 Candidates" roster shape (§8)
+    "MaxConcurrentCandidates": 3                   // matches the "1 Live + 2-3 Candidates" roster shape (§8); ALSO the D112 evidence-diet bound (v1.9.66) — see below
   },
+```
+
+**`Research.MaxConcurrentCandidates` carries a second job (D112, v1.9.66).** It is also the bound the
+evidence diet measures overdue journal outcomes against: at or above it, `POST /api/v1/analysis/hypotheses`
+refuses with `evidence_diet_refused` and the refusal is counted. It was chosen for that job precisely
+because it is DERIVED where `ForkBudgetPerYear` is not (finding 309): §8 states the roster shape is
+*"bounded by statistical honesty, not compute"*, which makes this the count of claims the lab can honestly
+hold in flight — the right quantity to measure a saturated evidence base against. The rejected alternative
+was a new `Research.OutcomeOverdueGraceDays` key, an undefended number of exactly the class finding 309
+flagged, governing whether the researcher can propose at all.
+
+```json
 
 ```
 

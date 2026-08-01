@@ -886,7 +886,7 @@ namespace AlphaLab.Data.Migrations
 
                     b.ToTable("jobs", null, t =>
                         {
-                            t.HasCheckConstraint("ck_jobs_kind", "kind IN ('replay','analysis_brief','analysis_skeptic')");
+                            t.HasCheckConstraint("ck_jobs_kind", "kind IN ('replay','analysis_brief','analysis_skeptic','analysis_hypotheses')");
 
                             t.HasCheckConstraint("ck_jobs_status", "status IN ('queued','running','done','failed')");
                         });

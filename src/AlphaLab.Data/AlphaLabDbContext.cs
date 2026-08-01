@@ -131,7 +131,10 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
         {
             e.ToTable("jobs", t =>
             {
-                t.HasCheckConstraint("ck_jobs_kind", "kind IN ('replay','analysis_brief','analysis_skeptic')");
+                // 'analysis_hypotheses' added at M9 / checkpoint 5.6 (D82 §23.4). Enum CHECKs extend ONLY by
+                // migration (finding 121's rule), so a future job kind costs a migration + a SCHEMA edit in
+                // the same PR — which is the point: an unlisted write is not a thing that can happen.
+                t.HasCheckConstraint("ck_jobs_kind", "kind IN ('replay','analysis_brief','analysis_skeptic','analysis_hypotheses')");
                 t.HasCheckConstraint("ck_jobs_status", "status IN ('queued','running','done','failed')");
             });
             e.HasKey(x => x.JobId);

@@ -2024,3 +2024,53 @@ Until this checkpoint rule 32 was **prose only**. The Signal Library's descripti
 
 Its other half asserts the `ScratchStore` **choice**, read by reflection off the real lists rather than a copy: `ai_decisions` and `ai_context_packs` are untouched while `signal_ic` is not. That contrast is the whole classification argument in one assertion — **a grade is an INPUT a reproduced session would re-produce, so it is rewound; a decision is a RECORD the reproduction must consume, so it is carried.**
 
+
+---
+
+## v1.9.66 — Phase 5 checkpoint 5.6: the researcher seat and the D112 evidence diet (D82/FR-23; M9; finding 324)
+
+*Recorded 2026-08-01. Tests **1,020 → 1,035**; migration **M9** (`Phase5HypothesesJobKind`); `ci.ps1` green.*
+
+### The seat is two halves, and each is blind to the other's failure
+
+The API validates and enqueues; the Worker executes and writes. `AnalysisEndpointsTests` asserts the **contract** — which status code, which envelope, whether the write side stayed empty — and `ResearchJobExecutorTests` asserts the **outcome**, that a proposal lands as an unlocked journal entry and nothing else moved. Neither can see what the other checks, which is why both exist rather than one integration test spanning both.
+
+The Api enqueues rather than executes for two independent reasons that happen to agree: rule 19 forbids long work on a request thread, and the `ci.ps1` reference graph forbids `AlphaLab.Api` referencing `AlphaLab.Llm` at all. The policy and the layering pointing the same way is a good sign, not a coincidence.
+
+### The rail order on `POST /analysis/hypotheses`, and why 503 sits where it does
+
+`409` (a run is live) → `422` (no parent evidence) → `503` (the day's budget is spent) → `422` (the D112 evidence diet).
+
+The one placement that took an argument is 503 **before** the diet. A diet refusal is *counted* as operator debt and published beside the D110 proposal-quality score; an exhausted budget is not the operator's debt, it is the day's capacity. Evaluating the diet first would book a refusal against a day the seat could not have run on anyway — inflating the very count D110 reads as a signal about outcome closure. `FR24_BudgetExhausted_Returns503_AndEnqueuesNothing` asserts both halves: the 503, *and* that the refusal counter did **not** move.
+
+503 rather than 422 for the same reason: 422 tells the caller to change something, and there is nothing here to change.
+
+### The D24 ceiling is now read by two processes, so it is now tested across them
+
+The Worker enforces the ceiling when it spends; the Api reads it to refuse. That is one number in two `appsettings.json` files, and a divergence would have the Api accept a command the Worker then refuses to run — a queued job failing for a reason the caller was explicitly told did not apply. `Config_LlmDailyBudget_AgreesAcrossProcesses` joins the arena-id and universe-exclusion agreements: **a value duplicated across processes gets a test, not a convention.**
+
+The Api binds `Llm:DailyBudget` and nothing else under `Llm` — no provider, and under the reference graph it could not bind one. Reading what a day has spent is a projection; spending it is the Worker's job.
+
+### M9 is the corpus's first table REBUILD, and it cost a hand-edit
+
+**finding 324 — EF's `AddCheckConstraint` re-adds the AUTOINCREMENT that rule 14 strips.**
+
+SQLite cannot `ALTER` a CHECK, so EF generates `DropCheckConstraint`/`AddCheckConstraint` as a whole-table rebuild — and the regenerated DDL re-adds `AUTOINCREMENT` to `job_id`, the exact annotation InitialCreate's hand-edit removed. This was **observed, not anticipated**: the scaffolded migration was written and committed to a branch, and both `SchemaFidelityTests.Schema_IntegerPrimaryKeys_HaveNoAutoincrement` and the M6 closure guard failed on it.
+
+Same defect, same fix and same reason as `corporate_actions.processed_on` at M5 (D94): write the DDL by hand. The migration is now an explicit rebuild — create, copy, drop, rename — with `Up` and `Down` sharing one private method, because two hand-written copies of the same DDL is precisely how a `Down` drifts from its `Up` and a rollback quietly reshapes a table.
+
+**What the guards earned here.** Two independent tests written for earlier phases caught a defect in a migration neither was written for, on the first run after it was added. That is the third time this phase (the `ScratchStore` classification closure at 5.5, the register guard at 5.0) that a structural guard has caught something a review pass would have had no reason to look at.
+
+A rebuild also has a failure mode an additive migration structurally cannot have — **it can lose rows** — so `Phase5JobKindMigrationTests` asserts a *queued* job survives it. That is the case where loss would be silent: the API already returned 202, so the caller has been told the work will happen.
+
+### The seat proposes; it does not pre-register
+
+A hypothesis lands `locked = 0`, always. A locked row here would mean the seat pre-registered its own claim, and a pre-registration made by the party making the claim is not a commitment — it is a label. Rule 30 is stated *to* the model in the frozen instruction block as well as enforced after it, and `TheProposalInstructions_NameAllFourPreDeclaredFields` pins both.
+
+The four pre-declared fields are named in the prompt because a hypothesis missing any of them cannot be pre-registered without the operator inventing the missing part — at which point the claim being tested is no longer the one the seat made.
+
+**The skeptic is instructed not to hedge into balance.** A review that finds the claim reasonable adds nothing the claim did not already assert, so "argue the other side, as strongly as the evidence honestly allows" is the instruction, and the pinned negative ("Do not hedge into balance") is what keeps it from drifting into a summary.
+
+### A refusal is recorded as a `failed` job, not a new table
+
+The D112 refusal is a `jobs` row with its reason, in the same stream successful attempts are counted from. A separate table would need its own join to answer *"how many proposals were attempted this quarter?"* — the question the D110 score depends on. The refusal **is** an attempt at the job, so it belongs where the attempts are.

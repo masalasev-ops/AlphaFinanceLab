@@ -135,6 +135,43 @@ public sealed class ConfigConsistencyTests
         Assert.Equal(worker, backfill);
     }
 
+    /// <summary>
+    /// The D24 daily ceiling must read the same in BOTH processes that consult it (v1.9.66, checkpoint 5.6).
+    ///
+    /// The Worker enforces the ceiling when it spends; the API refuses an FR-23 command with 503 when the
+    /// day is already spent. Those are two readings of one number, and if they diverge the API accepts a
+    /// command the Worker will then refuse to run — a queued job that fails for a reason the caller was
+    /// told did not apply. Same class as the arena-id and universe-exclusion agreements above: a value
+    /// duplicated across processes needs a test, not a convention.
+    /// </summary>
+    [Fact]
+    public void Config_LlmDailyBudget_AgreesAcrossProcesses()
+    {
+        var repoRoot = FindRepoRoot();
+        var api = ReadDailyBudget(Path.Combine(repoRoot, "src", "AlphaLab.Api", "appsettings.json"));
+        var worker = ReadDailyBudget(Path.Combine(repoRoot, "src", "AlphaLab.Worker", "appsettings.json"));
+
+        Assert.Equal(worker, api);
+    }
+
+    /// <summary>(MaxCostUsd, MaxCalls, MaxTokens) as committed. An absent section returns the bound
+    /// defaults, so "neither file configures it" agrees rather than failing on a technicality.</summary>
+    private static (double, int, int) ReadDailyBudget(string appsettingsPath)
+    {
+        Assert.True(File.Exists(appsettingsPath), $"missing {appsettingsPath}");
+        using var doc = JsonDocument.Parse(File.ReadAllText(appsettingsPath));
+        if (!doc.RootElement.TryGetProperty("Llm", out var llm) ||
+            !llm.TryGetProperty("DailyBudget", out var b))
+        {
+            return (1.0, 10, 0);   // LlmDailyBudgetOptions' defaults
+        }
+
+        return (
+            b.TryGetProperty("MaxCostUsd", out var c) ? c.GetDouble() : 1.0,
+            b.TryGetProperty("MaxCalls", out var n) ? n.GetInt32() : 10,
+            b.TryGetProperty("MaxTokens", out var t) ? t.GetInt32() : 0);
+    }
+
     private static IReadOnlyList<string> ReadUniverseExclusions(string appsettingsPath)
     {
         Assert.True(File.Exists(appsettingsPath), $"missing {appsettingsPath}");

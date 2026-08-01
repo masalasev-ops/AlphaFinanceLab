@@ -591,6 +591,18 @@ CREATE TABLE jobs (                                -- async-command queue (API e
   result_ref   TEXT,                               -- e.g. 'runs:812' / 'journal_entries:44'
   error_json   TEXT
 );
+-- 'analysis_hypotheses' REACHED THE DATABASE at M9 (Phase5HypothesesJobKind, checkpoint 5.6). It had been
+-- documented here since v1.9.21 and absent from the store until then, which is finding 121's rule working
+-- as intended: an enum CHECK extends only by migration.
+--
+-- M9 IS THE FIRST REBUILD IN THE CORPUS, and it is hand-written SQL rather than EF's
+-- DropCheckConstraint/AddCheckConstraint pair. SQLite cannot ALTER a CHECK, so EF generates a whole-table
+-- rebuild whose regenerated DDL RE-ADDS the AUTOINCREMENT that rule 14's InitialCreate hand-edit stripped.
+-- That was observed, not anticipated: the scaffolded migration was written and both
+-- Schema_IntegerPrimaryKeys_HaveNoAutoincrement and the M6 closure guard failed on it. Same defect, same
+-- fix and same reason as `corporate_actions.processed_on` at M5 (D94). A rebuild also has a failure mode an
+-- additive migration cannot have - it can lose rows - so Phase5JobKindMigrationTests asserts a queued job
+-- survives the rebuild, which is the case where loss would be silent: the API already returned 202.
 
 CREATE TABLE worker_state (                        -- single row, seeded by Phase 0's InitialCreate
   id              INTEGER PRIMARY KEY CHECK (id = 1),

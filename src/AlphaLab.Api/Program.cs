@@ -2,6 +2,7 @@ using System.Globalization;
 using AlphaLab.Api;
 using AlphaLab.Core.Config;
 using AlphaLab.Core.Json;
+using AlphaLab.Core.Llm;
 using AlphaLab.Data;
 using AlphaLab.Data.Services;
 using AlphaLab.Evaluation.Candidates;
@@ -36,6 +37,12 @@ builder.Services.AddAlphaLabData(connectionString, arenaId, ensureDirectory: fal
 builder.Services.AddSingleton(builder.Configuration.GetSection(VerdictsOptions.SectionName).Get<VerdictsOptions>() ?? new VerdictsOptions());
 builder.Services.AddSingleton(builder.Configuration.GetSection(KpiOptions.SectionName).Get<KpiOptions>() ?? new KpiOptions());
 builder.Services.AddSingleton(builder.Configuration.GetSection(GateOptions.SectionName).Get<GateOptions>() ?? new GateOptions());
+builder.Services.AddSingleton(builder.Configuration.GetSection(ResearchOptions.SectionName).Get<ResearchOptions>() ?? new ResearchOptions());
+// The D24 ceiling the FR-23 command path reads before accepting (rule 13). The Api binds the options and
+// the Data-side ledger only — it never registers a PROVIDER, and under the ci.ps1 reference graph it
+// could not: reading what a day has spent is a projection, spending it is the Worker's job.
+builder.Services.AddSingleton(builder.Configuration.GetSection(LlmOptions.SectionName).Get<LlmOptions>() ?? new LlmOptions());
+builder.Services.AddScoped<ILlmBudgetLedger, LlmBudgetLedger>();
 builder.Services.AddScoped<StrategiesReadModelBuilder>();
 builder.Services.AddScoped<AllocationReadModelBuilder>();
 builder.Services.AddScoped<ReplayReadModelBuilder>();
@@ -83,6 +90,12 @@ v1.MapScreenReadEndpoints();
 // (Worker:StaleRunThresholdSeconds, D72) rather than a hardcoded default — a divergence would let a
 // command slip past the guard during a slow daily write (WorkerLiveness: "the API binds its own").
 var staleThresholdSeconds = app.Configuration.GetValue("Worker:StaleRunThresholdSeconds", 300);
+// FR-23 research-assistant actions (D82) + the D112 evidence diet. Long-running by nature, so they
+// enqueue and return 202+job_id (rule 19) — and under the ci.ps1 reference graph the Api cannot
+// reference AlphaLab.Llm at all, so enqueueing is not merely the policy here but the only shape
+// available. Same staleThresholdSeconds as /candidates, for the same reason it is read once.
+v1.MapAnalysisEndpoints(staleThresholdSeconds);
+
 var gateOptions = app.Configuration.GetSection(GateOptions.SectionName).Get<GateOptions>() ?? new GateOptions();
 v1.MapPost("/candidates", async (
         CreateCandidateRequest req, AlphaLabDbContext db, IWorkerLiveness liveness,

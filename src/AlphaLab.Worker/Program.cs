@@ -116,6 +116,17 @@ builder.Services.AddSingleton<LocalBackup>();
 // (briefs/skeptic) still arrive with Phase 5.
 builder.Services.AddSingleton<IJobExecutor>(sp => new ReplayJobExecutor(
     builder.Configuration, arena, connectionString, sp.GetRequiredService<ILoggerFactory>()));
+// Phase 5: the researcher seat's three kinds (FR-23/D82). One executor instance per kind — the JobDrainer
+// keys its registry by kind, so registering one class three times is what makes the drain table-driven
+// rather than a switch that a fourth kind would have to be remembered into.
+foreach (var analysisKind in ResearchJobExecutor.Kinds)
+{
+    var k = analysisKind;
+    builder.Services.AddSingleton<IJobExecutor>(sp => new ResearchJobExecutor(
+        k,
+        sp.GetRequiredService<IServiceScopeFactory>(),
+        sp.GetRequiredService<ILogger<ResearchJobExecutor>>()));
+}
 builder.Services.AddHostedService<HeartbeatService>();
 
 // Schema application + WAL runs in BOTH modes and MUST be registered first (StartAsync runs in
