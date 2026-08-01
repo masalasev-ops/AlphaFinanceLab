@@ -1929,3 +1929,33 @@ Added with `[Trait("Category","LiveSmoke")]` and **excluded from both CI legs** 
 It **fails with an actionable message** when no key is configured. The first draft skipped, so a keyless developer would see no red — but that reasoning does not survive the gating: the test never runs unless someone explicitly asks for it, and someone who asks for a live smoke test and has no key is better served by being told than by a green tick over a test that did nothing.
 
 **Still owed:** the INTEGRATIONS §5 `⚠VERIFY` was closed at v1.9.60 against the *published reference*. The live confirmation is owed until the test is actually run, which is a 5.8 gate item — its existence does not discharge it.
+
+---
+
+## v1.9.62 — Phase 5 checkpoint 5.2: the D46 news budget (FR-22)
+
+*Recorded 2026-08-01 on `feat/phase5.2-news-budget`. Tests **973 → 987**; no migration (M7 already created `news_items`); `ci.ps1` green.*
+
+### The budget is a decorator, and that is the whole design
+
+`EodhdNewsProvider` (Data) fetches; `BudgetedNewsProvider` (Llm) wraps it and enforces D46. **If the enforcement lived inside the fetcher, any future caller that reached for the raw feed would get an unbudgeted read and nothing would fail** — the cost would surface on the bill rather than in a test. As a decorator over the Core interface, the only thing composition can hand out is the budgeted one.
+
+### The step order is the contract
+
+Relevance filter → title-hash dedupe → 25-article cap → 2,000-char truncation. **Dedupe before the cap is the ordering that matters**: a wire story syndicated thirty times would otherwise consume the entire day's allowance. `Dedupe_RunsBeforeTheCap_SoOneSyndicatedStoryCannotEatTheAllowance` pins it with the two orderings' outcomes on identical input — 6 admitted versus 1.
+
+Truncation runs last because it only affects admitted articles, and the title hash normalises case and whitespace because syndicated copies differ in those far more often than in wording.
+
+### Two rails worth naming
+
+- **`sentiment` is deliberately ignored.** EODHD returns it inline and free, and the retired machine-readable sentiment score (D46 amended by D79–D82, golden rule 28) is exactly what reading it back would resurrect — invisibly, because the field is already there. `NewsArticle` has no sentiment member, so the exclusion is structural, and the test asserts the absence by reflection rather than trusting the parser.
+- **An empty universe admits nothing on the symbol arm** (rule 10). An unresolved universe must not silently widen the read to whatever the feed happened to return.
+
+### The reference graph, again
+
+`AdmittedArticle` and `IAdmittedNewsStore` were first written in `AlphaLab.Llm` — where the budget that produces them lives — and `AlphaLab.Data` cannot reference that project. Both moved to Core. **This is the third time in two checkpoints that the graph decided where a type lives** (after `IAnalysisProvider` at 5.1 and `IModelTransport`'s existence at all): AlphaLab.Llm and AlphaLab.Data are siblings, so anything they share has exactly one legal home.
+
+### `news_items` records what the budget ADMITTED
+
+Not what the feed returned — that question is answerable from the raw cache if it is ever asked. `truncated_chars` is persisted per article so the budget's effect on what the model saw is measurable rather than assumed: a read that admitted 25 of 25 and one that admitted 25 of 800 are very different days, and only the counts distinguish them.
+
