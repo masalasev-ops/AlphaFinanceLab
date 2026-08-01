@@ -2214,3 +2214,52 @@ This is finding 315's shape for the third time — a fixture list and the fixtur
 ### What Phase 6 inherits, unchanged by this phase
 
 Findings 280 and 285, bundled into one fresh calibration generation, and the D106 recompute harness before it. Not this phase's work, and due before the first real strategy registers.
+
+---
+
+## v1.9.69 — the live smoke test, and the defect only it could find (finding 328)
+
+*Recorded 2026-08-01. Tests **1,065 → 1,070**; no migration; `ci.ps1` green. Closes the last red Phase-5 DoD item.*
+
+### The live run happened, and it failed
+
+The Phase-5 DoD's live smoke test ran for the first time against the real Batches endpoint. **It failed** — 53 seconds in, after the batch had been created, polled to `ended`, and its results streamed back with usage. The wire contract was fine. The failure was one layer above it:
+
+```
+Llm.Pricing:claude-haiku-4-5-20251001 is not configured.
+```
+
+### finding 328 — an alias is resolved to a dated snapshot, and the response reports the snapshot
+
+The request was pinned to `claude-haiku-4-5`. The API served it as `claude-haiku-4-5-20251001` and said so. **The requested and the served model string are not the same string.**
+
+That collided with two decisions, each correct in isolation:
+
+- **5.1 costs the model that actually SERVED the call**, because D104 artefact (d) is about what ran, not what was asked for. Sound: a config row records what was configured, and a re-pin mid-day would leave it disagreeing with half the day's traffic.
+- **`PricingFor` fails closed on an unpriced model** (D24 / rule 10), because a zero cost is indistinguishable from a free cache hit in `llm_budget_log` and would make the ceiling unenforceable exactly when a newly-pinned model started spending.
+
+Together they threw on **every live call**. The forward LLM path was dead on real traffic — Stage 3 would have failed on its first scheduled run — and nothing in the repo could see it.
+
+### Why nothing caught it, which is the part worth keeping
+
+**The published-reference check could not have.** It verified endpoints, headers, polling shape and result semantics — all correct, all still correct. This defect is in what the API **returns**, and no amount of reading the documentation about what it *accepts* would surface it.
+
+**No mocked test could have, either, and this is structural rather than an oversight.** `FakeTransport` echoes back the model string it was handed, so across the entire mocked suite the requested and served model are equal *by construction*. Any fake with that property is blind here — the assertion that would fail cannot be written against a fake that cannot produce the input.
+
+This is the sharpest evidence in the corpus for §23.8's bet that a spec written before its code can be contradicted by it, and the second time this phase it paid (after finding 323). Both times the contradiction came from **building**, not from re-reading.
+
+### The fix: key by alias, resolve by longest prefix, still fail closed
+
+`PricingFor` now tries the exact key first, then the **longest configured key the served model starts with**. A snapshot is its alias plus a date suffix, so the alias is a prefix of it by construction, and one config entry prices every snapshot of that family — which is what makes it robust to the vendor rolling a snapshot, the brittleness dated keys would have reintroduced.
+
+**Longest, not first**, because the families nest. `claude-opus-4` is a prefix of `claude-opus-4-8-…`, and a shortest-match rule would price an Opus 4.8 call at Opus 4 rates *silently* — the failure mode that is invisible in every downstream number. Pinned by test with both configured.
+
+**The fail-closed property is preserved, and that is the constraint the fix had to respect.** A model matching no configured prefix still throws. The relaxation is from *"exact key"* to *"known family"* — never from *"known"* to *"anything"* — and `AnUnknownFamily_STILL_FAILS_CLOSED` asserts both halves, including that a near-miss (`claude-haiku-4`, shorter than the key) is still a miss.
+
+### The observation is pinned where it was found
+
+The smoke test now asserts the served model **starts with** the requested alias, and **fails deliberately if the API ever returns the bare alias instead of a snapshot** — not because that would be broken, but because finding 328's premise would have changed and the corpus should notice rather than absorb it. The only place the real string is observable is the only place worth asserting it.
+
+### The re-run
+
+Green in **2m15s**: create → poll to `ended` → stream results → usage → cost. **INTEGRATIONS §5 is now live-confirmed rather than reference-checked**, and the last red Phase-5 DoD item is closed.

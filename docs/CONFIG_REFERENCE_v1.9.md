@@ -318,6 +318,15 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     "PromptCacheStaticBlock": true,
     "NewsBudget": { "MaxArticlesPerRead": 25, "MaxCharsPerArticle": 2000,
                     "DedupeBy": "title_hash" },
+                                                   // KEY BY THE ALIAS, NEVER A DATED SNAPSHOT (finding 328, v1.9.69).
+                                                   // The API resolves an alias to a dated snapshot and REPORTS the snapshot
+                                                   // (claude-haiku-4-5 -> claude-haiku-4-5-20251001), and the lab costs the model
+                                                   // that actually SERVED the call. PricingFor therefore resolves EXACT first, then
+                                                   // the LONGEST configured key the served model starts with - so one alias entry
+                                                   // prices every snapshot of that family. Longest, not first, because families
+                                                   // nest: a shortest-match rule would price an Opus 4.8 call at Opus 4 rates
+                                                   // silently. It STILL FAILS CLOSED on a model matching no configured prefix -
+                                                   // the relaxation is from "exact key" to "known family", never to "anything".
     "Pricing": {                                   // BUILT at checkpoint 5.1. Token rates in USD per MILLION tokens, per
                                                    // model string - keyed by the same value Llm.Tasks.*.Model holds.
                                                    // CONFIG, not constants in code, deliberately: these are vendor facts

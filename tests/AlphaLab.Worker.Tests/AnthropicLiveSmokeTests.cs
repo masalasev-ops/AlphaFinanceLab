@@ -111,6 +111,23 @@ public class AnthropicLiveSmokeTests
             Assert.True(r.Usage.InputTokens > 0, "the API must report input tokens");
             Assert.True(r.Usage.CostUsd > 0m, "a real call must cost something");
             Assert.False(string.IsNullOrEmpty(r.ModelVersion), "the served model must be recorded (D104 (d))");
+
+            // finding 328, pinned where it was found. The API resolves the pinned ALIAS to a dated
+            // SNAPSHOT and reports the snapshot, so the served model is NOT the requested string — which
+            // is invisible in every mocked test, because a fake transport echoes what it was asked for.
+            // Costing the served model (D104 (d)) then met an exact-key price lookup and threw, killing
+            // the whole forward path on real traffic. Asserted here rather than only in the unit test
+            // because this is the only place the real string is observable.
+            Assert.StartsWith("claude-haiku-4-5", r.ModelVersion, StringComparison.Ordinal);
+            if (r.ModelVersion == "claude-haiku-4-5")
+            {
+                // Not a failure — a change in vendor behaviour worth noticing rather than absorbing.
+                // If the API ever stops resolving aliases to snapshots, the prefix rule is still correct
+                // but the finding's premise has changed.
+                Assert.Fail(
+                    "The API returned the bare ALIAS rather than a dated snapshot. finding 328's premise " +
+                    "no longer holds; re-read INTEGRATIONS §5 before assuming the alias->snapshot rule.");
+            }
         }
     }
 }
