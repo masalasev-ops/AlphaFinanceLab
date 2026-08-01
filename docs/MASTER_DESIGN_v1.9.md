@@ -889,6 +889,8 @@ D89 applies by publishing an MDE beside a gate refusal and Amendment 2.2 by publ
 fractions beside a pooled number. `stable` earns the same treatment, being equally a failure to
 reject, so the shallowest detectable decay is published beside it.
 
+**The standard error divides by the NOMINAL count, never `n_eff` [finding 306].** `NeweyWest.LongRunVariance` returns σ²_LR, in which the overlap correction is already carried, so `Var(ȳ) = σ²_LR / T` with T nominal — the same form `MdeCalculator` uses. Dividing by `n_eff` applies the penalty twice and inflates every error by √k. `n_eff` keeps its other job: it sets the **df**, which measures how much independent information constrains the variance ESTIMATE, a different question from the variance of the mean.
+
 The quantity follows **D48's MDE convention exactly**, in rank-IC units rather than annualized alpha:
 
   MDIC_level = (t_{1−α, df_level} + t_{power, df_level}) · se_level
