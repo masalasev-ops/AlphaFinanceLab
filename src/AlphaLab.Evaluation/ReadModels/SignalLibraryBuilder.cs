@@ -85,7 +85,10 @@ public sealed class SignalLibraryBuilder(AlphaLabDbContext db, SignalLibraryOpti
                     double? lo = null, hi = null;
                     if (ic.Count >= 2 && sample.CanInfer && pinned)
                     {
-                        var se = Math.Sqrt(NeweyWest.LongRunVariance(ic, horizon) / Math.Max(1, sample.Count));
+                        // Divisor is the NOMINAL count: σ²_LR already carries the overlap correction,
+                        // and dividing by n_eff would double-count it (finding 306). n_eff still sets
+                        // the df on the next line.
+                        var se = Math.Sqrt(NeweyWest.LongRunVariance(ic, horizon) / Math.Max(1, ic.Count));
                         var crit = StudentT.TwoSidedCritical(goneAlpha, sample.LevelDf);
                         lo = ic.Average() - crit * se;
                         hi = ic.Average() + crit * se;

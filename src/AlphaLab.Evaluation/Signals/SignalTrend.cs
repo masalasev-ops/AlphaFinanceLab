@@ -151,11 +151,21 @@ public static class SignalTrendInference
 
         var mean = icSeries.Average();
 
-        // NW long-run variance at lag = horizon (overlapping k-day returns are serially correlated BY
-        // CONSTRUCTION), divided by the EFFECTIVE count — not by icSeries.Count, which would treat
-        // overlapping observations as independent and shrink the error by ~√k.
+        // NW long-run variance at lag = horizon, divided by the NOMINAL count (finding 306).
+        //
+        // THE DIVISOR IS T, NOT n_eff, AND THE DISTINCTION IS THE WHOLE POINT. σ²_LR is the LONG-RUN
+        // variance: it is already γ₀ + 2Σw_k·γ_k, so the serial correlation induced by overlapping
+        // k-day returns is ALREADY inside it. The textbook result is Var(ȳ) = σ²_LR / T with T nominal,
+        // which is exactly what `MdeCalculator` does for the alpha MDE (σ_LR·252/√T). Dividing by n_eff
+        // instead applies the overlap penalty a SECOND time and inflates every standard error by √k —
+        // 7.9× at k=63. The "effective sample" shortcut is correct only against the RAW variance γ₀
+        // (Var(ȳ) ≈ γ₀/n_eff); pairing it with σ²_LR double-counts.
+        //
+        // n_eff has NOT gone away — it still sets the df (below), because df measures how much
+        // independent information constrains the variance ESTIMATE, which is a different question from
+        // the variance of the mean. D108's df derivation is untouched by this fix.
         var lrv = NeweyWest.LongRunVariance(icSeries, horizonDays);
-        var se = Math.Sqrt(lrv / Math.Max(1, sample.Count));
+        var se = Math.Sqrt(lrv / Math.Max(1, icSeries.Count));
 
         var levelCritical = StudentT.OneSidedCritical(goneAlpha, sample.LevelDf);
         var trendCritical = StudentT.OneSidedCritical(decayAlpha, sample.TrendDf);
@@ -219,6 +229,8 @@ public static class SignalTrendInference
     private static SlopeFit? SlopeFit_(IReadOnlyList<double> y, int lag, int effectiveN)
     {
         var n = y.Count;
+        // effectiveN still gates the fit — a slope resting on fewer than three INDEPENDENT observations
+        // is not worth reporting — but it no longer scales the variance (finding 306).
         if (n < 3 || effectiveN < 3) return null;
 
         double meanX = (n - 1) / 2.0;
@@ -240,9 +252,11 @@ public static class SignalTrendInference
         var residualLrv = NeweyWest.LongRunVariance(residuals, lag);
         if (residualLrv <= 0) return null;
 
-        // Var(slope) = σ²_LR / Sxx, rescaled from the nominal to the effective sample: the overlapping
-        // series carries n points but only ~effectiveN independent ones.
-        var varSlope = residualLrv / sxx * ((double)n / effectiveN);
+        // Var(slope) = σ²_LR,resid / Sxx — the standard HAC sandwich for a simple OLS slope. NO
+        // effective-sample rescaling: the residual long-run variance already carries the overlap
+        // correction, so multiplying by n/effectiveN would inflate the slope error by k, the same
+        // double-count as the level arm (finding 306).
+        var varSlope = residualLrv / sxx;
         if (varSlope <= 0) return null;
         var seSlope = Math.Sqrt(varSlope);
         return new SlopeFit(slope, seSlope, slope / seSlope);

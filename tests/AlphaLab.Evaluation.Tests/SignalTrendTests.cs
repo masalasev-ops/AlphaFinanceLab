@@ -99,9 +99,22 @@ public class SignalTrendTests
     [Fact]
     public void Stable_WhenTheMeanIsClearlyPositiveAndFlat()
     {
-        // A strong, steady IC with small wobble: significantly above zero and not trending down.
+        // A strong, steady IC with realistic noise: significantly above zero and not trending down.
+        //
+        // The noise must be RANDOM rather than a perfect alternation (finding 306). An alternating
+        // series' autocovariances flip sign and very nearly cancel inside the Bartlett sum, so its
+        // residual long-run variance collapses toward zero and the tiny endpoint-driven slope of an
+        // even-length alternation reads as a significant decay. That fixture only looked "flat" while
+        // the slope error was inflated by the double-counted overlap correction; once the error was
+        // correct it flagged `decaying`. Seeded, so this is still deterministic.
+        var rng = new Random(20260731);
         var ic = new List<double>();
-        for (var i = 0; i < FiveYears; i++) ic.Add(0.20 + (i % 2 == 0 ? 0.001 : -0.001));
+        for (var i = 0; i < FiveYears; i++)
+        {
+            var u1 = 1.0 - rng.NextDouble();
+            var u2 = rng.NextDouble();
+            ic.Add(0.20 + 0.02 * Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Cos(2.0 * Math.PI * u2));
+        }
 
         var v = SignalTrendInference.Infer(ic, 63, FiveYears, goneAlpha: 0.05, decayAlpha: 0.05);
         Assert.Equal(TrendFlag.Stable, v.Flag);
