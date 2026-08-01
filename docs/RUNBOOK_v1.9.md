@@ -150,7 +150,7 @@ run_kind='replay', quarantined).
    is the primary finding — read that, not the gate colour; the rule-selected primary is the smallest
    monthly rung clearing the offline floor. Record the `joint_false_alarm` with its comparability caveat
    (it is NOT independent validation post-Change-3 — only the curve-based metric is). **D107 (v1.9.50, superseding
-   D102 pre-implementation): the pass-1-verdict checks — `joint_false_alarm`, `would_be_edge_survival_5y`,
+   D102 (superseded by D107) pre-implementation): the pass-1-verdict checks — `joint_false_alarm`, `would_be_edge_survival_5y`,
    `anti_detection_speed` — are reported-only, never freeze-gating; each renders its citation in the
    report's outcome cell.** Expect `joint_false_alarm` to read Fail at ~1.00 — every no-edge plant trips
    the "ever Suspect" counter within the first trading year (~session 62), and the statistic is monotonic,
@@ -173,7 +173,7 @@ run_kind='replay', quarantined).
    SEPARATE post-sign-off action — **but NOT an unordered one: it must land BEFORE go-live**
    (v1.9.51, finding 291). Forward Signal-Library IC grading begins at go-live, so widening the
    universe afterwards puts a BREAK in the forward IC series — the same confound that rules out an
-   in-place widen for the cohort curve (the D87 statements). The Phase-4.5 BACKFILL is unaffected:
+   in-place widen for the cohort curve (the D87 (superseded by D109) statements). The Phase-4.5 BACKFILL is unaffected:
    it grades historical S&P 500 as-of membership, which D70 already satisfied. Recorded in both
    places (here and the Phase-4.5 prompt) so neither can be scheduled in ignorance of the other.
 

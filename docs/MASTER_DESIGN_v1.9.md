@@ -115,7 +115,7 @@ The decision numbers are stable identifiers used throughout the build. The table
 | v1.9.25 funnel-cash-constraint | **D84** | Stage-5 opens sized against cash — *resolves finding 190* |
 | v1.9.26 twin-scorer | **D85** | the no-LLM twin's Stage-2 equal-weight z-score blend — *refines D81* |
 | v1.9.29 frozen-valuation | **D86** | a frozen unmapped-halt position marks at cost basis, not last print — *amends §13.6* |
-| v1.9.33 sp1500-target | **D87** | widening target amended to the S&P 1500, contingent on a verified-depth 400/600 source, else S&P 500 — *amends D70(a)* |
+| v1.9.33 sp1500-target | **D87** (superseded by D109) | widening target amended to the S&P 1500, contingent on a verified-depth 400/600 source, else S&P 500 — *amends D70(a)* |
 | v1.9.34 cohort-maturation | **D88** | the cohort maturation curve KPI — descriptive only, never a gate/monitor/allocator input |
 | v1.9.35 phase4-prebuild | **D89** | the FR-40 detectability-at-admission gate |
 | v1.9.37 save/continue | **D90** | the end-of-day book persisted in `position_snapshots`, closing the NFR-1 mutable-state gap |

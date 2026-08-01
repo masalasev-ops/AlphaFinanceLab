@@ -140,8 +140,8 @@ money as strings/minor-units (never floats).
     row it supersedes or amends; the named row's Status cell is updated in the same commit.
     Every §2 row carries a Status: `active`, `superseded-by <D>`, `amended-by <D>`, or `reserved`.
     Why this is a rule and not a convention: the corpus already did it sometimes (D107 supersedes
-    D102; D103 was re-scoped under its own number) and D87 is what happens when it lapses — the
-    sign-off work recorded a different widening target outside the register while D87's row still
+    D102 (superseded by D107); D103 was re-scoped under its own number) and D87 (superseded by D109) is what happens when it lapses — the
+    sign-off work recorded a different widening target outside the register while D87's row (superseded by D109) still
     read in-place S&P 1500, so BOTH readings were live and either could be quoted in good faith.
     A per-document audit cannot catch that: each document was internally consistent and each
     recorded what it claimed to record. The defect was RELATIONAL, which is why the enforcement
