@@ -2217,9 +2217,9 @@ Findings 280 and 285, bundled into one fresh calibration generation, and the D10
 
 ---
 
-## v1.9.69 — the live smoke test, and the defect only it could find (finding 328)
+## v1.9.69 — the live smoke test, and the two defects only it could find (findings 328, 329)
 
-*Recorded 2026-08-01. Tests **1,065 → 1,070**; no migration; `ci.ps1` green. Closes the last red Phase-5 DoD item.*
+*Recorded 2026-08-01. Tests **1,065 → 1,070**; no migration; `ci.ps1` green. Closes the last red Phase-5 DoD item — after two live failures, each of which taught something the mocked suite structurally could not.*
 
 ### The live run happened, and it failed
 
@@ -2229,9 +2229,11 @@ The Phase-5 DoD's live smoke test ran for the first time against the real Batche
 Llm.Pricing:claude-haiku-4-5-20251001 is not configured.
 ```
 
-### finding 328 — an alias is resolved to a dated snapshot, and the response reports the snapshot
+### finding 328 — the response can report a DATED SNAPSHOT rather than the pinned alias
 
-The request was pinned to `claude-haiku-4-5`. The API served it as `claude-haiku-4-5-20251001` and said so. **The requested and the served model string are not the same string.**
+*(This heading originally read "an alias **is** resolved to a dated snapshot, and the response reports the snapshot." **CORRECTED before merge (finding 329)** — that generalised one observation into a rule, and the very next live call refuted it. See below.)*
+
+The request was pinned to `claude-haiku-4-5`. The API served it as `claude-haiku-4-5-20251001` and said so. **The requested and the served model string were not the same string.**
 
 That collided with two decisions, each correct in isolation:
 
@@ -2260,6 +2262,33 @@ This is the sharpest evidence in the corpus for §23.8's bet that a spec written
 
 The smoke test now asserts the served model **starts with** the requested alias, and **fails deliberately if the API ever returns the bare alias instead of a snapshot** — not because that would be broken, but because finding 328's premise would have changed and the corpus should notice rather than absorb it. The only place the real string is observable is the only place worth asserting it.
 
+### finding 329 — one live call was not enough, and the tier it used was the one the lab never calls
+
+The smoke test was written at 5.1 to use **the cheap tier**, with the stated reasoning that it *"proves the wire contract, not the model"*. That reasoning is fine as far as it goes. What it missed is which tier the lab actually runs:
+
+| task | pinned tier | dispatched by |
+|---|---|---|
+| `regime_brief` | **`claude-opus-5`** | `RegimeBriefStage` (Stage 3) |
+| `research_brief` | **`claude-opus-5`** | `ResearchJobExecutor` |
+| `skeptic` | **`claude-opus-5`** | `ResearchJobExecutor` |
+| `hypotheses` | **`claude-opus-5`** | `ResearchJobExecutor` |
+| `news_extraction` | `claude-haiku-4-5` | **nothing** — the D46 budget is deterministic C# |
+
+So the first live run verified the wire contract on **the only tier no code path calls**, and left the tier serving 100% of real traffic unverified. The smoke test is now a `Theory` over both pinned tiers.
+
+**The second tier immediately refuted finding 328's generalisation.** `claude-opus-5` reports **`claude-opus-5`** — the bare alias, no date. So the snapshot form is **per-family**, and neither form can be assumed:
+
+| pinned | reported |
+|---|---|
+| `claude-opus-5` | `claude-opus-5` |
+| `claude-haiku-4-5` | `claude-haiku-4-5-20251001` |
+
+**The fix survives this unchanged, and that is the point of having chosen it.** Exact-first-then-longest-prefix is correct under *both* forms: Opus hits the exact key, Haiku hits the prefix. A rule that had assumed the snapshot form — say, stripping a date suffix before lookup — would have been wrong half the time, and would have looked right for exactly as long as only Haiku was tested.
+
+**What generalised too fast was the write-up, not the code.** The fix was already form-agnostic; the finding text asserted a universal where there was one observation. Corrected above rather than quietly reworded, because the corpus's value comes from its claims being checkable.
+
+**A second Opus-specific hazard the Haiku call could not surface:** thinking is on by default and `max_tokens` caps thinking *and* response together, so a limit sized for the visible answer can be consumed entirely by thinking and return a well-formed, empty response. The smoke test now asserts a non-empty answer with a message naming that cause, and sizes Opus's limit at 2048 rather than 64.
+
 ### The re-run
 
-Green in **2m15s**: create → poll to `ended` → stream results → usage → cost. **INTEGRATIONS §5 is now live-confirmed rather than reference-checked**, and the last red Phase-5 DoD item is closed.
+Green on **both tiers** — create → poll to `ended` → stream results → usage → cost. **INTEGRATIONS §5 is now live-confirmed rather than reference-checked**, and the last red Phase-5 DoD item is closed.
