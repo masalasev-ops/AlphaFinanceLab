@@ -78,6 +78,50 @@ namespace AlphaLab.Data.Migrations
                     b.ToTable("allocation_log", (string)null);
                 });
 
+            modelBuilder.Entity("AlphaLab.Data.Entities.AnalysisCacheRow", b =>
+                {
+                    b.Property<string>("PromptHash")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("prompt_hash");
+
+                    b.Property<string>("Model")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("model");
+
+                    b.Property<string>("AsOf")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("as_of");
+
+                    b.Property<double?>("CostUsd")
+                        .HasColumnType("REAL")
+                        .HasColumnName("cost_usd");
+
+                    b.Property<int?>("InputTokens")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("input_tokens");
+
+                    b.Property<string>("OutputJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("output_json");
+
+                    b.Property<int?>("OutputTokens")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("output_tokens");
+
+                    b.Property<string>("Task")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("task");
+
+                    b.HasKey("PromptHash", "Model", "AsOf");
+
+                    b.ToTable("analysis_cache", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_analysis_cache_task", "task IN ('news_extraction', 'regime_brief', 'research_brief', 'skeptic', 'hypotheses')");
+                        });
+                });
+
             modelBuilder.Entity("AlphaLab.Data.Entities.ApiUsageLogRow", b =>
                 {
                     b.Property<string>("AsOf")
@@ -779,6 +823,81 @@ namespace AlphaLab.Data.Migrations
 
                             t.HasCheckConstraint("ck_journal_entries_outcome", "outcome IN ('confirmed','refuted','inconclusive')");
                         });
+                });
+
+            modelBuilder.Entity("AlphaLab.Data.Entities.LlmBudgetLogRow", b =>
+                {
+                    b.Property<string>("AsOf")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("as_of");
+
+                    b.Property<int>("Calls")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("calls");
+
+                    b.Property<double>("CostUsd")
+                        .HasColumnType("REAL")
+                        .HasColumnName("cost_usd");
+
+                    b.Property<int>("Degraded")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(0)
+                        .HasColumnName("degraded");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("note");
+
+                    b.Property<int>("Tokens")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("tokens");
+
+                    b.HasKey("AsOf");
+
+                    b.ToTable("llm_budget_log", (string)null);
+                });
+
+            modelBuilder.Entity("AlphaLab.Data.Entities.NewsItemRow", b =>
+                {
+                    b.Property<long>("NewsId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("news_id");
+
+                    b.Property<string>("AsOf")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("as_of");
+
+                    b.Property<string>("Source")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("source");
+
+                    b.Property<string>("SymbolsJson")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("symbols_json");
+
+                    b.Property<string>("Title")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("title");
+
+                    b.Property<string>("TitleHash")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("title_hash");
+
+                    b.Property<int?>("TruncatedChars")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("truncated_chars");
+
+                    b.HasKey("NewsId");
+
+                    b.HasIndex("AsOf", "TitleHash")
+                        .IsUnique()
+                        .HasDatabaseName("ux_news_items_as_of_title");
+
+                    b.ToTable("news_items", (string)null);
                 });
 
             modelBuilder.Entity("AlphaLab.Data.Entities.OverfittingCheckRow", b =>

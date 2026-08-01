@@ -380,27 +380,38 @@ CREATE TABLE news_items (                           -- post-budget only
   UNIQUE (as_of, title_hash)
 );
 
-CREATE TABLE analysis_cache (
+CREATE TABLE analysis_cache (                      -- BUILT at M7 (checkpoint 5.1)
   prompt_hash TEXT NOT NULL, model TEXT NOT NULL, as_of TEXT NOT NULL,
-  task TEXT NOT NULL,                              -- regime_brief|brief|skeptic|hypotheses
+  task TEXT NOT NULL CHECK (task IN                 -- CHECK added at M7 (finding 319)
+    ('news_extraction','regime_brief','research_brief','skeptic','hypotheses')),
   output_json TEXT NOT NULL,
   input_tokens INTEGER, output_tokens INTEGER, cost_usd REAL,
   PRIMARY KEY (prompt_hash, model, as_of)
 );
--- OPEN [finding 319, v1.9.60]: `task` enumerates its allowed values in a COMMENT but carries no CHECK,
--- unlike every other enumerated column in this schema (jobs.kind, journal_entries.kind, runs.run_kind,
--- ai_context_packs.seat, ...). Either it gains one at M7 - and then joins the finding-121 rule, so a later
--- value costs a migration - or the omission is deliberate and should say why. Decide at checkpoint 5.1,
--- when M7 creates the table; adding it later is a table rebuild.
+-- CLOSED [finding 319, at M7 / checkpoint 5.1]: `task` now carries the CHECK every other enumerated
+-- column in this schema has. It was free at CREATE TABLE and a table rebuild afterwards, which is why it
+-- landed WITH the table. It joins the finding-121 rule: a new value is a migration + a SCHEMA edit in the
+-- same PR. The constraint is generated from `AnalysisTaskNames.All`, so the DDL and the C# enum cannot
+-- drift, and BOTH halves are pinned by test (an unknown value rejected; all five admitted).
 --
--- OPEN [finding 317, v1.9.60]: THREE VOCABULARIES NAME ONE CONCEPT, and Phase 5 is the first code that
--- has to hold all three at once. `analysis_cache.task` = regime_brief|brief|skeptic|hypotheses;
--- `Llm.Tasks` (CONFIG_REFERENCE) = news_extraction|regime_brief|research_brief|skeptic;
--- `jobs.kind` = analysis_brief|analysis_skeptic|analysis_hypotheses. They overlap without matching:
--- `brief` vs `research_brief` vs `analysis_brief` are the same job under three names, `news_extraction`
--- exists only in config, and `hypotheses` only outside it. Not renamed here - a rename touches a CHECK
--- constraint, a config key and a cached row key at once, so it is a checkpoint-5.1 decision with a
--- migration, not a docs edit.
+-- CLOSED [finding 317, at M7 / checkpoint 5.1]: THREE VOCABULARIES BECAME TWO, at ZERO migration cost.
+-- The finding anticipated a rename touching a CHECK, a config key and a cached-row key at once. It did
+-- not, because `analysis_cache` DID NOT EXIST YET: its vocabulary was CHOSEN at CREATE TABLE rather than
+-- migrated. It adopts the `Llm.Tasks` config names verbatim (`brief` -> `research_brief`, plus
+-- `news_extraction`), because that is the vocabulary the code must already read per-task models from -
+-- aligning the other way would have meant a config-key rename, which is not free.
+-- `jobs.kind` IS DELIBERATELY UNCHANGED, and that is not a compromise: a JOB is not a TASK.
+-- `analysis_brief` names the queued unit of Worker work that produces a brief; `research_brief` names the
+-- model call inside it, and one job may make several. Two objects, two names, correctly - and collapsing
+-- them would have cost exactly the enum-CHECK migration the finding feared.
+--
+-- MODEL IS PART OF THE KEY, deliberately: a re-pinned tier (v1.9.60) MISSES rather than serving an answer
+-- the current model never produced. `prompt_hash` covers ALL THREE prompt layers, so a change to the
+-- static instructions, the lesson set or the day's fresh block all miss. `output_json` holds the RAW model
+-- output (D104 artefact (b)), verbatim, so a misparse stays detectable afterwards. `cost_usd` is REAL and
+-- not the D69 decimal->TEXT treatment because D69 governs LEDGER money and this is an operational spend
+-- metric; the arithmetic upstream is decimal so a day's calls do not accumulate float error, and only the
+-- persisted value is REAL.
 
 CREATE TABLE llm_budget_log (
   as_of TEXT PRIMARY KEY, calls INTEGER, tokens INTEGER, cost_usd REAL,

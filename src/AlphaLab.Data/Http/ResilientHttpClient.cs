@@ -69,12 +69,43 @@ public interface IResilientHttpClient
 }
 
 /// <summary>
+/// The authenticated request-shaped client: arbitrary method, per-request headers, a body.
+///
+/// **A SEPARATE interface rather than more members on <see cref="IResilientHttpClient"/>, deliberately.**
+/// Every provider before Phase 5 was a read-only GET against a URL that carried its own credential in the
+/// query string, and widening the shared contract to add POST broke three existing test stubs that had no
+/// reason to care — the interface would have grown a capability that all but one of its implementers must
+/// then either fake or throw on. Narrow interfaces keep the blast radius of a new capability at the one
+/// consumer that needs it.
+///
+/// **Retries a POST, and the safety argument is specific rather than general:** the two endpoints this
+/// serves are Anthropic batch-create and single-message, both safe to repeat — a duplicate batch costs a
+/// duplicate read the FR-21 cache then absorbs, whereas a lost batch is a no-read day. This is **not** a
+/// licence to retry any POST; a future non-idempotent endpoint needs its own path.
+/// </summary>
+public interface IResilientHttpSender : IResilientHttpClient
+{
+    /// <param name="headers">Per-request headers (the API key, the API version) — passed per request
+    /// rather than set on the shared <c>HttpClient</c>, because that client is also used by EODHD,
+    /// BlackRock and Wikipedia, none of which should ever see an Anthropic credential on the wire.</param>
+    Task<string> PostStringAsync(
+        string url, string body, string contentType, string source,
+        IReadOnlyDictionary<string, string>? headers = null, CancellationToken ct = default);
+
+    /// <summary>GET with per-request headers — the batch poll and results calls need the same auth as the
+    /// POST that created the batch.</summary>
+    Task<string> GetStringAsync(
+        string url, string source, IReadOnlyDictionary<string, string>? headers,
+        CancellationToken ct = default);
+}
+
+/// <summary>
 /// Hand-rolled resilient HTTP wrapper (no Polly — decision #2). 30s timeout, N retries with
 /// exponential backoff + jitter, and a consecutive-failure circuit breaker. The delay and jitter
 /// sources are injectable so unit tests are deterministic and never actually sleep. Single-threaded
 /// per provider during backfill, so the failure counter needs no locking.
 /// </summary>
-public sealed class ResilientHttpClient : IResilientHttpClient
+public sealed class ResilientHttpClient : IResilientHttpSender
 {
     private readonly HttpClient _http;
     private readonly ResilientHttpOptions _opts;
@@ -106,7 +137,38 @@ public sealed class ResilientHttpClient : IResilientHttpClient
         _jitter = jitter ?? Random.Shared.NextDouble;
     }
 
-    public async Task<string> GetStringAsync(string url, string source, CancellationToken ct = default)
+    public Task<string> GetStringAsync(string url, string source, CancellationToken ct = default)
+        => GetStringAsync(url, source, headers: null, ct);
+
+    public Task<string> GetStringAsync(
+        string url, string source, IReadOnlyDictionary<string, string>? headers, CancellationToken ct = default)
+        => SendAsync(() => Build(HttpMethod.Get, url, headers, body: null, contentType: null), url, source, ct);
+
+    public Task<string> PostStringAsync(
+        string url, string body, string contentType, string source,
+        IReadOnlyDictionary<string, string>? headers = null, CancellationToken ct = default)
+        => SendAsync(() => Build(HttpMethod.Post, url, headers, body, contentType), url, source, ct);
+
+    /// <summary>Builds a FRESH request per attempt — an <see cref="HttpRequestMessage"/> cannot be sent
+    /// twice, so the retry loop takes a factory rather than an instance.</summary>
+    private static HttpRequestMessage Build(
+        HttpMethod method, string url, IReadOnlyDictionary<string, string>? headers,
+        string? body, string? contentType)
+    {
+        var req = new HttpRequestMessage(method, url);
+        if (body is not null)
+        {
+            req.Content = new StringContent(body, System.Text.Encoding.UTF8, contentType ?? "application/json");
+        }
+        if (headers is not null)
+        {
+            foreach (var (k, v) in headers) req.Headers.TryAddWithoutValidation(k, v);
+        }
+        return req;
+    }
+
+    private async Task<string> SendAsync(
+        Func<HttpRequestMessage> request, string url, string source, CancellationToken ct)
     {
         if (_consecutiveFailures >= _opts.CircuitBreakThreshold)
         {
@@ -118,7 +180,8 @@ public sealed class ResilientHttpClient : IResilientHttpClient
         {
             try
             {
-                using var resp = await _http.GetAsync(url, ct).ConfigureAwait(false);
+                using var req = request();
+                using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
                 resp.EnsureSuccessStatusCode();
                 var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
                 _consecutiveFailures = 0; // success resets the breaker

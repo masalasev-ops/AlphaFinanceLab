@@ -85,12 +85,24 @@ public sealed class ScratchStore : IDisposable
     /// PREVENTS it, and prevention is the better place for a leak that would otherwise be found only
     /// after a reproduction had already been trusted. Arrival (b) is likely the earlier of the two:
     /// Phase 5 precedes the sp100→sp500 widen that arrival (a) is itself gated on (finding 291).</summary>
+    /// LLM TABLES (analysis_cache, llm_budget_log, news_items — D16/D24/D46, M7): untouched, and the
+    /// reason is the D105 obligation rather than convenience. `reproduce-day` must make **zero** model
+    /// calls; carrying `analysis_cache` across means a reproduced day finds its own cached answer and
+    /// spends nothing, which is precisely the guarantee. REWINDING IT WOULD DO THE OPPOSITE — it would
+    /// delete the cached row and hand a reproduction the choice between calling the model (forbidden) and
+    /// having no answer at all. `llm_budget_log` follows it: a reproduction that re-spent budget it never
+    /// really spent would corrupt the D24 ledger for the live day. `news_items` is post-budget evidence of
+    /// what the model was shown, so it is carried for the same reason `bars` is.
+    /// **TRIGGER:** if a future checkpoint ever makes a daily run WRITE these on the reproduce path (it
+    /// does not today — Stage 3 is post-commit and forward-only), this classification must be revisited
+    /// with `FX-ReproduceDay-AiSession` as the arbiter.
     private static readonly string[] Untouched =
     [
         "config", "jobs", "securities", "ticker_history", "sector_changes", "bars",
         "corporate_actions", "index_membership_log", "index_membership", "trading_calendar",
         "api_usage_log", "strategies", "accounts", "control_populations", "trials_registry",
         "journal_entries", "replay_regime_outcomes", "signals", "signal_ic",
+        "analysis_cache", "llm_budget_log", "news_items",
     ];
 
     /// <summary>Handled by dedicated logic rather than a date filter: `positions` is restored from the
