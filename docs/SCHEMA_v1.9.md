@@ -509,6 +509,17 @@ CREATE TABLE journal_entries (                     -- D52
 -- RULE (D110, v1.9.57): prior_prob and detectability_floor_ann are ADDITIVE and NULLABLE, and are
 -- BUILT AT PHASE 5 CHECKPOINT 5.7 beside the hypotheses endpoint that writes them - recorded here
 -- ahead of the migration exactly as expected_effect_ann (D89) was recorded before M5 built it.
+-- LANDED at M10 (Phase5ProposalInputs, checkpoint 5.7, v1.9.67). Two ALTER TABLE ADD COLUMNs - genuinely
+-- additive, so the rule-14 rebuild trap that bit M9 does not arise on the Up. The DOWN is hand-edited to
+-- raw ALTER TABLE DROP COLUMN for exactly that reason: EF turns DropColumn into a rebuild, and a rollback
+-- that quietly reshapes the table leaves a schema no forward migration produced.
+--
+-- WHO WRITES WHICH, and the ordering that makes the amendment real:
+--   * the seat's executor stamps BOTH at ASSESSMENT, on the unlocked draft, once per job run for both
+--     D113 arms (one floor read, so the pair is comparable by construction);
+--   * CandidateFactory stamps detectability_floor_ann at admission ONLY IF it is still NULL - i.e. for an
+--     operator-authored hypothesis that never passed through the seat. Overwriting a stamped value would
+--     silently restore the admission-time reading D113 replaced.
 -- RULE (D52): a locked hypothesis row is immutable except via the outcome-closure
 -- flow. CandidateFactory requires a linked hypothesis OR an 'unregistered' marker
 -- in strategies.config_json (rendered permanently on the strategy card).
@@ -591,6 +602,18 @@ CREATE TABLE jobs (                                -- async-command queue (API e
   result_ref   TEXT,                               -- e.g. 'runs:812' / 'journal_entries:44'
   error_json   TEXT
 );
+-- 'analysis_hypotheses' REACHED THE DATABASE at M9 (Phase5HypothesesJobKind, checkpoint 5.6). It had been
+-- documented here since v1.9.21 and absent from the store until then, which is finding 121's rule working
+-- as intended: an enum CHECK extends only by migration.
+--
+-- M9 IS THE FIRST REBUILD IN THE CORPUS, and it is hand-written SQL rather than EF's
+-- DropCheckConstraint/AddCheckConstraint pair. SQLite cannot ALTER a CHECK, so EF generates a whole-table
+-- rebuild whose regenerated DDL RE-ADDS the AUTOINCREMENT that rule 14's InitialCreate hand-edit stripped.
+-- That was observed, not anticipated: the scaffolded migration was written and both
+-- Schema_IntegerPrimaryKeys_HaveNoAutoincrement and the M6 closure guard failed on it. Same defect, same
+-- fix and same reason as `corporate_actions.processed_on` at M5 (D94). A rebuild also has a failure mode an
+-- additive migration cannot have - it can lose rows - so Phase5JobKindMigrationTests asserts a queued job
+-- survives the rebuild, which is the case where loss would be silent: the API already returned 202.
 
 CREATE TABLE worker_state (                        -- single row, seeded by Phase 0's InitialCreate
   id              INTEGER PRIMARY KEY CHECK (id = 1),

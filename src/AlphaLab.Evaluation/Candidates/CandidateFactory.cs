@@ -111,7 +111,17 @@ public sealed class CandidateFactory(AlphaLabDbContext db, AlphaLab.Core.Config.
         // unassessed. Admission-only — a live strategy is never re-gated (rule 8).
         if (gate is not null && hypothesis?.ExpectedEffectAnn is { } expectedEffectAnn)
         {
-            new DetectabilityGate(db, gate).Assess(expectedEffectAnn);
+            var verdict = new DetectabilityGate(db, gate).Assess(expectedEffectAnn);
+
+            // D110 as amended by D113: the floor the gate computes was previously DISCARDED, which is
+            // what left the margin channel with no first link. Stamped here ONLY IF the row does not
+            // already carry one — a seat-authored proposal was stamped at ASSESSMENT, and overwriting it
+            // at admission would silently restore the very admission-time reading D113 replaced (and
+            // would make a real proposal incomparable with its paper control, which never gets here).
+            if (hypothesis.DetectabilityFloorAnn is null && verdict.Details is { } d)
+            {
+                hypothesis.DetectabilityFloorAnn = d.FloorAnn;
+            }
         }
 
         var configJson = unregistered ? WithUnregisteredMarker(spec.ConfigJson) : spec.ConfigJson;

@@ -187,6 +187,22 @@ public sealed class JournalEntryRow
     /// effect the FR-40 detectability-at-admission gate reads. NULL on non-hypothesis kinds and on
     /// hypotheses locked before M5. REAL.</summary>
     public double? ExpectedEffectAnn { get; set; }
+
+    /// <summary>D110 (M10): the researcher's pre-registered P(confirmed), strictly in (0,1) — the
+    /// calibration-skill channel's input. NULL is legitimate on an OPERATOR-authored hypothesis (a human
+    /// is not being graded on calibration) and refused on a researcher proposal. REAL.</summary>
+    public double? PriorProb { get; set; }
+
+    /// <summary>
+    /// D110 as amended by D113 (M10): the arena's detectability floor **as at ASSESSMENT**, stamped when
+    /// the score is formed — NOT at admission.
+    ///
+    /// The amendment is what makes the D113 paper control scorable at all: a control proposal never
+    /// reaches admission, so an admission-time reading would leave it permanently unscorable. It also
+    /// makes the two arms comparable, which admission-time capture could not — a real proposal is admitted
+    /// only after the operator locks it, by which time other admissions may have moved the floor. REAL.
+    /// </summary>
+    public double? DetectabilityFloorAnn { get; set; }
 }
 
 /// <summary>

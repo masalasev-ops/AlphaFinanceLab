@@ -58,6 +58,14 @@ public sealed class ScratchStore : IDisposable
         "trades", "cash_events", "equity_curve", "decisions", "capacity_rejections",
         "position_snapshots", "control_equity", "power_reports", "go_live_log",
         "allocation_log", "overfitting_checks", "overfitting_status",
+        // signal_ic MOVED HERE from Untouched at checkpoint 5.4 — ARRIVAL (b) of the two-arrival trigger
+        // recorded at the Untouched classification below. The Phase-5 digest wires a signal grade into a
+        // CONTEXT PACK, so without the rewind a reproduced session's pack would contain a grade THAT
+        // SESSION ITSELF PRODUCED — a D104 leak. FX-PackNoLeak would catch it; the rewind PREVENTS it, and
+        // prevention is the better place for a leak that would otherwise be found only after a
+        // reproduction had already been trusted. (Arrival (a) — forward daily grading — has NOT happened;
+        // it stays gated on the sp100→sp500 widen, finding 291.)
+        "signal_ic",
     ];
 
     /// <summary>Tables carried across unchanged, each for a stated reason: watermark-resolved
@@ -96,13 +104,23 @@ public sealed class ScratchStore : IDisposable
     /// **TRIGGER:** if a future checkpoint ever makes a daily run WRITE these on the reproduce path (it
     /// does not today — Stage 3 is post-commit and forward-only), this classification must be revisited
     /// with `FX-ReproduceDay-AiSession` as the arbiter.
+    ///
+    /// AI-SEAT TABLES (ai_context_packs, ai_decisions — D80/D81, M8): untouched, and `ai_decisions` is the
+    /// load-bearing one. D105 requires reproduce-day to REPLAY the stored decision and make ZERO model
+    /// calls; rewinding the table would delete the very row the replay depends on, forcing the choice
+    /// between calling the model (forbidden) and having no answer at all. `ai_context_packs` follows it so
+    /// a reproduction can verify the replayed decision against the exact pack it was made on
+    /// (`pack_hash`), which is what D104 artefact (a) exists for. Note the CONTRAST with signal_ic above:
+    /// a grade is an INPUT a reproduced session would otherwise re-produce, so it is rewound; a decision
+    /// is a RECORD the reproduction must consume, so it is carried.
     private static readonly string[] Untouched =
     [
         "config", "jobs", "securities", "ticker_history", "sector_changes", "bars",
         "corporate_actions", "index_membership_log", "index_membership", "trading_calendar",
         "api_usage_log", "strategies", "accounts", "control_populations", "trials_registry",
-        "journal_entries", "replay_regime_outcomes", "signals", "signal_ic",
+        "journal_entries", "replay_regime_outcomes", "signals",
         "analysis_cache", "llm_budget_log", "news_items",
+        "ai_context_packs", "ai_decisions",
     ];
 
     /// <summary>Handled by dedicated logic rather than a date filter: `positions` is restored from the

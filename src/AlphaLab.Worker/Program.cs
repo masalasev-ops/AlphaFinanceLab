@@ -68,6 +68,11 @@ builder.Logging.AddSimpleConsole(o =>
 // membership graph, Stage 1 and the orchestrator. Shared with `reproduce-day` (v1.9.37) so a past
 // session is re-run through THIS graph, not a hand-assembled lookalike that could drift from it.
 builder.Services.AddDailyPipelineCore(builder.Configuration, arena, connectionString, ensureDirectory: true);
+// Stage 3 (D53/FR-21): the FORWARD host is the ONLY composition that registers a model provider.
+// ReplayRunner and ReproduceDay call AddDailyPipelineCore and deliberately do NOT call this — a replay
+// or reproduction therefore cannot reach a model, by absence rather than by a guard
+// (FR21_Replay_HasNoAnalysisPath, FX-ReproduceDay-AiSession).
+builder.Services.AddForwardLlmStage(builder.Configuration);
 
 // EODHD provider (finding D — the Worker needs its OWN Eodhd section; CONFIG previously scoped it to
 // the Backfill CLI). The token is read DEFENSIVELY (hard rule 11 — the gitignored Secrets file only):
@@ -111,6 +116,17 @@ builder.Services.AddSingleton<LocalBackup>();
 // (briefs/skeptic) still arrive with Phase 5.
 builder.Services.AddSingleton<IJobExecutor>(sp => new ReplayJobExecutor(
     builder.Configuration, arena, connectionString, sp.GetRequiredService<ILoggerFactory>()));
+// Phase 5: the researcher seat's three kinds (FR-23/D82). One executor instance per kind — the JobDrainer
+// keys its registry by kind, so registering one class three times is what makes the drain table-driven
+// rather than a switch that a fourth kind would have to be remembered into.
+foreach (var analysisKind in ResearchJobExecutor.Kinds)
+{
+    var k = analysisKind;
+    builder.Services.AddSingleton<IJobExecutor>(sp => new ResearchJobExecutor(
+        k,
+        sp.GetRequiredService<IServiceScopeFactory>(),
+        sp.GetRequiredService<ILogger<ResearchJobExecutor>>()));
+}
 builder.Services.AddHostedService<HeartbeatService>();
 
 // Schema application + WAL runs in BOTH modes and MUST be registered first (StartAsync runs in

@@ -163,6 +163,25 @@ public sealed record NewsArticle(
     IReadOnlyList<string> Symbols,
     IReadOnlyList<string> Tags);
 
+/// <summary>One article that survived the D46 budget, with the dedupe key it was admitted under and how
+/// many characters truncation removed (0 when it fitted).</summary>
+public sealed record AdmittedArticle(NewsArticle Article, string TitleHash, int TruncatedChars);
+
+/// <summary>
+/// Persistence port for the articles that survived the budget (<c>news_items</c>).
+///
+/// In Core, not beside the budget that produces the rows nor beside the store that writes them, because
+/// the `ci.ps1` reference graph makes AlphaLab.Llm and AlphaLab.Data siblings — **neither may reference
+/// the other**, so a contract they share has exactly one legal home. Same shape as
+/// <see cref="IAnalysisCache"/>.
+/// </summary>
+public interface IAdmittedNewsStore
+{
+    /// <summary>Persist the day's admitted articles. Idempotent: re-running a day must not duplicate, and
+    /// the <c>ux_news_items_as_of_title</c> unique index makes that structural rather than trusted.</summary>
+    Task SaveAsync(string asOf, IReadOnlyList<AdmittedArticle> admitted, CancellationToken ct = default);
+}
+
 /// <summary>
 /// The news seam (FR-22). **The D46 budget is enforced HERE, before any token is spent** (rule 13) —
 /// relevance filter → title-hash dedupe → 25-article cap → 2,000-char truncation. Implemented at

@@ -348,6 +348,16 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
                                                    // tokens - and the exception is exactly what v1.9.60 did: a per-task
                                                    // tier change moves the tokens-per-dollar ratio, so a cost ceiling alone
                                                    // silently changes how much the lab reads whenever a model is re-pinned.
+                                                   // TWO PROCESSES READ DailyBudget (v1.9.66, checkpoint 5.6). The Worker
+                                                   // enforces it when it spends; the Api reads it to answer an FR-23 command
+                                                   // with 503 when the day is already spent (rule 13: before any token). It is
+                                                   // therefore committed in BOTH src/AlphaLab.Worker/appsettings.json and
+                                                   // src/AlphaLab.Api/appsettings.json, and
+                                                   // ConfigConsistencyTests.Config_LlmDailyBudget_AgreesAcrossProcesses holds
+                                                   // them equal - a divergence would have the Api accept a command the Worker
+                                                   // then refuses to run, i.e. a queued job failing for a reason the caller was
+                                                   // told did not apply. The Api reads NOTHING else under Llm: it binds no
+                                                   // provider and, under the ci.ps1 reference graph, could not.
     "DegradationOrder": ["held_positions", "cached", "neutral_fallback"],
     "ScopeLevel": 1                               // 1 market-read; 2 shortlist(<=20); 3 unreachable
   },
@@ -372,12 +382,26 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
       "Model": "llm-b",                            // may differ from the contestant's; a frozen param
       "MonthlyBudgetUsd": 5.0                       // on exhaustion the researcher job simply queues
     }
-  },                                               // NOTE: per-strategy frozen params (prompt hash, model id, shortlist size, memory option + rule R, the no-LLM twin's scoring rule — D85) live in strategies.config_json, NOT here (key rule 1). The twin's scoring rule is a FIXED FORM (equal-weight z-score blend of the pack features), not a tunable key; its feature set follows Ai.PackRecipeVersion, so a recipe change forks like any frozen-policy change.
+  },                                               // BOUND at checkpoint 5.7 (v1.9.67) as AiOptions, by AddForwardLlmStage ONLY - the replay and reproduce compositions must stay provably seat-free, and binding this in the pipeline CORE would have made "no seat" a runtime fact instead of a structural one. Ai.Researcher.MonthlyBudgetUsd is read as a PAIR headroom check (D113): both arms propose or neither does, because exhaustion between them would emit an unpaired observation into the margin series. Per-seat spend is attributed from analysis_cache (task + cost per call), NOT from llm_budget_log, which is one row per DAY across every seat and so cannot answer a per-seat question
+                                                   // NOTE: per-strategy frozen params (prompt hash, model id, shortlist size, memory option + rule R, the no-LLM twin's scoring rule — D85) live in strategies.config_json, NOT here (key rule 1). The twin's scoring rule is a FIXED FORM (equal-weight z-score blend of the pack features), not a tunable key; its feature set follows Ai.PackRecipeVersion, so a recipe change forks like any frozen-policy change.
 
-  "Research": {                                    // D82 — the trials budget that rations self-improvement's deflated-Sharpe spend (S2)
+  "Research": {                                    // COMMITTED IN src/AlphaLab.Api/appsettings.json ONLY (v1.9.67): the consuming phase owns the bind (finding F), and both consumers - the D112 gate and the budget surfaced with a 202 - are endpoint-side. The Worker reads Ai.*, never Research.*
+                                                   // D82 — the trials budget that rations self-improvement's deflated-Sharpe spend (S2)
     "ForkBudgetPerYear": 6,                        // fork cadence; surfaced beside the trials count in the research UI
-    "MaxConcurrentCandidates": 3                   // matches the "1 Live + 2-3 Candidates" roster shape (§8)
+    "MaxConcurrentCandidates": 3                   // matches the "1 Live + 2-3 Candidates" roster shape (§8); ALSO the D112 evidence-diet bound (v1.9.66) — see below
   },
+```
+
+**`Research.MaxConcurrentCandidates` carries a second job (D112, v1.9.66).** It is also the bound the
+evidence diet measures overdue journal outcomes against: at or above it, `POST /api/v1/analysis/hypotheses`
+refuses with `evidence_diet_refused` and the refusal is counted. It was chosen for that job precisely
+because it is DERIVED where `ForkBudgetPerYear` is not (finding 309): §8 states the roster shape is
+*"bounded by statistical honesty, not compute"*, which makes this the count of claims the lab can honestly
+hold in flight — the right quantity to measure a saturated evidence base against. The rejected alternative
+was a new `Research.OutcomeOverdueGraceDays` key, an undefended number of exactly the class finding 309
+flagged, governing whether the researcher can propose at all.
+
+```json
 
 ```
 

@@ -95,9 +95,10 @@ public class SchemaStartupTests
             // power_reports, go_live_log, allocation_log, overfitting_checks, overfitting_status,
             // journal_entries + the Phase-3.5 D90 position_snapshots(1) + the Phase-4 M5
             // replay_regime_outcomes(1) + the Phase-4.5 M6 Signal Library(2): signals + signal_ic
-            // + the Phase-5 M7 LLM tables(3): analysis_cache, llm_budget_log, news_items.
+            // + the Phase-5 M7 LLM tables(3): analysis_cache, llm_budget_log, news_items
+            // + the Phase-5 M8 AI-seat tables(2): ai_context_packs, ai_decisions.
             var tables = await UserTablesAsync(dbPath);
-            Assert.Equal(41, tables.Count);
+            Assert.Equal(43, tables.Count);
             Assert.Contains("trades", tables);
             Assert.Contains("equity_curve", tables);
             Assert.Contains("regime_labels", tables);
@@ -110,6 +111,8 @@ public class SchemaStartupTests
             Assert.Contains("analysis_cache", tables);
             Assert.Contains("llm_budget_log", tables);
             Assert.Contains("news_items", tables);
+            Assert.Contains("ai_context_packs", tables);
+            Assert.Contains("ai_decisions", tables);
         }
         finally { TryDelete(dbPath); }
     }

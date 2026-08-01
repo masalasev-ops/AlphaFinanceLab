@@ -130,7 +130,11 @@ public class SchemaFidelityTests
             // ledger) and news_items (POST-BUDGET articles only, D46) = 41. None carries run_kind either,
             // and for a stronger reason than the Signal Library's: the LLM path is FORWARD-ONLY by
             // construction (D16) — the replay composition root registers no IAnalysisProvider at all, so
-            // a replay row cannot exist to need distinguishing (FR21_Replay_HasNoAnalysisPath).
+            // a replay row cannot exist to need distinguishing (FR21_Replay_HasNoAnalysisPath). Plus the
+            // Phase-5 M8 AI-seat tables(2): ai_context_packs (exactly what a seat was shown, D80) and
+            // ai_decisions (the persisted output IS the decision, D81) = 43. Both append-only and off the
+            // statistical hot path — no column in either feeds any metric, verdict, threshold or
+            // population (golden rule 32).
             //
             // STILL deliberately absent, and each for its own reason — this list is the guard
             // against a table appearing before the phase that earns it:
@@ -142,13 +146,13 @@ public class SchemaFidelityTests
             //   • trade_evidence                        — Phase 6 (the D44 trade-level track)
             //   • parameter_scans / feature_baselines   — later monitor signals (S4/S5), not S2/S3/S6
             //   • factor_returns / factor_refresh_log   — Phase 6 (French RF ingestion)
-            //   • ai_context_packs / ai_decisions       — Phase 5 checkpoint 5.4/5.5 (D80/D81), not 5.1
             //   • admin_actions                         — Phase 7 (the D55 admin commands)
             // The ux_runs_ok_forward partial index lands in checkpoint 2.10 (M3), where Stage 2
             // first writes runs.
             Assert.Equal(new[]
             {
-                "accounts", "allocation_log", "analysis_cache", "api_usage_log", "bars",
+                "accounts", "ai_context_packs", "ai_decisions", "allocation_log", "analysis_cache",
+                "api_usage_log", "bars",
                 "capacity_rejections", "cash_events", "catchup_log", "config", "control_equity",
                 "control_populations", "corporate_actions", "data_quality_flags", "decisions",
                 "equity_curve", "go_live_log", "index_membership", "index_membership_log", "jobs",

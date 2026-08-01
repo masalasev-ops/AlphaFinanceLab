@@ -46,7 +46,10 @@ public sealed class ConfigRow
 public sealed class JobRow
 {
     public long JobId { get; set; }
-    /// <summary>CHECK IN ('replay','analysis_brief','analysis_skeptic').</summary>
+    /// <summary>CHECK IN ('replay','analysis_brief','analysis_skeptic','analysis_hypotheses') — the last
+    /// added at M9 (D82 §23.4). A JOB is not a TASK: `analysis_brief` names the queued unit of Worker work
+    /// that produces a brief, while `research_brief` (AnalysisTask) names the model call inside it, and one
+    /// job may make several. Two objects, two vocabularies, correctly (finding 317).</summary>
     public string Kind { get; set; } = default!;
     /// <summary>CHECK IN ('queued','running','done','failed') — DEFAULT 'queued'.</summary>
     public string Status { get; set; } = "queued";

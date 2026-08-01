@@ -1929,3 +1929,288 @@ Added with `[Trait("Category","LiveSmoke")]` and **excluded from both CI legs** 
 It **fails with an actionable message** when no key is configured. The first draft skipped, so a keyless developer would see no red — but that reasoning does not survive the gating: the test never runs unless someone explicitly asks for it, and someone who asks for a live smoke test and has no key is better served by being told than by a green tick over a test that did nothing.
 
 **Still owed:** the INTEGRATIONS §5 `⚠VERIFY` was closed at v1.9.60 against the *published reference*. The live confirmation is owed until the test is actually run, which is a 5.8 gate item — its existence does not discharge it.
+
+---
+
+## v1.9.62 — Phase 5 checkpoint 5.2: the D46 news budget (FR-22)
+
+*Recorded 2026-08-01 on `feat/phase5.2-news-budget`. Tests **973 → 987**; no migration (M7 already created `news_items`); `ci.ps1` green.*
+
+### The budget is a decorator, and that is the whole design
+
+`EodhdNewsProvider` (Data) fetches; `BudgetedNewsProvider` (Llm) wraps it and enforces D46. **If the enforcement lived inside the fetcher, any future caller that reached for the raw feed would get an unbudgeted read and nothing would fail** — the cost would surface on the bill rather than in a test. As a decorator over the Core interface, the only thing composition can hand out is the budgeted one.
+
+### The step order is the contract
+
+Relevance filter → title-hash dedupe → 25-article cap → 2,000-char truncation. **Dedupe before the cap is the ordering that matters**: a wire story syndicated thirty times would otherwise consume the entire day's allowance. `Dedupe_RunsBeforeTheCap_SoOneSyndicatedStoryCannotEatTheAllowance` pins it with the two orderings' outcomes on identical input — 6 admitted versus 1.
+
+Truncation runs last because it only affects admitted articles, and the title hash normalises case and whitespace because syndicated copies differ in those far more often than in wording.
+
+### Two rails worth naming
+
+- **`sentiment` is deliberately ignored.** EODHD returns it inline and free, and the retired machine-readable sentiment score (D46 amended by D79–D82, golden rule 28) is exactly what reading it back would resurrect — invisibly, because the field is already there. `NewsArticle` has no sentiment member, so the exclusion is structural, and the test asserts the absence by reflection rather than trusting the parser.
+- **An empty universe admits nothing on the symbol arm** (rule 10). An unresolved universe must not silently widen the read to whatever the feed happened to return.
+
+### The reference graph, again
+
+`AdmittedArticle` and `IAdmittedNewsStore` were first written in `AlphaLab.Llm` — where the budget that produces them lives — and `AlphaLab.Data` cannot reference that project. Both moved to Core. **This is the third time in two checkpoints that the graph decided where a type lives** (after `IAnalysisProvider` at 5.1 and `IModelTransport`'s existence at all): AlphaLab.Llm and AlphaLab.Data are siblings, so anything they share has exactly one legal home.
+
+### `news_items` records what the budget ADMITTED
+
+Not what the feed returned — that question is answerable from the raw cache if it is ever asked. `truncated_chars` is persisted per article so the budget's effect on what the model saw is measurable rather than assumed: a read that admitted 25 of 25 and one that admitted 25 of 800 are very different days, and only the counts distinguish them.
+
+---
+
+## v1.9.63 — Phase 5 checkpoint 5.3: Stage 3 of the D53 pipeline (FR-29)
+
+*Recorded 2026-08-01 on `feat/phase5.2-news-budget` (5.2 and 5.3 share a branch). Tests **987 → 994**; no migration; `ci.ps1` green.*
+
+### The post-commit boundary, and what it buys
+
+`IPostCommitStage` + `RegimeBriefStage`: the batch is submitted **after** the Stage-2 commit, in its own transaction.
+
+**Why the boundary exists at all.** The invariant is one atomic write transaction per trading day (golden rule 16). If the LLM stage ran inside it, a slow or failed model call would roll back a day's committed trades — the arena's state would become hostage to a vendor's latency. Post-commit inverts that: a late or failed batch is a **no-read day and nothing else**, and forward-only (D16) is what makes that safe rather than merely tolerable, since the read would only ever have informed *subsequent* days.
+
+The corollary is recorded on the interface for future implementers: **Stage 3 must never write anything Stage 2 reads.** If it did, "its own transaction" would be a fiction.
+
+### It runs AFTER `run_in_progress` clears — a deliberate ordering
+
+The 21-day evaluation runs *before* the flag clears, so the API's 409 liveness guard stays live through its writes. Stage 3 is the opposite: **a batch may legitimately take up to 24 hours**, and holding `run_in_progress` for that would turn rule 19's liveness guard into a lock that 409s every operator command for the duration. It is safe there because Stage 3 writes only `analysis_cache` / `llm_budget_log` / `news_items` — tables no command races and Stage 2 never reads.
+
+### Structural absence, not a flag
+
+`AddDailyPipelineCore` registers **no** model provider; only `AddForwardLlmStage` does, and only `Program.cs` calls it. `ReplayRunner` and `ReproduceDay` share the core composition and never call it, so a replay or reproduction cannot reach a model **by absence**.
+
+`FR21_Replay_HasNoAnalysisPath` therefore asserts the **service collection**, not runtime behaviour: a guard can be bypassed by a future caller, a missing registration cannot. Its **positive half** ships alongside — without it the test would pass on a build where the LLM was never wired anywhere at all, which is a green test proving nothing.
+
+A `try/catch` around the Stage-3 call is the structural guarantee that a vendor failure never turns a committed day into a failed one, independent of any implementation's own error handling.
+
+### Two smaller rails
+
+- **An empty admitted-news set skips the call**: spending tokens to be told there was nothing to read is the one outcome that costs money and buys nothing.
+- **The L1 lesson-set layer is present but empty.** Memory Option A makes it part of the frozen policy (D81 rule 5) and no seat is registered yet — but the layer exists now so the cache boundary is already in its final position. Moving it later would invalidate every cached prefix, which is the single edit this layering exists to avoid.
+
+---
+
+## v1.9.65 — Phase 5 checkpoint 5.5: the persist-before-use seam and rule 32 made structural (D81/D104/D105)
+
+*Recorded 2026-08-01. Tests **1,010 → 1,020**; no migration (M8 created both tables); `ci.ps1` green.*
+
+### All four artefacts, and the one that gets dropped
+
+`AiDecisionRecord` carries (a) the pack hash, (b) the raw output, (c) **what the funnel actually did with the decision**, and (d) the model, prompt version and effort/thinking configuration.
+
+**(c) is the artefact most easily lost**, and the reason is worth restating where the code lives: (a) and (b) together prove what was *asked* and *answered*, and neither shows what the arena *did*. A guardrail rejection, a sizing clamp or a cash constraint sitting between the decision and the fill is exactly the gap — without (c), a correct decision and a correct log can coexist with a wrong trade and nothing in the record would show it.
+
+**On (d):** the field is named `sampling_json` for what the pinned tier actually HAS. It accepts no `temperature`/`top_p`/`top_k`, so what there is to persist is the effort and thinking configuration. Recording a "sampling parameters" field that is always empty would satisfy the letter of the artefact while recording nothing.
+
+### Append-only is the reproducibility mechanism, not a storage preference
+
+If a later call could overwrite a stored decision, *"the persisted output is the decision"* would hold only until something called again — and `reproduce-day` would be replaying whichever call happened last, not the one the day actually traded on. `PersistAsync` returns the stored row on a second write; `RecordAppliedAsync` writes (c) once, because a second application would mean the decision was consumed twice, which is itself the defect.
+
+### Rule 32 is now structural — the second such guard in the repo
+
+Until this checkpoint rule 32 was **prose only**. The Signal Library's descriptive-only boundary (v1.9.52) was the first structural enforcement of a "never an input to X" rule; this is the second, and it guards the corollary §23.8.4 states: the AI-seat artefacts are read *by humans, and by nothing that judges AI output*.
+
+`Rule32GuardTests` is an **assembly-scoped, default-deny reflection closure** with the AI namespace excluded — deliberately not a list of judging namespaces, for the reason `DescriptiveOnlyGuardTests` gives: a namespace enumeration fails by OMISSION at exactly the edit that should have triggered it.
+
+§23.8.4 names the hazard precisely — *"a debugging surface is exactly the sort of thing that erodes it by convenience"* — and that is what the guard is for: someone wires a prior decision into a pack "just to see", and AI output becomes an input to the thing that prices AI output, with nothing failing.
+
+**The guard is PROVEN TO FIRE.** A deliberate violation lives in the test assembly (never the product one) and a second test asserts the closure catches it. That is D109's discipline applied here, and finding 310's lesson: a check nobody proved fires is worth little, and the one that broke on its first real use had never been exercised.
+
+### The reproduce-day guarantee is compositional
+
+`FX-ReproduceDay-AiSession` asserts the scratch graph has **no provider to call** rather than counting calls at runtime — a call counter proves what one run did; an absent registration proves what no run can do.
+
+Its other half asserts the `ScratchStore` **choice**, read by reflection off the real lists rather than a copy: `ai_decisions` and `ai_context_packs` are untouched while `signal_ic` is not. That contrast is the whole classification argument in one assertion — **a grade is an INPUT a reproduced session would re-produce, so it is rewound; a decision is a RECORD the reproduction must consume, so it is carried.**
+
+
+---
+
+## v1.9.66 — Phase 5 checkpoint 5.6: the researcher seat and the D112 evidence diet (D82/FR-23; M9; finding 324)
+
+*Recorded 2026-08-01. Tests **1,020 → 1,035**; migration **M9** (`Phase5HypothesesJobKind`); `ci.ps1` green.*
+
+### The seat is two halves, and each is blind to the other's failure
+
+The API validates and enqueues; the Worker executes and writes. `AnalysisEndpointsTests` asserts the **contract** — which status code, which envelope, whether the write side stayed empty — and `ResearchJobExecutorTests` asserts the **outcome**, that a proposal lands as an unlocked journal entry and nothing else moved. Neither can see what the other checks, which is why both exist rather than one integration test spanning both.
+
+The Api enqueues rather than executes for two independent reasons that happen to agree: rule 19 forbids long work on a request thread, and the `ci.ps1` reference graph forbids `AlphaLab.Api` referencing `AlphaLab.Llm` at all. The policy and the layering pointing the same way is a good sign, not a coincidence.
+
+### The rail order on `POST /analysis/hypotheses`, and why 503 sits where it does
+
+`409` (a run is live) → `422` (no parent evidence) → `503` (the day's budget is spent) → `422` (the D112 evidence diet).
+
+The one placement that took an argument is 503 **before** the diet. A diet refusal is *counted* as operator debt and published beside the D110 proposal-quality score; an exhausted budget is not the operator's debt, it is the day's capacity. Evaluating the diet first would book a refusal against a day the seat could not have run on anyway — inflating the very count D110 reads as a signal about outcome closure. `FR24_BudgetExhausted_Returns503_AndEnqueuesNothing` asserts both halves: the 503, *and* that the refusal counter did **not** move.
+
+503 rather than 422 for the same reason: 422 tells the caller to change something, and there is nothing here to change.
+
+### The D24 ceiling is now read by two processes, so it is now tested across them
+
+The Worker enforces the ceiling when it spends; the Api reads it to refuse. That is one number in two `appsettings.json` files, and a divergence would have the Api accept a command the Worker then refuses to run — a queued job failing for a reason the caller was explicitly told did not apply. `Config_LlmDailyBudget_AgreesAcrossProcesses` joins the arena-id and universe-exclusion agreements: **a value duplicated across processes gets a test, not a convention.**
+
+The Api binds `Llm:DailyBudget` and nothing else under `Llm` — no provider, and under the reference graph it could not bind one. Reading what a day has spent is a projection; spending it is the Worker's job.
+
+### M9 is the corpus's first table REBUILD, and it cost a hand-edit
+
+**finding 324 — EF's `AddCheckConstraint` re-adds the AUTOINCREMENT that rule 14 strips.**
+
+SQLite cannot `ALTER` a CHECK, so EF generates `DropCheckConstraint`/`AddCheckConstraint` as a whole-table rebuild — and the regenerated DDL re-adds `AUTOINCREMENT` to `job_id`, the exact annotation InitialCreate's hand-edit removed. This was **observed, not anticipated**: the scaffolded migration was written and committed to a branch, and both `SchemaFidelityTests.Schema_IntegerPrimaryKeys_HaveNoAutoincrement` and the M6 closure guard failed on it.
+
+Same defect, same fix and same reason as `corporate_actions.processed_on` at M5 (D94): write the DDL by hand. The migration is now an explicit rebuild — create, copy, drop, rename — with `Up` and `Down` sharing one private method, because two hand-written copies of the same DDL is precisely how a `Down` drifts from its `Up` and a rollback quietly reshapes a table.
+
+**What the guards earned here.** Two independent tests written for earlier phases caught a defect in a migration neither was written for, on the first run after it was added. That is the third time this phase (the `ScratchStore` classification closure at 5.5, the register guard at 5.0) that a structural guard has caught something a review pass would have had no reason to look at.
+
+A rebuild also has a failure mode an additive migration structurally cannot have — **it can lose rows** — so `Phase5JobKindMigrationTests` asserts a *queued* job survives it. That is the case where loss would be silent: the API already returned 202, so the caller has been told the work will happen.
+
+### The seat proposes; it does not pre-register
+
+A hypothesis lands `locked = 0`, always. A locked row here would mean the seat pre-registered its own claim, and a pre-registration made by the party making the claim is not a commitment — it is a label. Rule 30 is stated *to* the model in the frozen instruction block as well as enforced after it, and `TheProposalInstructions_NameAllFourPreDeclaredFields` pins both.
+
+The four pre-declared fields are named in the prompt because a hypothesis missing any of them cannot be pre-registered without the operator inventing the missing part — at which point the claim being tested is no longer the one the seat made.
+
+**The skeptic is instructed not to hedge into balance.** A review that finds the claim reasonable adds nothing the claim did not already assert, so "argue the other side, as strongly as the evidence honestly allows" is the instruction, and the pinned negative ("Do not hedge into balance") is what keeps it from drifting into a summary.
+
+### A refusal is recorded as a `failed` job, not a new table
+
+The D112 refusal is a `jobs` row with its reason, in the same stream successful attempts are counted from. A separate table would need its own join to answer *"how many proposals were attempted this quarter?"* — the question the D110 score depends on. The refusal **is** an attempt at the job, so it belongs where the attempts are.
+
+---
+
+## v1.9.67 — Phase 5 checkpoint 5.7: the D110 proposal-quality inputs and the D113 paper control (M10)
+
+*Recorded 2026-08-01. Tests **1,035 → 1,062**; migration **M10** (`Phase5ProposalInputs`); `ci.ps1` green.*
+
+### Inputs only, and the argument for that is substantive rather than procedural
+
+The scorer, its read-model, the `/api/v1` route and the panel are **not** built here. A scorer built now would be a consumer for data that does not exist, and the route would serve an `insufficient` series for years while `FX-ProposalScoreChain` read `insufficient` throughout. What this checkpoint delivers is the guarantee D110 actually needs first: that the chained criterion has **no missing first link** — every proposal from today forward carries its stated prior and the floor it was assessed against.
+
+### Three refusals, and the order they fire in is a decision
+
+`409` live run → `422` no parent evidence → `422` no prior → `422` unpinned score parameters → `503` budget spent → `422` evidence diet → `422` no computable floor.
+
+Two placements took an argument:
+
+- **The pin check precedes the budget.** A 503 on a day whose parameters were never pinned sends the operator to wait for tomorrow, when the real fix is a config write that has nothing to do with the day. `ThePinCheckPrecedesTheBudget_SoAConfigErrorIsNotHiddenByAnExhaustedDay` pins the ordering, because nothing else would notice it changing.
+- **The counted refusals go last** — the generalisation of 5.6's 503-before-diet argument. A refusal that is *counted* as debt should only be booked against a day the seat could otherwise have run on.
+
+**A prior outside (0,1) is refused, never clamped.** The clamp that does exist (`Kpi.ProposalPriorClamp`) bounds the log rule's **penalty** inside the scorer; clamping the **input** would be a number nobody stated being scored as though they had. Two different jobs that share a word.
+
+### The uncomputable floor resolves through D112's machinery, exactly as the decision said
+
+A proposal with no computable floor (`unassessed_no_sigma`) is permanently unscorable on the margin channel — the "missing first link" in its purest form. It is refused with its own code (`proposal_unscorable_no_floor`), recorded as a `failed` job and counted, reusing the machinery 5.6 built. **No third column, no new mechanism, and D110's two-column scope intact.** The code is distinct from the evidence diet's because an unclosed outcome and an uncalibrated arena are different debts owed by different people, even though the recording is identical.
+
+Phase 4's calibration wrote replay `power_reports`, so this branch is satisfied in the live arena today. That is precisely why `D113_NoComputableFloor_IsRefused_AndCounted_ThroughD112sMachinery` **asserts** it rather than assuming it.
+
+### The floor is now read one way and stamped once
+
+`DetectabilityGate` gained `ResolveCurrentFloor()` — the floor without an expected effect to judge against, because **the floor is a property of the arena, not of the proposal**. `Assess` was refactored to consume the same private computation rather than repeating it: a second copy is how the stamped floor and the gated floor would silently stop being the same number.
+
+`CandidateFactory` now persists the floor it has always computed and discarded — but **only if the row does not already carry one**. A seat-authored proposal was stamped at assessment, and overwriting it at admission would silently restore the very admission-time reading D113 replaced, and would make a real proposal incomparable with its paper control.
+
+### D113: what makes it a control rather than a duplicate
+
+Both arms run in **one job run**, from **one floor read**. `D113_OneJobRun_WritesBothArms_StampedWithTheSameFloor` asserts the floors are equal — the failure it guards is not an exception but a pair of proposals judged against bars one Bonferroni step apart, which would look fine and mean nothing.
+
+`D113_TheArmsDifferOnlyInTheSeam` is the load-bearing one. It asserts L0 and L1 are byte-identical (the cached prefix must not move, or the control is cheaper for a reason unrelated to the seam) and that the L2 blocks differ on **exactly one line** — the declared seam mode. Anything else differing would be an alternative explanation for a measured margin difference, which is what a control exists to eliminate.
+
+**The seam mode is stated in the prompt, not only in the wiring.** The arms must be distinguishable afterwards from the recorded prompt alone; an undeclared placebo leaves two L2 blocks differing by content nobody could attribute. The arm also rides in the journal entry's **title**, for the same reason: a margin series computed from entries that do not say which arm produced them is a series of unattributable numbers.
+
+**The control writes no `trials_registry` row and creates no strategy** — asserted, because that is the claim the whole "paper control is free" argument rests on. The tax is paid at admission, and a proposal that never seeks admission never pays it.
+
+### Budget pairing — the failure this prevents looks like success
+
+`FX-BudgetAbstain`: with a month that cannot fund a pair, **neither** arm dispatches. Asserted on the provider's recorded requests (zero, not one) as well as on the empty journal, because "one arm ran" is the specific defect and an entry count alone could be explained by a failure anywhere.
+
+`Ai.Researcher.MonthlyBudgetUsd` is now bound (`AiOptions`), and **only by `AddForwardLlmStage`** — the replay and reproduce compositions must stay provably seat-free, and binding it in the pipeline core would have made "no seat" a runtime fact instead of a structural one.
+
+**Per-seat spend is attributed from `analysis_cache`, not `llm_budget_log`.** The budget log is one row per DAY across every seat and task and structurally cannot answer a per-seat question; the cache carries the task and cost of each call. `TheSeatBudgetIsAttributedPerSeat_NotFromTheDailyLog` asserts the two exclusions that matter — a regime brief is the market seat's spend, and last month is last month's budget.
+
+### `pin-proposal-thresholds` — a fourth verb on the `signal-pin-thresholds` model
+
+Both values **required and explicit**. Unlike that verb's optional `--power`, each of these governs a published **score** rather than a diagnostic, so a missing value silently defaulting would record a decision nobody made. An out-of-range clamp is refused rather than clamped: at 0.5 every prior collapses to the same value and the calibration channel measures nothing — a silent failure rather than a loud one.
+
+Pinned once, never re-stamped (the D98/D108 precedent), because D110 R3 is explicit that the response to a flat improvement trend is to change the researcher's **inputs**, never the measurement, the clamp or the thresholds.
+
+### R1 and R2 are asserted now, before the scorer exists
+
+`ProposalScoreRailsTests` pins both rails against the machinery that already enforces them: the pack whitelist's **absences** (no `proposal_score`, no `detectability_margin`, no `calibration_skill` — and the closure is proven to fire against a deliberate violation), and the reference graph (no `AlphaLab.Evaluation` type takes an `IAnalysisProvider` or `IModelTransport`, so the scorer, wherever it lands, structurally cannot call a model).
+
+The contrast makes the rail meaningful rather than blanket: the arena's **floor** is admissible in the pack. R1 forbids reading a grade *on the researcher*; the floor is the bar every candidate faces. Different object, different rail.
+
+Writing these before the scorer is deliberate — it is what makes the scorer, when it arrives, land **inside** rails rather than beside them.
+
+### M10's `Down` is hand-edited even though its `Up` is not
+
+`Up` is two `ALTER TABLE ADD COLUMN`s — genuinely additive, so M9's rebuild trap does not arise. `Down` is a different matter: EF turns `DropColumn` into a rebuild, which re-adds the `AUTOINCREMENT` rule 14 strips. It is worth stating that this is on the down path and still matters — a rollback that quietly reshapes the table leaves the store in a state no forward migration produced, and the next `Up` would then apply to a schema nobody wrote.
+
+### `Research` moved to the Api's appsettings; `Ai` stays in the Worker's
+
+The consuming phase owns the bind (finding F). Both `Research.*` consumers — the D112 gate and the budget surfaced with a 202 — are endpoint-side; the Worker reads `Ai.*` and never `Research.*`. This is the same reasoning that put `Llm:DailyBudget` in *both* at 5.6, and it lands differently here for a stated reason rather than by habit.
+
+---
+
+## v1.9.68 — Phase 5 checkpoint 5.8: reconciliation, the DoD, and the one item that is red (findings 325–327)
+
+*Recorded 2026-08-01. Tests **1,062 → 1,065**; no migration; `ci.ps1` green. The 4.5.5 precedent: a phase ends when the corpus and the code agree about what was built, not when its last feature compiles.*
+
+### The DoD, item by item — four green, one red, and the red one is named
+
+| DoD item | State |
+|---|---|
+| A full month of daily reads under budget | **green, $0.98 modelled** — see below |
+| A cache-hit day costs ~0 | **green** (`FR21_CacheHit_CostsZero`, asserted three ways at 5.1) |
+| Replay provably has no analysis rows | **green** (`FR21_Replay_HasNoAnalysisPath` — by absent registration, not by guard) |
+| The eleven TEST_PLAN §6 fixtures | **green**, after one was found named only in prose |
+| The live smoke test | **RED — not run** |
+
+**The live smoke test did not run, and the reason is not something this phase can fix.** `Secrets:AnthropicApiKey` is an 18-character placeholder. The test was invoked deliberately and refused with exactly the actionable message it was built to give — so its guard is proven to fire, which is worth something, but it is not the confirmation that was owed. **INTEGRATIONS §5's Batches contract therefore remains verified against the published reference only**, as it has been since 5.0 closed the `⚠VERIFY` on documentation. It needs an operator-supplied key. Carried forward red rather than quietly dropped, because a DoD item marked green on a test that never ran is worse than one marked red.
+
+### The month figure needed a second test before it meant anything
+
+`MockedMonth_OfDailyReads_StaysUnderBudget` proves the budget machinery survives 21 consecutive days — but its scripted usage is 100 input / 50 output tokens per day, which is a stub, not a day. Recording **its** total in the gate box would have put a number in the corpus that reads as a forecast and is off by three orders of magnitude.
+
+`FullSizeMonthCostTests` computes the figure from the caps the system actually enforces — the frozen L0 block, `Llm.NewsBudget`'s 25 articles × 2,000 chars, and the pinned Opus tier at the Batches half price:
+
+**~14,700 input tokens/day ⇒ $0.047/day ⇒ $0.98 for a 21-session month**, against a **$1.00 *daily*** ceiling.
+
+Two things about how it is asserted. It is checked **per day**, because the ceiling is daily and a month total under 21× the ceiling is equally satisfied by twenty cheap days and one that blew through it. And it is asserted as a **range**, so a re-pin or a cap change moves it visibly rather than failing on a rounding digit.
+
+The figure is **modelled, not measured** — the character→token divisor is the conservative pre-flight approximation — and it is labelled as such everywhere it is quoted. The measurement is what the live smoke test is for.
+
+### finding 325 — every L0 block is below the prompt-cache minimum, so the cache breakpoint caches nothing
+
+The 5.0 prep recorded *"L0 is ~1,500 tokens, so the static block caches."* Measured: the regime brief's L0 is **161** tokens; the three researcher blocks are **276 / 211 / 136**. The 512-token minimum is not met by any of them. The estimate was wrong by an order of magnitude, in the direction that makes a stated economy inert.
+
+**The consequence is smaller than it sounds, and stating why is the point.** The `cache_control` marker is harmless rather than wrong — it costs nothing and begins working the moment a block grows past the threshold. `FR21_CacheHit_CostsZero` is unaffected: it exercises `analysis_cache`, the lab's own store-level cache, a different mechanism that already makes a repeated day free. What is actually lost is the ~10% input discount on the frozen prefix of a **first** read — under half a cent a day on the figure above.
+
+**Recorded, deliberately not fixed.** The fix is padding a frozen prompt to clear a vendor threshold: a change to the instruction text that governs what the seats are told, made for a pricing reason, and D81 rule 2 makes any L0 edit a prompt-version event. That is a decision, not a checkpoint-8 tidy-up. The test **fails upward** — if a block later grows past 512 it fails and says so, because at that point the recorded month figure is an over-estimate and the finding is closed by events.
+
+### finding 326 — the `Llm.Tasks` model strings stay in appsettings, and the corpus's reason for moving them was wrong
+
+5.0 left this open as a build-shape item and recommended moving the four model strings to versioned `config` rows, so a model change would be *"a recorded, dated event, not a config edit"*.
+
+**Resolved by building: the property is right and the mechanism named for it is not.** `analysis_cache.model` is part of the cache key and `ai_decisions.model_version` **is** D104 artefact (d), so every call already carries the model that actually **served** it. That is strictly stronger than a versioned config row, which records only what was *configured* — a re-pin mid-day would leave a config row saying one thing while half the day was answered by the other model.
+
+The BUILD_AND_PROMPTS sentence claiming config versioning is *"what lets artefact (d) explain a behaviour change after the fact"* is **corrected visibly** (struck and replaced, the v1.9.60 form), because as written it credits the wrong mechanism for a property the code delivers elsewhere. The recommendation is rejected on evidence found by building rather than by argument — the §23.8 bet paying off a second time, after finding 323.
+
+### finding 327 — `FX-ProposalScoreIsMechanical` existed only as prose
+
+The DoD row names eleven fixtures. Ten resolve to test methods; the eleventh was named in a class doc-comment and nowhere a grep for it would find a **test**. Renamed so the fixture name is carried by the methods.
+
+This is finding 315's shape for the third time — a fixture list and the fixtures drifting apart — and it is worth noting that it recurred **inside the checkpoint that added the fixture**, one commit after the row was corrected. The list is not the problem; the absence of a mechanical check that every name in it resolves to a running test is.
+
+### The three items 5.0 left open
+
+- **The model strings** — closed above (finding 326).
+- **D110's two undecided questions** — whether the improvement score is per-arena or lab-wide, and how the base rate is computed if proposals span arenas — **stay open, with a trigger stated rather than left to memory: the creation of a SECOND arena.** Neither is answerable today (one arena exists, so per-arena and lab-wide are the same number and no proposal can span anything), and neither is forced by anything Phase 5 built. D71's arena isolation is what makes the trigger crisp: the moment a second arena exists, "lab-wide" becomes a merge across arenas, which UX-13 forbids for rankings — so the question arrives already constrained.
+
+### What was re-read and found to still hold
+
+- **The five `ScratchStore` classifications** added across 5.1/5.4/5.5, each against the code as built. All hold. `journal_entries` staying **Untouched** was the one worth re-checking, since 5.6 made the Worker write it — but the researcher seat writes from the **job drain**, which runs after catch-up and outside any daily write transaction, so it remains state outside the run.
+- **Rule 32's structural guard** — still fails on the deliberate violation kept in the test assembly.
+- **The doc diet** (README §3) — refreshed at 5.0 and matched what the build actually needed.
+
+### What Phase 6 inherits, unchanged by this phase
+
+Findings 280 and 285, bundled into one fresh calibration generation, and the D106 recompute harness before it. Not this phase's work, and due before the first real strategy registers.
