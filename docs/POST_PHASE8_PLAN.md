@@ -40,11 +40,11 @@ Idea 4, lab-level power accounting.
 - Load-bearing danger, recorded here on purpose: overfitting to the lab's own noise, which would make the cohort curve lie. The control researcher exists for exactly this failure.
 - DoD: seam demonstrated in all three modes (swapped, disabled, placebo); guard tests named and passing; cohort-curve comparison wired; digest composition documented.
 
-### Pass 3: Widening (idea 1 plus SP1500)
+### Pass 3: Breadth (idea 1 plus a second equity arena)
 
 - Capacity and market-impact model: cost scales with participation, giving each strategy a capacity ceiling. Lands on the D43 seam in the fill model.
-- SP1500 widening (D87) is bundled as this pass's prerequisite and remains gated on a verified historical 400/600 membership source.
-- DoD: participation-scaled impact active in fills; capacity ceiling surfaced per strategy; SP1500 arena live only after the membership-source gate clears.
+- The SP1500 widening this pass was bundled to is **VOID** (**D109** supersedes D87). The prerequisite is now the registration of a less-liquid ARENA, gated on that arena's own membership source at its own sign-off.
+- DoD: participation-scaled impact active in fills; capacity ceiling surfaced per strategy; the second equity arena live only after ITS OWN membership-source gate clears at ITS OWN registration (D109; the arena is deliberately unnamed here - D109 names no particular second arena, and this plan does not choose one).
 
 ### Final pass: Independent breadth (idea 5)
 

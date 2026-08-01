@@ -109,11 +109,14 @@ money as strings/minor-units (never floats).
     curves require the D64 plants (regime-conditional, autocorrelated, multi-seed —
     never constant drift) and are not trusted without the plant-sensitivity check
     archived in the calibration report (MASTER §20.9).
-22. Universe (D65/D70): forward operation runs the S&P 100 slice through Phase 4 sign-off,
+22. Universe (D65/D70/D109): forward operation runs the S&P 100 slice through Phase 4 sign-off,
     sourced from the OEF holdings CSV + Wikipedia S&P 100 cross-check (fail closed, count
-    sanity 99–103), then widens to the S&P 500 by config flip + backfill delta — target amended to the S&P 1500 by D87, contingent on a verified-depth 400/600 historical-membership source; else S&P 500. Arena Replay
+    sanity 99–103), then widens to the S&P 500 by config flip + backfill delta. THAT IS WHERE THIS ARENA'S UNIVERSE STOPS:
+    D109 supersedes D87 — breadth beyond the S&P 500 arrives as SEPARATE ARENAS (rule 23), never as an
+    in-place enlargement of an arena that already holds a live experiment. Arena Replay
     NEVER runs on the slice — replay/calibration always use S&P 500 as-of membership
-    (community CSV at launch, D49; extending to the S&P 1500's 400/600 as-of membership only if D87's condition holds) with every historical member's bars backfilled for the
+    (community CSV at launch, D49) — each arena's replay uses ITS OWN full-universe as-of membership
+    (D109/D70) — with every historical member's bars backfilled for the
     replay window as a Phase 4 prerequisite. (This is the sp500 arena's instance of the
     per-arena rule in rule 23.)
 23. Arenas are isolated (D71; ARENA_ARCHITECTURE_v1.9.3.md): one universe per arena; each

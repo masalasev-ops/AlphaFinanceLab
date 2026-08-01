@@ -30,7 +30,7 @@ What: replace the flat per-name cost buckets with a cost that scales with partic
 
 Why: paper trading assumes fills. A strategy that looks strong at 100k can have zero net edge at 10M once impact is paid. Without this, the lab cannot tell a scalable edge from a paper curiosity, and it would manufacture false winners in less-liquid names.
 
-When: bundled with the SP1500 widening as its hard prerequisite, whenever that widening clears its membership-source gate (D87). It is only load-bearing when trading less-liquid names, so at SP500 it is informational rather than protective. It can be pulled earlier purely to attach capacity ceilings to large-cap winners, but its protective value starts at SP1500.
+When: bundled with the arrival of a less-liquid arena as its hard prerequisite, whenever such an arena clears its own membership-source gate at its own registration (**D109** supersedes D87 — the SP1500 widening this was bundled to does not happen). It is only load-bearing when trading less-liquid names, so in the sp500 arena it is informational rather than protective. It can be pulled earlier purely to attach capacity ceilings to large-cap winners, but its protective value starts at SP1500.
 
 Depends on: the existing D43 cost-model seam (it drops in as a layer) and the volume data already ingested in bars.
 
@@ -60,9 +60,9 @@ What: add a sleeve of other asset classes (rates, commodities, FX, credit, via l
 
 Why: the breadth benefit to finding and compounding edge (the Grinold root-N argument) is real only when the added bets are independent. 1500 US equities are highly correlated, so widening within equities buys far less effective breadth than it appears. Genuinely uncorrelated sources multiply effective breadth much more.
 
-When: last, and on its own phase, after the SP1500 equity widening has proven the widening machinery. It is the largest lift of the five, since it brings new data, new cost models per asset class, and new compute scale.
+When: last, and on its own phase, after a SECOND EQUITY ARENA has proven the per-arena registration machinery (D109 supersedes D87 - there is no SP1500 widening; breadth arrives as a separate arena). It is the largest lift of the five, since it brings new data, new cost models per asset class, and new compute scale.
 
-Depends on: the equity-widening infrastructure (improvement 1 plus SP1500) being solid first.
+Depends on: the per-arena equity infrastructure (improvement 1 plus a second registered equity arena) being solid first.
 
 ### 6. The Learning Researcher (guarded)
 
@@ -93,7 +93,7 @@ One honest residual: there is one finite market history, and every learn-validat
 1. Upcoming phases (near-term hookups): Phase 4 builds the detectability-at-admission gate and adds the per-regime replay persistence and learn-validate partitioning seams; Phase 4.5 builds the Signal Library (D91), whose per-signal digest is the seam's first scheduled occupant; Phase 5 adds the swappable researcher prior seam.
 2. First post-Phase-8 pass: improvements 3 and 4 together. Both are cheap, reuse existing data, and make verdicts more honest rather than widening the search.
 3. Second post-Phase-8 pass: improvement 6, the Learning Researcher, built with all five guards from the start.
-4. With the SP1500 widening: improvement 1 (capacity and impact model) as its prerequisite.
+4. With the second equity arena: improvement 1 (capacity and impact model) as its prerequisite.
 5. Last, on its own phase: improvement 5 (cross-asset sleeve).
 
 ## Numbering note

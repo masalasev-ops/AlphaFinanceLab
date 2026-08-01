@@ -163,9 +163,10 @@ run_kind='replay', quarantined).
    measured numbers (detection-speed / days-to-indistinguishability medians, would-be-survival + curve-based
    fractions, the per-rung detection-power outcome, the joint false-alarm fraction with per-signal
    contributions + its comparability caveat).
-8. **The D87 sign-off item:** record in PROGRESS whether a verified-depth S&P 400/600 as-of-membership
-   source is confirmed (the S&P 1500 widening target) — else the S&P 500 stands. Verified at sign-off,
-   never silently at the flip.
+8. **The D87 sign-off item is VOID — do not perform it (D109).** D109 supersedes D87: this arena's
+   universe stops at the S&P 500, so there is no S&P 1500 widening gate to record here. Additional
+   breadth is registered as a SEPARATE arena, and each new arena carries its OWN D70-style sourcing
+   gate at ITS OWN Phase-4 sign-off — the steps are ARENA_ARCHITECTURE §6, not this one.
 9. **After sign-off:** `Replay.PrunePerMemberLedgersAfterSignoff` sanctions pruning the per-member
    replay ledgers (control_equity + plant equity rows); the runs, power_reports, frozen curves and the
    report stay. The forward widen (`Universe:Bootstrap:Universe` flip + backfill delta) remains a
