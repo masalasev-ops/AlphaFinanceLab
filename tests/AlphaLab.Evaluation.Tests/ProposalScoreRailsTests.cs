@@ -15,6 +15,10 @@ namespace AlphaLab.Evaluation.Tests;
 /// </summary>
 public class ProposalScoreRailsTests
 {
+    // Method names carry the fixture name `FX_ProposalScoreIsMechanical` so a grep for the DoD row's
+    // fixture finds a TEST rather than a comment — 5.8 found it named only in prose, which is precisely
+    // the drift finding 315 recorded twice before.
+
     /// <summary>Names a score could plausibly enter the pack under. None may be admissible.</summary>
     private static readonly string[] ScoreShapedNames =
     [
@@ -23,7 +27,7 @@ public class ProposalScoreRailsTests
     ];
 
     [Fact]
-    public void R1_NoPackFieldCarriesTheResearchersOwnScore()
+    public void FX_ProposalScoreIsMechanical_R1_NoPackFieldCarriesTheResearchersOwnScore()
     {
         // "The researcher NEVER reads its own score." The whitelist is a CLOSURE, so a score added to the
         // builder FAILS rather than being silently dropped — which means this test asserts the absence
@@ -40,7 +44,7 @@ public class ProposalScoreRailsTests
     }
 
     [Fact]
-    public void R1_AScoreFieldFailsConstruction_ProvenAgainstADeliberateViolation()
+    public void FX_ProposalScoreIsMechanical_R1_AScoreFieldFailsConstruction_ProvenAgainstADeliberateViolation()
     {
         // The closure is PROVEN TO FIRE (finding 310's lesson: a check nobody proved fires is worth
         // little). A pack carrying a score-shaped field must throw, not be quietly filtered.
@@ -55,7 +59,7 @@ public class ProposalScoreRailsTests
     }
 
     [Fact]
-    public void R2_TheScoreParametersAreConfigRows_NotAppsettingsKeys()
+    public void FX_ProposalScoreIsMechanical_R2_TheScoreParametersAreConfigRows_NotAppsettingsKeys()
     {
         // R2's precondition. They are score INPUTS, so a mid-experiment change breaks the
         // proposal-to-proposal comparability the chain depends on — and an appsettings value is not
@@ -72,7 +76,7 @@ public class ProposalScoreRailsTests
     }
 
     [Fact]
-    public void R2_NothingInTheEvaluationAssemblyReachesAModelProviderToComputeAScore()
+    public void FX_ProposalScoreIsMechanical_R2_NothingInTheEvaluationAssemblyReachesAModelProvider()
     {
         // "Mechanically computed, NEVER LLM-computed" — rule 32 bars AI from JUDGING, not from being
         // MEASURED. Enforced by the reference graph rather than by review: AlphaLab.Evaluation does not

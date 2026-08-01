@@ -2147,3 +2147,70 @@ Writing these before the scorer is deliberate — it is what makes the scorer, w
 ### `Research` moved to the Api's appsettings; `Ai` stays in the Worker's
 
 The consuming phase owns the bind (finding F). Both `Research.*` consumers — the D112 gate and the budget surfaced with a 202 — are endpoint-side; the Worker reads `Ai.*` and never `Research.*`. This is the same reasoning that put `Llm:DailyBudget` in *both* at 5.6, and it lands differently here for a stated reason rather than by habit.
+
+---
+
+## v1.9.68 — Phase 5 checkpoint 5.8: reconciliation, the DoD, and the one item that is red (findings 325–327)
+
+*Recorded 2026-08-01. Tests **1,062 → 1,065**; no migration; `ci.ps1` green. The 4.5.5 precedent: a phase ends when the corpus and the code agree about what was built, not when its last feature compiles.*
+
+### The DoD, item by item — four green, one red, and the red one is named
+
+| DoD item | State |
+|---|---|
+| A full month of daily reads under budget | **green, $0.98 modelled** — see below |
+| A cache-hit day costs ~0 | **green** (`FR21_CacheHit_CostsZero`, asserted three ways at 5.1) |
+| Replay provably has no analysis rows | **green** (`FR21_Replay_HasNoAnalysisPath` — by absent registration, not by guard) |
+| The eleven TEST_PLAN §6 fixtures | **green**, after one was found named only in prose |
+| The live smoke test | **RED — not run** |
+
+**The live smoke test did not run, and the reason is not something this phase can fix.** `Secrets:AnthropicApiKey` is an 18-character placeholder. The test was invoked deliberately and refused with exactly the actionable message it was built to give — so its guard is proven to fire, which is worth something, but it is not the confirmation that was owed. **INTEGRATIONS §5's Batches contract therefore remains verified against the published reference only**, as it has been since 5.0 closed the `⚠VERIFY` on documentation. It needs an operator-supplied key. Carried forward red rather than quietly dropped, because a DoD item marked green on a test that never ran is worse than one marked red.
+
+### The month figure needed a second test before it meant anything
+
+`MockedMonth_OfDailyReads_StaysUnderBudget` proves the budget machinery survives 21 consecutive days — but its scripted usage is 100 input / 50 output tokens per day, which is a stub, not a day. Recording **its** total in the gate box would have put a number in the corpus that reads as a forecast and is off by three orders of magnitude.
+
+`FullSizeMonthCostTests` computes the figure from the caps the system actually enforces — the frozen L0 block, `Llm.NewsBudget`'s 25 articles × 2,000 chars, and the pinned Opus tier at the Batches half price:
+
+**~14,700 input tokens/day ⇒ $0.047/day ⇒ $0.98 for a 21-session month**, against a **$1.00 *daily*** ceiling.
+
+Two things about how it is asserted. It is checked **per day**, because the ceiling is daily and a month total under 21× the ceiling is equally satisfied by twenty cheap days and one that blew through it. And it is asserted as a **range**, so a re-pin or a cap change moves it visibly rather than failing on a rounding digit.
+
+The figure is **modelled, not measured** — the character→token divisor is the conservative pre-flight approximation — and it is labelled as such everywhere it is quoted. The measurement is what the live smoke test is for.
+
+### finding 325 — every L0 block is below the prompt-cache minimum, so the cache breakpoint caches nothing
+
+The 5.0 prep recorded *"L0 is ~1,500 tokens, so the static block caches."* Measured: the regime brief's L0 is **161** tokens; the three researcher blocks are **276 / 211 / 136**. The 512-token minimum is not met by any of them. The estimate was wrong by an order of magnitude, in the direction that makes a stated economy inert.
+
+**The consequence is smaller than it sounds, and stating why is the point.** The `cache_control` marker is harmless rather than wrong — it costs nothing and begins working the moment a block grows past the threshold. `FR21_CacheHit_CostsZero` is unaffected: it exercises `analysis_cache`, the lab's own store-level cache, a different mechanism that already makes a repeated day free. What is actually lost is the ~10% input discount on the frozen prefix of a **first** read — under half a cent a day on the figure above.
+
+**Recorded, deliberately not fixed.** The fix is padding a frozen prompt to clear a vendor threshold: a change to the instruction text that governs what the seats are told, made for a pricing reason, and D81 rule 2 makes any L0 edit a prompt-version event. That is a decision, not a checkpoint-8 tidy-up. The test **fails upward** — if a block later grows past 512 it fails and says so, because at that point the recorded month figure is an over-estimate and the finding is closed by events.
+
+### finding 326 — the `Llm.Tasks` model strings stay in appsettings, and the corpus's reason for moving them was wrong
+
+5.0 left this open as a build-shape item and recommended moving the four model strings to versioned `config` rows, so a model change would be *"a recorded, dated event, not a config edit"*.
+
+**Resolved by building: the property is right and the mechanism named for it is not.** `analysis_cache.model` is part of the cache key and `ai_decisions.model_version` **is** D104 artefact (d), so every call already carries the model that actually **served** it. That is strictly stronger than a versioned config row, which records only what was *configured* — a re-pin mid-day would leave a config row saying one thing while half the day was answered by the other model.
+
+The BUILD_AND_PROMPTS sentence claiming config versioning is *"what lets artefact (d) explain a behaviour change after the fact"* is **corrected visibly** (struck and replaced, the v1.9.60 form), because as written it credits the wrong mechanism for a property the code delivers elsewhere. The recommendation is rejected on evidence found by building rather than by argument — the §23.8 bet paying off a second time, after finding 323.
+
+### finding 327 — `FX-ProposalScoreIsMechanical` existed only as prose
+
+The DoD row names eleven fixtures. Ten resolve to test methods; the eleventh was named in a class doc-comment and nowhere a grep for it would find a **test**. Renamed so the fixture name is carried by the methods.
+
+This is finding 315's shape for the third time — a fixture list and the fixtures drifting apart — and it is worth noting that it recurred **inside the checkpoint that added the fixture**, one commit after the row was corrected. The list is not the problem; the absence of a mechanical check that every name in it resolves to a running test is.
+
+### The three items 5.0 left open
+
+- **The model strings** — closed above (finding 326).
+- **D110's two undecided questions** — whether the improvement score is per-arena or lab-wide, and how the base rate is computed if proposals span arenas — **stay open, with a trigger stated rather than left to memory: the creation of a SECOND arena.** Neither is answerable today (one arena exists, so per-arena and lab-wide are the same number and no proposal can span anything), and neither is forced by anything Phase 5 built. D71's arena isolation is what makes the trigger crisp: the moment a second arena exists, "lab-wide" becomes a merge across arenas, which UX-13 forbids for rankings — so the question arrives already constrained.
+
+### What was re-read and found to still hold
+
+- **The five `ScratchStore` classifications** added across 5.1/5.4/5.5, each against the code as built. All hold. `journal_entries` staying **Untouched** was the one worth re-checking, since 5.6 made the Worker write it — but the researcher seat writes from the **job drain**, which runs after catch-up and outside any daily write transaction, so it remains state outside the run.
+- **Rule 32's structural guard** — still fails on the deliberate violation kept in the test assembly.
+- **The doc diet** (README §3) — refreshed at 5.0 and matched what the build actually needed.
+
+### What Phase 6 inherits, unchanged by this phase
+
+Findings 280 and 285, bundled into one fresh calibration generation, and the D106 recompute harness before it. Not this phase's work, and due before the first real strategy registers.
