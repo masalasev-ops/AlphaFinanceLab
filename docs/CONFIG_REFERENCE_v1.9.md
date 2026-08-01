@@ -228,6 +228,16 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     "CohortBucketMonths": 6,                       // admission-vintage bucket width over strategies.created_on (default half-year cohorts)
     "CohortMinStrategies": 3                       // below this live-member count at t the segment renders dimmed (reason 'thin_cohort')
   },
+  // NOTE [D110, v1.9.57]: the two PROPOSAL-SCORE parameters - Kpi.ProposalPriorClamp (the prior clamp c,
+  // so p-hat is scored on [c, 1-c] and a confidently-wrong proposal costs a bounded amount) and
+  // Kpi.ProposalScoreMinClosed (the closed-outcome count below which the leave-one-out base rate is not
+  // trusted and b falls back to 0.5 with reason thin_base_rate) - are deliberately NOT listed above. They are
+  // VERSIONED CONFIG ROWS, pinned at Phase 5 checkpoint 5.7 before the first proposal exists (the 4.5.2
+  // pin-before-grade discipline), NOT appsettings values. Reason: they are SCORE INPUTS, not reporting
+  // knobs - changing either mid-experiment breaks the proposal-to-proposal comparability the chained
+  // criterion depends on - and an appsettings value is not as-of resolvable (the D106 GateOptions limit),
+  // so a later recomputation could not reproduce the score a proposal was originally given. Same shape and
+  // same reasoning as D108's two trend-flag alpha rows (key rule 7).
 
   "SignalLibrary": {                               // D91 - Phase 4.5 signal grading (descriptive only; read by the FR-44 IC engine + FR-46 read-model)
     "HorizonsDays": [ 21, 63 ],                    // pre-registered grade horizons k, in trading days. 126 CLOSED - rejected for v1 (finding 290); LEFT closed by D108, which moved the flag to 5y and superseded the original 1y arithmetic: at the 5y flag window k=126 caps at n_eff = 10, exactly the floor, and only once the window is FULL (finding 303)

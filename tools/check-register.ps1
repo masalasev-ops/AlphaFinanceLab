@@ -204,9 +204,60 @@ if ($Baseline -and (Test-Path -LiteralPath $baselinePath)) {
         Where-Object { $_.Trim() -and -not $_.StartsWith('#') }
 }
 
-$new = @($violations | Where-Object { $known -notcontains $_ } | Sort-Object)
-$carried = @($violations | Where-Object { $known -contains $_ })
-$stale = @($known | Where-Object { $violations -notcontains $_ })
+# THE BASELINE IS KEYED BY (check, decision, FILE) AND A COUNT - DELIBERATELY NOT BY LINE NUMBER
+# (finding 310). A line-anchored baseline is broken by construction: inserting ANY line above a
+# grandfathered violation shifts it, and the same violation then reads as BOTH 'no longer occurs'
+# AND 'new'. The first docs pass after this check shipped produced 10 such false positives and 0
+# real ones - a guard that cries wolf on every edit is a guard that gets switched off.
+#
+# The count is the ratchet: one baseline line per occurrence, so N identical lines mean N
+# grandfathered occurrences in that file. An ADDITIONAL occurrence in the same file still fails,
+# and so does the first occurrence in a new file.
+#
+# COST, STATED NOT HIDDEN: moving a violation WITHIN a file that already carries one is no longer
+# detected. That is the price of the line number, and it is worth paying - the line bought
+# detection of a case nobody has ever hit while breaking on a case every docs pass hits.
+function Get-BaselineKey { param([string]$V) return ($V -replace ':\d+\s*$', '') }
+
+function Get-KeyCounts {
+    param([string[]]$Lines)
+    $counts = @{}
+    foreach ($line in $Lines) {
+        $key = Get-BaselineKey $line
+        if ($counts.ContainsKey($key)) { $counts[$key] = $counts[$key] + 1 } else { $counts[$key] = 1 }
+    }
+    return $counts
+}
+
+$currentCounts = Get-KeyCounts $violations
+$baseCounts = Get-KeyCounts $known
+
+$newKeys = @()
+$carried = @()
+foreach ($key in $currentCounts.Keys) {
+    $allowed = 0
+    if ($baseCounts.ContainsKey($key)) { $allowed = $baseCounts[$key] }
+    $actual = $currentCounts[$key]
+    $keep = [Math]::Min($actual, $allowed)
+    for ($i = 0; $i -lt $keep; $i++) { $carried += $key }
+    if ($actual -gt $allowed) { $newKeys += $key }
+}
+
+$stale = @()
+foreach ($key in $baseCounts.Keys) {
+    $actual = 0
+    if ($currentCounts.ContainsKey($key)) { $actual = $currentCounts[$key] }
+    for ($i = $actual; $i -lt $baseCounts[$key]; $i++) { $stale += $key }
+}
+$stale = @($stale | Sort-Object)
+
+# Report the CONCRETE file:line occurrences of every over-budget key, so the message still points
+# at somewhere to look even though the line is not what was matched.
+$new = @()
+foreach ($key in ($newKeys | Sort-Object -Unique)) {
+    $new += @($violations | Where-Object { (Get-BaselineKey $_) -eq $key })
+}
+$new = @($new)
 
 Write-Host ''
 if ($Baseline) {

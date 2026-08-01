@@ -455,8 +455,22 @@ CREATE TABLE journal_entries (                     -- D52
   evidence_window_days INTEGER,                    -- pre-declared window
   outcome     TEXT CHECK (outcome IN ('confirmed','refuted','inconclusive')),
   locked      INTEGER NOT NULL DEFAULT 0,          -- 1 once linked at candidate creation
-  expected_effect_ann REAL                         -- D89 (v1.9.35): pre-declared expected annualized effect; the FR-40 detectability-at-admission gate reads it; EF migration LANDED with the Phase-4 build (M5, checkpoint 4.2)
+  expected_effect_ann REAL,                        -- D89 (v1.9.35): pre-declared expected annualized effect; the FR-40 detectability-at-admission gate reads it; EF migration LANDED with the Phase-4 build (M5, checkpoint 4.2)
+  prior_prob REAL,                                 -- D110 (v1.9.57): the researcher's pre-registered
+                                                   -- P(this claim is confirmed), in (0,1). NULL for an
+                                                   -- operator-authored hypothesis. The calibration-skill
+                                                   -- half of the proposal score reads it; the researcher
+                                                   -- NEVER reads the resulting score back (D110 R1)
+  detectability_floor_ann REAL                     -- D110 (v1.9.57): the D89/FR-40 floor AS AT ADMISSION,
+                                                   -- persisted from DetectabilityDetails.FloorAnn, which
+                                                   -- the gate computes today and then discards. Stored
+                                                   -- because the floor RISES with the trials tax, so the
+                                                   -- margin is only interpretable against the floor that
+                                                   -- was actually in force on that day
 );
+-- RULE (D110, v1.9.57): prior_prob and detectability_floor_ann are ADDITIVE and NULLABLE, and are
+-- BUILT AT PHASE 5 CHECKPOINT 5.7 beside the hypotheses endpoint that writes them - recorded here
+-- ahead of the migration exactly as expected_effect_ann (D89) was recorded before M5 built it.
 -- RULE (D52): a locked hypothesis row is immutable except via the outcome-closure
 -- flow. CandidateFactory requires a linked hypothesis OR an 'unregistered' marker
 -- in strategies.config_json (rendered permanently on the strategy card).
