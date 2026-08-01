@@ -1990,3 +1990,37 @@ A `try/catch` around the Stage-3 call is the structural guarantee that a vendor 
 - **An empty admitted-news set skips the call**: spending tokens to be told there was nothing to read is the one outcome that costs money and buys nothing.
 - **The L1 lesson-set layer is present but empty.** Memory Option A makes it part of the frozen policy (D81 rule 5) and no seat is registered yet — but the layer exists now so the cache boundary is already in its final position. Moving it later would invalidate every cached prefix, which is the single edit this layering exists to avoid.
 
+---
+
+## v1.9.65 — Phase 5 checkpoint 5.5: the persist-before-use seam and rule 32 made structural (D81/D104/D105)
+
+*Recorded 2026-08-01. Tests **1,010 → 1,020**; no migration (M8 created both tables); `ci.ps1` green.*
+
+### All four artefacts, and the one that gets dropped
+
+`AiDecisionRecord` carries (a) the pack hash, (b) the raw output, (c) **what the funnel actually did with the decision**, and (d) the model, prompt version and effort/thinking configuration.
+
+**(c) is the artefact most easily lost**, and the reason is worth restating where the code lives: (a) and (b) together prove what was *asked* and *answered*, and neither shows what the arena *did*. A guardrail rejection, a sizing clamp or a cash constraint sitting between the decision and the fill is exactly the gap — without (c), a correct decision and a correct log can coexist with a wrong trade and nothing in the record would show it.
+
+**On (d):** the field is named `sampling_json` for what the pinned tier actually HAS. It accepts no `temperature`/`top_p`/`top_k`, so what there is to persist is the effort and thinking configuration. Recording a "sampling parameters" field that is always empty would satisfy the letter of the artefact while recording nothing.
+
+### Append-only is the reproducibility mechanism, not a storage preference
+
+If a later call could overwrite a stored decision, *"the persisted output is the decision"* would hold only until something called again — and `reproduce-day` would be replaying whichever call happened last, not the one the day actually traded on. `PersistAsync` returns the stored row on a second write; `RecordAppliedAsync` writes (c) once, because a second application would mean the decision was consumed twice, which is itself the defect.
+
+### Rule 32 is now structural — the second such guard in the repo
+
+Until this checkpoint rule 32 was **prose only**. The Signal Library's descriptive-only boundary (v1.9.52) was the first structural enforcement of a "never an input to X" rule; this is the second, and it guards the corollary §23.8.4 states: the AI-seat artefacts are read *by humans, and by nothing that judges AI output*.
+
+`Rule32GuardTests` is an **assembly-scoped, default-deny reflection closure** with the AI namespace excluded — deliberately not a list of judging namespaces, for the reason `DescriptiveOnlyGuardTests` gives: a namespace enumeration fails by OMISSION at exactly the edit that should have triggered it.
+
+§23.8.4 names the hazard precisely — *"a debugging surface is exactly the sort of thing that erodes it by convenience"* — and that is what the guard is for: someone wires a prior decision into a pack "just to see", and AI output becomes an input to the thing that prices AI output, with nothing failing.
+
+**The guard is PROVEN TO FIRE.** A deliberate violation lives in the test assembly (never the product one) and a second test asserts the closure catches it. That is D109's discipline applied here, and finding 310's lesson: a check nobody proved fires is worth little, and the one that broke on its first real use had never been exercised.
+
+### The reproduce-day guarantee is compositional
+
+`FX-ReproduceDay-AiSession` asserts the scratch graph has **no provider to call** rather than counting calls at runtime — a call counter proves what one run did; an absent registration proves what no run can do.
+
+Its other half asserts the `ScratchStore` **choice**, read by reflection off the real lists rather than a copy: `ai_decisions` and `ai_context_packs` are untouched while `signal_ic` is not. That contrast is the whole classification argument in one assertion — **a grade is an INPUT a reproduced session would re-produce, so it is rewound; a decision is a RECORD the reproduction must consume, so it is carried.**
+
