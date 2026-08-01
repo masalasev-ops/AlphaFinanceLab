@@ -248,6 +248,74 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   home in `AlphaLab.Core` (295), the effective-sample floor (296), the ORIENTATION staleness lesson
   (297), and the pin verb the refusal had no satisfier for (299). The (cont.) entries carry the
   operator run's own findings (300–301) and the corpus reconciliation that followed (302–304).
+- **v1.9.53 the detectability floor — a failure to reject becomes readable** (finding 305) — an amendment
+  to checkpoint **4.5.4**, which was REOPENED rather than filed under 4.5.5, because it adds a field to
+  `SignalPanelRow` and an obligation to UX-16. `gone` and "too thin to tell" had been rendering
+  identically; every flag now publishes a **minimum detectable IC**, `MDIC = (t_{1−α,df} + t_{power,df})·se`,
+  computed at read time because both df and the standard error depend on the window available. Adds the
+  OPTIONAL versioned config row `SignalLibrary.MinDetectablePower` — optional deliberately, since it scales
+  a published *diagnostic* rather than gating a verdict, so an absent row withholds the floor with a stated
+  reason instead of blocking a run. **No D-number:** it applies an existing discipline (rule 6, D89,
+  Amendment 2.2) to a surface that had not inherited it — the shape of finding 296, not of D108.
+- **v1.9.54 the overlap correction was applied twice — every signal standard error was √k too wide**
+  (finding 306) — found by the finding-305 floor **on its first contact with real data**, immediately after
+  the 20-year backfill completed (67,580 rows, 5,010 sessions, 2006-02-02 → 2025-12-31). **Caught by
+  reductio before any theory:** the published MDIC came back at **1.03** for `bab:L252`, and a rank
+  correlation is bounded in [−1, +1] — a floor above 1.0 asserts the test could only have detected a
+  better-than-perfect correlation. That single number proved a defect existed before anyone knew which
+  formula was wrong. No D-number; D108's derivation is untouched.
+- **v1.9.55 a register row is changed only by another register row** (**D109**, **rule 25**; supersedes
+  **D87**, superseded by D109) — the widening decision itself: breadth arrives as **SEPARATE ARENAS**
+  under D71, never as an
+  in-place enlargement of an arena holding a live experiment; the Russell 2000 rejection is **narrowed, not
+  lifted**. Adds the **Status column** to all 111 register rows and `tools/check-register.ps1` with four
+  checks (3a/3b/3c/3d), each **proven to fire, not merely to pass**, plus two stated limitations (3b applies
+  to `superseded-by` only, since amendments produced 200+ legitimate hits; 3d cannot be a general scanner).
+  63 violations found and deliberately **not** fixed in that pass — the enforcement is a tool rather than a
+  review checklist because three prior sweeps had passed while the defect was present.
+- **v1.9.56 the Signal Library's first full-scale read — fourteen `gone` verdicts, and the floor exceeds the
+  signal in every one** (finding 307) — 1.97× at best, 116× at worst, median 6.9×. *"That is a statement
+  about the INSTRUMENT, not the anomalies."* **Nothing was tuned in response**, which is the entry's point.
+  The `n_eff ≥ 10` floor proved load-bearing, and the seven signals were measured to carry only about **two
+  signals' worth of independent evidence** (PC80 = 2, N_eff ≈ 2.1) — which bears directly on the trials tax.
+  One question recorded and NOT decided: re-scoping the library from descriptive to veto would change the
+  D91 boundary and needs its own decision row.
+- **v1.9.57 the proposal-quality score — the researcher is graded PER PROPOSAL** (**D110**; findings
+  308–310) — two per-proposal scores published side by side and **never blended**: the **detectability
+  margin** (`expected_effect_ann` ÷ the D89 floor the gate already computes and discards), which is
+  tax-confounded and therefore recorded but not read until a control exists; and **calibration skill**, a
+  proper **log** score on a new pre-registered `prior_prob` against the leave-one-out base rate, which is
+  tax-robust. Log rather than Brier because Brier saturates at 0 — the ceiling the decision exists to
+  remove. **Finding 309** records a live bind: `Research.ForkBudgetPerYear = 6` is nowhere derived, and the
+  resolution is the per-arena tax rather than a bigger budget. **Finding 310** — the register guard's own
+  baseline was line-anchored and broke on its first real use (10 false positives, 0 real).
+- **v1.9.58 retiring the stale citations** (findings 311–312) — **311:** D46's Status was mis-set to
+  `superseded-by`; it is **`amended-by`** — what died was the *framing* (the sentiment score and the
+  with/without-Claude A/B) while the news budget, Batches, prompt caching and per-task tiering all survive,
+  so twelve correct citations had been made to read as defects. **312:** 23 sites asserted the superseded
+  S&P 1500 plan as current fact — including `CLAUDE.md` rule 22, `ORIENTATION.md`, `REBUILD.md` and a
+  **runtime message string** in `HistoricalBackfill.cs` — rewritten rather than annotated, with five more
+  found by a semantic sweep the tool could never catch. **The ratchet reached zero: 63 → 51 → 28 → 0**;
+  `register-baseline.txt` **DELETED** and `ci.ps1` now calls `check-register` **bare**. Stated cost: every
+  future supersession must retire ALL its citations before its PR can go green.
+- **v1.9.59 the stranded prohibition — a live constraint was sitting inside a superseded row** (**D111**,
+  finding 313) — the rule *a Quality strategy must never be tested in this arena* was inside D87 (superseded by D109)
+  while `Quality` stayed on the Phase-8 roster. **D111 carries it forward BROADENED to a principle** — a
+  strategy must not be tested in an arena whose membership rule screens on the same characteristic the
+  strategy scores — and **gated on verifying the published index methodology, failing closed meanwhile**.
+  Momentum, MeanReversion, ResMom, TSMOM, Breakout, LowVol, BAB **and Value** are explicitly NOT blocked.
+  New owed documentation item: record per arena which characteristics its inclusion rule screens on, in
+  `INTEGRATIONS_v1.9.md`. Lesson: *retiring a row is not the same job as retiring what it was carrying.*
+- **v1.9.60 Phase-5 PREP** (**D112**, **D113**; findings 314–322) — docs + decisions only, no `src/`, no
+  migration; tests stay 938. **D112** closes **P8**: the researcher refuses once overdue outcomes reach
+  `Research.MaxConcurrentCandidates` — the grace window's shape on a derived bound, **no new key**.
+  **D113** makes D110's control arm a **paper control differenced on the evidence-prior seam**, withdraws
+  the doubled-tax premise (verified in code), and **amends D110** to floor-at-**assessment**. Also: the
+  per-task model tier finally chosen and dated (`claude-opus-5` / `claude-haiku-4-5`); the **5.1–5.8
+  checkpoint decomposition** recorded, the corpus having cited "checkpoint 5.7" in three places while the
+  rest were defined nowhere; the DoD fixture list repaired (4 → 9 + 2, finding 315); the Phase-5 doc diet
+  refreshed to lead with §23 (316); the INTEGRATIONS §5 Batches ⚠VERIFY closed against the published
+  reference, the **live** smoke test still owed at 5.1 (318).
 - The mockups were consolidated into the single `alphalab_ux_mockups.html` in the v1.9.21/v1.9.22 passes
   (the earlier per-topic and v2 files are gone; the consolidated file gained the UX-14 paired-comparison block
   and the slate-grey replay tokens in v1.9.22). SCHEMA received its first post-v1.9.1 edit in v1.9.7

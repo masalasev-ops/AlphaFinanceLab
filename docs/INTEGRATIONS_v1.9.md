@@ -74,10 +74,18 @@ They are **retained as research, not repurposed.** D109 says additional breadth 
 - `GET https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS3MO` — no key needed for CSV. Only used if the French RF series is unavailable.
 
 ## 5. Anthropic (D46)
-- **Scheduled reads:** Message Batches API — `POST https://api.anthropic.com/v1/messages/batches` with the day's requests; poll for results. Half price vs synchronous. ⚠VERIFY current batch API version headers against docs.claude.com at Phase 5.
+
+*The Phase-5 ⚠VERIFY is **CLOSED (2026-08-01, v1.9.60)** against Anthropic's current published API reference. Scope of that check, stated so it is not over-read: it confirms the **endpoints, headers, polling shape and result semantics** below. It is **not** a live call — the live confirmation is the `[Trait("Category","LiveSmoke")]` test that ships at checkpoint 5.1 and the SETUP §7 day-zero smoke item, both of which stay open.*
+
+- **Scheduled reads — Message Batches API (GA, no beta header):** `POST https://api.anthropic.com/v1/messages/batches` with the day's requests, each carrying a **`custom_id`**. Poll `GET /v1/messages/batches/{id}` until `processing_status == "ended"`, then stream `GET /v1/messages/batches/{id}/results`. **Half price** vs synchronous.
+  - **Results arrive in ANY order — key by `custom_id`, never by position.** This is the single most likely silent bug in a batch client.
+  - Each result carries `result.type` ∈ `succeeded` / `errored` / `canceled` / `expired`; **all four must be handled**. `errored` splits further: a validation error is not retryable, a server error is.
+  - Limits: ≤100,000 requests or 256 MB per batch; most batches end within 1 hour, **maximum 24 hours**; results retrievable for 29 days.
 - **Interactive research assistant:** `POST /v1/messages`.
-- **Prompt caching:** mark the static instruction block with `cache_control` so only the day's news is fresh tokens.
-- Models per task from `Llm.Tasks` config (CONFIG_REFERENCE). Auth: `x-api-key: {Secrets:AnthropicApiKey}` (from `appsettings.Secrets.json`, D67) + `anthropic-version` header.
+- **Prompt caching:** mark the static instruction block with `cache_control` so only the day's news is fresh tokens. Caching **works inside a batch** — the shared L0/L1 prefix is written once and read by every request in the day's job, which is what makes the §23.2 economics hold.
+- **Auth and headers:** `x-api-key: {Secrets:AnthropicApiKey}` (from `appsettings.Secrets.json`, D67) + `anthropic-version: 2023-06-01` + `content-type: application/json`. Models per task from `Llm.Tasks` config (CONFIG_REFERENCE).
+- **Rejected on the Batches API — do not design around it:** the server-side `fallbacks` parameter. A refused or failed scheduled read degrades through the D24 `DegradationOrder`, never through a fallback model.
+- **No Anthropic-specific rate-limit or retry policy is recorded here** (finding 318): the client inherits §9.1's shared resilient client — 30 s timeout, 3 retries with exponential backoff + jitter, circuit-break after 5 consecutive failures. Batches is asynchronous and its own limits differ in kind from EODHD's two ceilings, so if Phase 5 finds the shared policy unfit, the fix is a recorded policy in this file rather than an ad-hoc client setting.
 - Hard budget enforcement wraps the client (D24): pre-flight cost estimate → refuse + degrade if over; log to `llm_budget_log`.
 
 ## 6. Alpaca (bar cross-check fallback — D19/D35)

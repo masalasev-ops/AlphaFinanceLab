@@ -387,6 +387,20 @@ CREATE TABLE analysis_cache (
   input_tokens INTEGER, output_tokens INTEGER, cost_usd REAL,
   PRIMARY KEY (prompt_hash, model, as_of)
 );
+-- OPEN [finding 319, v1.9.60]: `task` enumerates its allowed values in a COMMENT but carries no CHECK,
+-- unlike every other enumerated column in this schema (jobs.kind, journal_entries.kind, runs.run_kind,
+-- ai_context_packs.seat, ...). Either it gains one at M7 - and then joins the finding-121 rule, so a later
+-- value costs a migration - or the omission is deliberate and should say why. Decide at checkpoint 5.1,
+-- when M7 creates the table; adding it later is a table rebuild.
+--
+-- OPEN [finding 317, v1.9.60]: THREE VOCABULARIES NAME ONE CONCEPT, and Phase 5 is the first code that
+-- has to hold all three at once. `analysis_cache.task` = regime_brief|brief|skeptic|hypotheses;
+-- `Llm.Tasks` (CONFIG_REFERENCE) = news_extraction|regime_brief|research_brief|skeptic;
+-- `jobs.kind` = analysis_brief|analysis_skeptic|analysis_hypotheses. They overlap without matching:
+-- `brief` vs `research_brief` vs `analysis_brief` are the same job under three names, `news_extraction`
+-- exists only in config, and `hypotheses` only outside it. Not renamed here - a rename touches a CHECK
+-- constraint, a config key and a cached row key at once, so it is a checkpoint-5.1 decision with a
+-- migration, not a docs edit.
 
 CREATE TABLE llm_budget_log (
   as_of TEXT PRIMARY KEY, calls INTEGER, tokens INTEGER, cost_usd REAL,
@@ -461,12 +475,25 @@ CREATE TABLE journal_entries (                     -- D52
                                                    -- operator-authored hypothesis. The calibration-skill
                                                    -- half of the proposal score reads it; the researcher
                                                    -- NEVER reads the resulting score back (D110 R1)
-  detectability_floor_ann REAL                     -- D110 (v1.9.57): the D89/FR-40 floor AS AT ADMISSION,
-                                                   -- persisted from DetectabilityDetails.FloorAnn, which
-                                                   -- the gate computes today and then discards. Stored
-                                                   -- because the floor RISES with the trials tax, so the
-                                                   -- margin is only interpretable against the floor that
-                                                   -- was actually in force on that day
+  detectability_floor_ann REAL                     -- D110 (v1.9.57), AMENDED by D113 (v1.9.60): the
+                                                   -- D89/FR-40 floor AS AT ASSESSMENT - stamped when the
+                                                   -- score is formed, NOT at admission - persisted from
+                                                   -- DetectabilityDetails.FloorAnn, which the gate
+                                                   -- computes today and then discards. Stored because the
+                                                   -- floor RISES with the trials tax, so the margin is
+                                                   -- only interpretable against the floor that was
+                                                   -- actually in force when the claim was made.
+                                                   -- ASSESSMENT, not admission, for two reasons: D113's
+                                                   -- paper control never reaches admission and would be
+                                                   -- permanently unscorable under the original reading;
+                                                   -- and a real proposal is admitted only after the
+                                                   -- operator locks it, by which time other admissions
+                                                   -- may have moved the floor, so admission-time capture
+                                                   -- could not make the two arms comparable.
+                                                   -- A proposal whose floor cannot be computed at all
+                                                   -- (unassessed_no_sigma) is REFUSED and counted through
+                                                   -- D112's machinery - never a silently unscorable row,
+                                                   -- and never a third column
 );
 -- RULE (D110, v1.9.57): prior_prob and detectability_floor_ann are ADDITIVE and NULLABLE, and are
 -- BUILT AT PHASE 5 CHECKPOINT 5.7 beside the hypotheses endpoint that writes them - recorded here
