@@ -147,7 +147,7 @@ try {
 
     # Register integrity (rule 25 / D109): a register row is changed only by another register row.
     # Baseline mode - the violations that predate the check are carried; anything new fails.
-    & (Join-Path $PSScriptRoot 'check-register.ps1') -Baseline
+    & (Join-Path $PSScriptRoot 'check-register.ps1')
     if ($LASTEXITCODE -ne 0) { throw 'check-register failed.' }
 
     # 3b. Belt-and-suspenders at the SOURCE level for the UI boundary: AlphaLab.Web must not even

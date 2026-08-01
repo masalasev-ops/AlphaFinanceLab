@@ -58,7 +58,7 @@ public sealed record ReplayVerificationReport(IReadOnlyList<VerificationCheck> C
     /// <summary>The freeze/CI bar: no GATING check failed (Insufficient is honest, not green). A Fail
     /// in a reported-only check (D107) is archived with its citation and never blocks — that is the
     /// per-check exemption mechanism the Phase-A audit found missing (before D107, all twelve checks
-    /// fed this equally and D102 was unimplementable as a flag flip).</summary>
+    /// fed this equally and D102 (superseded by D107) was unimplementable as a flag flip).</summary>
     public bool NoFailures => Checks.All(c => c.Outcome != CheckOutcome.Fail || c.ReportedOnlyPer is not null);
 }
 

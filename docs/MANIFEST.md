@@ -226,15 +226,15 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   rule-selects a per-cadence plant strength ladder. v1.9.43 the proxy-only backfill mode (finding 274) — the
   regime warm-up + benchmark depth without the membership-reconcile mass-eviction hazard. The full `--reset`
   calibration is the operator's de-risk-then-sign-off sequence (RUNBOOK §8).
-- **v1.9.46–v1.9.49 the pre-freeze evidence sequence** (findings 279–289; decisions **D102–D106**).
-  v1.9.46: `joint_false_alarm` made reported-not-gating (**D102**, findings 279–280), the D103 evidence
+- **v1.9.46–v1.9.49 the pre-freeze evidence sequence** (findings 279–289; decisions **D102 (superseded by D107)–D106**).
+  v1.9.46: `joint_false_alarm` made reported-not-gating (**D102** (superseded by D107), findings 279–280), the D103 evidence
   pass (findings 282–283), and the in-flight run's own diagnostics (findings 284–287, incl. the
   raw-gap-vs-Jensen's-alpha defect, finding 285). v1.9.47: AI decision transparency specified before
   implementation (**D104–D105**). v1.9.48: the recompute harness adopted (**D106**). v1.9.49: the 4.11
   run COMPLETES — generation 1 recorded (5,031 sessions), the freeze blocked as predicted
   (findings 288–289; D103 re-scoped).
 - **v1.9.50 the category decision + the freeze record — PHASE 4 SIGNED OFF (2026-07-31)**. **D107**
-  (supersedes D102): membership is by what a check ASSERTS, so pass-1-verdict checks are reported-only
+  (supersedes D102 (superseded by D107)): membership is by what a check ASSERTS, so pass-1-verdict checks are reported-only
   and never freeze-gating. The (cont.) entry is the freeze record: the resume recomputed ZERO sessions
   (5,031 already-committed skipped), AllGreen=True over the gating set (9/9 gating Pass), the report
   archived under `docs/calibration/sp500/`, and **five append-only config rows FROZEN** at

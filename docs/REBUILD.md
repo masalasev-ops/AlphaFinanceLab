@@ -175,7 +175,7 @@ actually wired. `--universe sp500` used to be *accepted* (it set the count band 
 fail-close ~300 API calls later with `count sanity breach: primary=101, crosscheck=101, band=[495,510]` —
 a data-shaped error for an unwired-code cause. As of v1.9.11 it is **rejected at parse** with the real
 reason and exits before spending anything (P1R-10). An `ISharesHoldingsOptions.Ivv()` preset exists but is
-unused: wiring it is the S&P 500 widening *mechanism* — a recorded proposal (open in PROGRESS), not a flag you flip today. The widening **target** is now the S&P 1500 by **D87** (contingent on a verified-depth 400/600 history; else S&P 500), and the mid/small-cap feeds it needs are Phase-4 prerequisites.
+unused: wiring it is the S&P 500 widening *mechanism* — a recorded proposal (open in PROGRESS), not a flag you flip today. There is no widening beyond the S&P 500: **D109** supersedes D87 — additional breadth is a **separate arena** (its own store, Worker+Api pair and calibration), never an enlargement of this one.
 
 **The Phase-4 REPLAY prerequisite is the SEPARATE `--historical` mode (v1.9.39, D70/D97):**
 `dotnet run --project tools/Backfill -- --historical sp500 --from <d> --to <d> [--csv <path>]` seeds the
@@ -191,9 +191,9 @@ re-run the forward bootstrap after it until the widening lands (the universe-bli
 
 **The arena id is the lab's name, and `sp500` is correct — leave it.** `tools/Backfill/appsettings.json`
 sets `Arena.Id = "sp500"` / `DisplayName = "S&P 500"`, and that is *right* for now: per D70 this arena **is** the
-S&P 500 lab (destination target amended to the S&P 1500 by **D87**, contingent). It currently holds the 100-name launch slice and **widens in place** after
+S&P 500 lab and stays one (**D109** supersedes D87: breadth arrives as a separate arena, and an in-place widen of an arena holding a live experiment is exactly what D109 forbids). It currently holds the 100-name launch slice and widens to its full S&P 500 universe after
 Phase-4 sign-off — renaming it to `sp100` now would strand the
-store and have to be undone later. (The eventual `sp500`→`sp1500` rename is a **deferred Phase-4 step**, D87-note item 10 — not done today.) `Arena.Id` is not a per-clone knob; change it **only** to stand up a
+store and have to be undone later. (The `sp500`→`sp1500` rename is **VOID**: **D109** supersedes D87 and declares the D87-note checklist it came from void as written. This arena keeps its id.) `Arena.Id` is not a per-clone knob; change it **only** to stand up a
 *separate* arena alongside this one (D71 — its own DB file, Worker+Api pair, snapshot/backup dirs). If you
 do, set the **same** new id in all three backend appsettings (Worker, Api, Backfill) — a half-applied edit
 splits the store across two folders with no error. The DB path, snapshots, and backups all namespace under

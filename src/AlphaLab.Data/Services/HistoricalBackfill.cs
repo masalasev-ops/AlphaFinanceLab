@@ -16,8 +16,9 @@ namespace AlphaLab.Data.Services;
 /// </summary>
 public sealed record HistoricalBackfillOptions
 {
-    /// <summary>Replay universe. Only 'sp500' is valid (D70: replay always uses S&amp;P 500 as-of
-    /// membership; the S&amp;P 1500 extension is D87-contingent, decided at sign-off).</summary>
+    /// <summary>Replay universe. Only 'sp500' is valid (D70: replay always uses this arena's own
+    /// full-universe as-of membership, which here is the S&amp;P 500. D109 supersedes D87 - there is no
+    /// in-place S&amp;P 1500 extension; a separate arena runs its own backfill).</summary>
     public string Universe { get; init; } = "sp500";
 
     /// <summary>Replay-window lower bound (ISO yyyy-MM-dd) — bars are fetched from here.</summary>
@@ -79,7 +80,7 @@ public static class HistoricalBackfillArgs
         {
             throw new ArgumentException(
                 $"--historical universe must be 'sp500' (got '{universe ?? "(none)"}'): replay always uses " +
-                "S&P 500 as-of membership (D70). The S&P 1500 extension is D87-contingent, decided at Phase-4 sign-off.");
+                "S&P 500 as-of membership (D70). D109 supersedes D87: there is no in-place S&P 1500 extension - additional breadth is a separate arena with its own store and its own backfill.");
         }
         var f = RequireIsoDate("--from", from);
         var t = RequireIsoDate("--to", to);
