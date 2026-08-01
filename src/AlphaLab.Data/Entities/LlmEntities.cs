@@ -83,3 +83,81 @@ public sealed class NewsItemRow
     /// effect on what the model saw is measurable rather than assumed.</summary>
     public int? TruncatedChars { get; set; }
 }
+
+/// <summary>
+/// ai_context_packs — exactly what an AI seat was shown, hashed and watermarked (D80; M8).
+///
+/// **Stored as BYTES, not as a recipe.** D104 artefact (a) is specific about this: never a summary,
+/// never "the recipe plus the inputs". A recipe plus its inputs is a different claim — re-running it
+/// proves what the recipe does TODAY, not what the model saw THEN, and the whole point of the pack is to
+/// make re-execution unnecessary.
+///
+/// Append-only, and off the statistical hot path: no column here feeds any metric, verdict, threshold or
+/// population (golden rule 32).
+/// </summary>
+public sealed class AiContextPackRow
+{
+    /// <summary>Plain rowid alias — no AUTOINCREMENT (rule 14 hand-edit).</summary>
+    public long PackId { get; set; }
+    public string Seat { get; set; } = default!;
+    /// <summary>Contestant only; NULL for researcher/advisor.</summary>
+    public string? StrategyId { get; set; }
+    public string AsOf { get; set; } = default!;
+    /// <summary>The D40 data watermark the pack was built at.</summary>
+    public string Watermark { get; set; } = default!;
+    /// <summary>`Ai.PackRecipeVersion` at build time — a frozen param (D81 rule 2), so a recipe change
+    /// forks a candidate exactly like a prompt or model change.</summary>
+    public string RecipeVersion { get; set; } = default!;
+    /// <summary>Derived features only — NEVER raw series (D80).</summary>
+    public string PackJson { get; set; } = default!;
+    /// <summary>SHA-256 of pack_json; the audit key that ties a decision to the exact pack seen.</summary>
+    public string PackHash { get; set; } = default!;
+    public int TokenEstimate { get; set; }
+    public string CreatedAt { get; set; } = default!;
+}
+
+/// <summary>
+/// ai_decisions — the persisted output IS the decision (D81 rule 1; M8).
+///
+/// The funnel reads THIS ROW, never the API, and every re-run replays it. That is how a nondeterministic
+/// sampler satisfies NFR-1: determinism for AI-seated strategies reads
+/// **f(inputs, watermark, seeds, stored AI outputs)**.
+///
+/// `cost_usd` is decimal-as-TEXT here (D69) where `analysis_cache.cost_usd` is REAL — the schema's own
+/// split, and not an inconsistency: this row is part of a decision record that a ledger claim can rest on.
+/// </summary>
+public sealed class AiDecisionRow
+{
+    /// <summary>Plain rowid alias — no AUTOINCREMENT (rule 14 hand-edit).</summary>
+    public long DecisionId { get; set; }
+    public string StrategyId { get; set; } = default!;
+    public string AsOf { get; set; } = default!;
+    /// <summary>Ties the decision to the exact ai_context_packs row seen (D104 artefact (a)).</summary>
+    public string PackHash { get; set; } = default!;
+    /// <summary>Frozen param (D81 rule 2); any change forks a candidate (rule 24).</summary>
+    public string PromptVersion { get; set; } = default!;
+    /// <summary>D104 artefact (d) — the model that SERVED the call.</summary>
+    public string ModelVersion { get; set; } = default!;
+    /// <summary>D104 artefact (b): the RAW model output, verbatim.</summary>
+    public string OutputJson { get; set; } = default!;
+    /// <summary>
+    /// D104 artefact (c) — the parsed decision AND what the funnel actually did with it.
+    ///
+    /// **This is the artefact most easily dropped**, because (a) and (b) together prove what was asked
+    /// and answered while neither shows what the arena DID. Without it a correct decision and a correct
+    /// log can coexist with a wrong trade and nothing in the record would show it: a guardrail rejection,
+    /// a sizing clamp or a cash constraint between the decision and the fill is exactly the gap it closes.
+    /// NULL until a funnel consumes the decision (Phase 6) — the column exists now so the seam is built
+    /// with it rather than around it.
+    /// </summary>
+    public string? AppliedJson { get; set; }
+    /// <summary>D104 artefact (d), continued: the effort/thinking configuration. Named for what the
+    /// pinned tier actually HAS — it has no temperature/top_p/top_k, so recording "sampling parameters"
+    /// would be recording a field that does not exist.</summary>
+    public string? SamplingJson { get; set; }
+    public int TokensIn { get; set; }
+    public int TokensOut { get; set; }
+    /// <summary>decimal TEXT (D69), never REAL.</summary>
+    public string CostUsd { get; set; } = default!;
+    public string CreatedAt { get; set; } = default!;
+}

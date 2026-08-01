@@ -69,6 +69,10 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
     public DbSet<LlmBudgetLogRow> LlmBudgetLog => Set<LlmBudgetLogRow>();
     public DbSet<NewsItemRow> NewsItems => Set<NewsItemRow>();
 
+    // ---- Phase 5 AI-seat tables (D80/D81; M8) ----
+    public DbSet<AiContextPackRow> AiContextPacks => Set<AiContextPackRow>();
+    public DbSet<AiDecisionRow> AiDecisions => Set<AiDecisionRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -747,6 +751,51 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
             // The dedupe key, made structural: a duplicate cannot be stored even if the in-memory
             // title-hash dedupe were bypassed.
             e.HasIndex(x => new { x.AsOf, x.TitleHash }).IsUnique().HasDatabaseName("ux_news_items_as_of_title");
+        });
+
+        // ---- ai_context_packs (D80/D104; M8) ---- append-only; pack_id is a plain rowid alias with NO
+        // AUTOINCREMENT (rule 14 hand-edit). seat is CHECK-constrained (finding 121's rule).
+        modelBuilder.Entity<AiContextPackRow>(e =>
+        {
+            e.ToTable("ai_context_packs", t => t.HasCheckConstraint(
+                "ck_ai_context_packs_seat",
+                "seat IN (" + string.Join(", ", AiSeat.All.Select(s => $"'{s}'")) + ")"));
+            e.HasKey(x => x.PackId);
+            e.Property(x => x.PackId).HasColumnName("pack_id").ValueGeneratedOnAdd();
+            e.Property(x => x.Seat).HasColumnName("seat").IsRequired();
+            e.Property(x => x.StrategyId).HasColumnName("strategy_id");
+            e.Property(x => x.AsOf).HasColumnName("as_of").IsRequired();
+            e.Property(x => x.Watermark).HasColumnName("watermark").IsRequired();
+            e.Property(x => x.RecipeVersion).HasColumnName("recipe_version").IsRequired();
+            e.Property(x => x.PackJson).HasColumnName("pack_json").IsRequired();
+            e.Property(x => x.PackHash).HasColumnName("pack_hash").IsRequired();
+            e.Property(x => x.TokenEstimate).HasColumnName("token_estimate").IsRequired();
+            e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
+            e.HasIndex(x => new { x.Seat, x.StrategyId, x.AsOf, x.RecipeVersion })
+                .IsUnique().HasDatabaseName("ux_ai_context_packs");
+        });
+
+        // ---- ai_decisions (D81/D104/D105; M8) ---- append-only; decision_id is a plain rowid alias
+        // with NO AUTOINCREMENT (rule 14 hand-edit). cost_usd is decimal -> TEXT (D69), never REAL.
+        modelBuilder.Entity<AiDecisionRow>(e =>
+        {
+            e.ToTable("ai_decisions");
+            e.HasKey(x => x.DecisionId);
+            e.Property(x => x.DecisionId).HasColumnName("decision_id").ValueGeneratedOnAdd();
+            e.Property(x => x.StrategyId).HasColumnName("strategy_id").IsRequired();
+            e.Property(x => x.AsOf).HasColumnName("as_of").IsRequired();
+            e.Property(x => x.PackHash).HasColumnName("pack_hash").IsRequired();
+            e.Property(x => x.PromptVersion).HasColumnName("prompt_version").IsRequired();
+            e.Property(x => x.ModelVersion).HasColumnName("model_version").IsRequired();
+            e.Property(x => x.OutputJson).HasColumnName("output_json").IsRequired();
+            e.Property(x => x.AppliedJson).HasColumnName("applied_json");
+            e.Property(x => x.SamplingJson).HasColumnName("sampling_json");
+            e.Property(x => x.TokensIn).HasColumnName("tokens_in").IsRequired();
+            e.Property(x => x.TokensOut).HasColumnName("tokens_out").IsRequired();
+            e.Property(x => x.CostUsd).HasColumnName("cost_usd").HasColumnType("TEXT").IsRequired();
+            e.Property(x => x.CreatedAt).HasColumnName("created_at").IsRequired();
+            e.HasIndex(x => new { x.StrategyId, x.AsOf, x.PromptVersion })
+                .IsUnique().HasDatabaseName("ux_ai_decisions");
         });
     }
 }

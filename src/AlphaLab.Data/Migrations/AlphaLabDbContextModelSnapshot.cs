@@ -44,6 +44,140 @@ namespace AlphaLab.Data.Migrations
                     b.ToTable("accounts", (string)null);
                 });
 
+            modelBuilder.Entity("AlphaLab.Data.Entities.AiContextPackRow", b =>
+                {
+                    b.Property<long>("PackId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("pack_id");
+
+                    b.Property<string>("AsOf")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("as_of");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("PackHash")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("pack_hash");
+
+                    b.Property<string>("PackJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("pack_json");
+
+                    b.Property<string>("RecipeVersion")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("recipe_version");
+
+                    b.Property<string>("Seat")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("seat");
+
+                    b.Property<string>("StrategyId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("strategy_id");
+
+                    b.Property<int>("TokenEstimate")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("token_estimate");
+
+                    b.Property<string>("Watermark")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("watermark");
+
+                    b.HasKey("PackId");
+
+                    b.HasIndex("Seat", "StrategyId", "AsOf", "RecipeVersion")
+                        .IsUnique()
+                        .HasDatabaseName("ux_ai_context_packs");
+
+                    b.ToTable("ai_context_packs", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_ai_context_packs_seat", "seat IN ('researcher', 'contestant', 'advisor')");
+                        });
+                });
+
+            modelBuilder.Entity("AlphaLab.Data.Entities.AiDecisionRow", b =>
+                {
+                    b.Property<long>("DecisionId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("decision_id");
+
+                    b.Property<string>("AppliedJson")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("applied_json");
+
+                    b.Property<string>("AsOf")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("as_of");
+
+                    b.Property<string>("CostUsd")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("cost_usd");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("ModelVersion")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("model_version");
+
+                    b.Property<string>("OutputJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("output_json");
+
+                    b.Property<string>("PackHash")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("pack_hash");
+
+                    b.Property<string>("PromptVersion")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("prompt_version");
+
+                    b.Property<string>("SamplingJson")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("sampling_json");
+
+                    b.Property<string>("StrategyId")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("strategy_id");
+
+                    b.Property<int>("TokensIn")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("tokens_in");
+
+                    b.Property<int>("TokensOut")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("tokens_out");
+
+                    b.HasKey("DecisionId");
+
+                    b.HasIndex("StrategyId", "AsOf", "PromptVersion")
+                        .IsUnique()
+                        .HasDatabaseName("ux_ai_decisions");
+
+                    b.ToTable("ai_decisions", (string)null);
+                });
+
             modelBuilder.Entity("AlphaLab.Data.Entities.AllocationLogRow", b =>
                 {
                     b.Property<long>("EventId")
