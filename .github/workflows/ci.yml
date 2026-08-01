@@ -33,4 +33,7 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - name: dotnet test (POSIX path resolution)
-        run: dotnet test AlphaLab.slnx -c Debug --nologo
+        # Category!=LiveSmoke matches tools/ci.ps1 — the one test that calls a real vendor endpoint is
+        # excluded from every automated run (TEST_PLAN §6). CI has no Anthropic key, so it would skip
+        # rather than fail, but excluding it keeps the two legs' definitions of "the suite" identical.
+        run: dotnet test AlphaLab.slnx -c Debug --nologo --filter "Category!=LiveSmoke"

@@ -1,3 +1,4 @@
+using AlphaLab.Core.Llm;
 using AlphaLab.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -62,6 +63,11 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
     // ---- Phase 4.5 Signal Library (D91/FR-43,44; M6) ----
     public DbSet<SignalRow> Signals => Set<SignalRow>();
     public DbSet<SignalIcRow> SignalIc => Set<SignalIcRow>();
+
+    // ---- Phase 5 LLM tables (D16/D24/D46; M7) ----
+    public DbSet<AnalysisCacheRow> AnalysisCache => Set<AnalysisCacheRow>();
+    public DbSet<LlmBudgetLogRow> LlmBudgetLog => Set<LlmBudgetLogRow>();
+    public DbSet<NewsItemRow> NewsItems => Set<NewsItemRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -687,6 +693,60 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
             e.Property(x => x.HorizonDays).HasColumnName("horizon_days");
             e.Property(x => x.RankIc).HasColumnName("rank_ic").IsRequired();
             e.Property(x => x.N).HasColumnName("n").IsRequired();
+        });
+
+        // ---- analysis_cache (FR-21/D46; M7) ---- composite TEXT PK, so no autoincrement question.
+        // The `task` CHECK closes finding 319: every other enumerated column in this schema carries one,
+        // and this column enumerated its values in a comment only. It is written from
+        // AnalysisTaskNames.All so the constraint and the C# type cannot drift; adding a value is a
+        // migration from here on (finding 121's rule).
+        modelBuilder.Entity<AnalysisCacheRow>(e =>
+        {
+            e.ToTable("analysis_cache", t => t.HasCheckConstraint(
+                "ck_analysis_cache_task",
+                "task IN (" + string.Join(", ", AnalysisTaskNames.All.Select(n => $"'{n}'")) + ")"));
+            e.HasKey(x => new { x.PromptHash, x.Model, x.AsOf });
+            e.Property(x => x.PromptHash).HasColumnName("prompt_hash");
+            e.Property(x => x.Model).HasColumnName("model");
+            e.Property(x => x.AsOf).HasColumnName("as_of");
+            e.Property(x => x.Task).HasColumnName("task").IsRequired();
+            e.Property(x => x.OutputJson).HasColumnName("output_json").IsRequired();
+            e.Property(x => x.InputTokens).HasColumnName("input_tokens");
+            e.Property(x => x.OutputTokens).HasColumnName("output_tokens");
+            // REAL, not the D69 decimal→TEXT treatment: D69 governs LEDGER money and this is an
+            // operational spend metric (SCHEMA states the split).
+            e.Property(x => x.CostUsd).HasColumnName("cost_usd");
+        });
+
+        // ---- llm_budget_log (D24; M7) ---- as_of TEXT PK.
+        modelBuilder.Entity<LlmBudgetLogRow>(e =>
+        {
+            e.ToTable("llm_budget_log");
+            e.HasKey(x => x.AsOf);
+            e.Property(x => x.AsOf).HasColumnName("as_of");
+            e.Property(x => x.Calls).HasColumnName("calls");
+            e.Property(x => x.Tokens).HasColumnName("tokens");
+            e.Property(x => x.CostUsd).HasColumnName("cost_usd");
+            e.Property(x => x.Degraded).HasColumnName("degraded").IsRequired().HasDefaultValue(0);
+            e.Property(x => x.Note).HasColumnName("note");
+        });
+
+        // ---- news_items (D46; M7) ---- POST-BUDGET rows only. news_id is a plain rowid alias with NO
+        // AUTOINCREMENT (rule 14 — the generated migration needs the documented hand-edit).
+        modelBuilder.Entity<NewsItemRow>(e =>
+        {
+            e.ToTable("news_items");
+            e.HasKey(x => x.NewsId);
+            e.Property(x => x.NewsId).HasColumnName("news_id").ValueGeneratedOnAdd();
+            e.Property(x => x.AsOf).HasColumnName("as_of").IsRequired();
+            e.Property(x => x.TitleHash).HasColumnName("title_hash").IsRequired();
+            e.Property(x => x.Title).HasColumnName("title");
+            e.Property(x => x.Source).HasColumnName("source");
+            e.Property(x => x.SymbolsJson).HasColumnName("symbols_json");
+            e.Property(x => x.TruncatedChars).HasColumnName("truncated_chars");
+            // The dedupe key, made structural: a duplicate cannot be stored even if the in-memory
+            // title-hash dedupe were bypassed.
+            e.HasIndex(x => new { x.AsOf, x.TitleHash }).IsUnique().HasDatabaseName("ux_news_items_as_of_title");
         });
     }
 }

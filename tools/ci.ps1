@@ -115,7 +115,14 @@ try {
 
     if (-not $SkipTests) {
         Write-Host '== test ==' -ForegroundColor Cyan
-        Invoke-Native -What 'dotnet test' -Command { dotnet test 'AlphaLab.slnx' -c Debug --nologo --no-build }
+        # Category!=LiveSmoke excludes the ONE test that calls a real vendor endpoint (TEST_PLAN §6).
+        # A trait filter, not an env flag: D67 bars environment variables for configuration, and the same
+        # reasoning applies to gating — the exclusion belongs here, where it is visible and reproducible,
+        # rather than in a machine's environment where it is neither. Run it deliberately with
+        #   dotnet test tests/AlphaLab.Worker.Tests --filter "Category=LiveSmoke"
+        Invoke-Native -What 'dotnet test' -Command {
+            dotnet test 'AlphaLab.slnx' -c Debug --nologo --no-build --filter 'Category!=LiveSmoke'
+        }
     }
 
     Write-Host '== guards ==' -ForegroundColor Cyan

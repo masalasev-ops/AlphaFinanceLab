@@ -318,14 +318,36 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     "PromptCacheStaticBlock": true,
     "NewsBudget": { "MaxArticlesPerRead": 25, "MaxCharsPerArticle": 2000,
                     "DedupeBy": "title_hash" },
-    "DailyBudget": { "MaxCostUsd": 1.00, "MaxCalls": 10 },   // OPEN [finding 320, v1.9.60]: D24 and MASTER §7 both
-                                                   // describe the cap as "tokens/calls/cost" and `llm_budget_log` carries a
-                                                   // `tokens` column, but there is no MaxTokens key here - so the documented
-                                                   // third ceiling has no knob and the log column has no enforcer. Either add
-                                                   // the key at checkpoint 5.1 or state that cost subsumes it (it nearly does,
-                                                   // since cost is a function of tokens - but not across a per-task tier
-                                                   // change, which is exactly what v1.9.60 just did). Decide with the budget
-                                                   // enforcement, not after it.
+    "Pricing": {                                   // BUILT at checkpoint 5.1. Token rates in USD per MILLION tokens, per
+                                                   // model string - keyed by the same value Llm.Tasks.*.Model holds.
+                                                   // CONFIG, not constants in code, deliberately: these are vendor facts
+                                                   // with a date, and INTEGRATIONS' standing rule is that provider facts are
+                                                   // implemented against a recorded source rather than from memory. A rate
+                                                   // change becomes an operator edit against a published price list -
+                                                   // visible, dated, reversible - instead of a code change nobody reviews as
+                                                   // a pricing decision. It also keeps the D24 ceiling meaning the same
+                                                   // thing after a re-pin: cost is computed from the rate actually in force.
+                                                   // FAILS CLOSED (rule 10): an unpriced model THROWS rather than costing
+                                                   // zero, because a zero cost is indistinguishable from a free cache hit in
+                                                   // llm_budget_log and would make the ceiling unenforceable exactly when a
+                                                   // newly-pinned model started spending.
+      "claude-opus-5":    { "InputPerMTok": 5.0, "OutputPerMTok": 25.0 },
+      "claude-haiku-4-5": { "InputPerMTok": 1.0, "OutputPerMTok":  5.0 }
+                                                   // Optional per model: CacheReadMultiplier (default 0.1) and
+                                                   // CacheWriteMultiplier (default 1.25). The write multiplier is why a
+                                                   // SILENT CACHE INVALIDATOR costs more than not caching at all.
+    },
+    "BatchDiscountMultiplier": 0.5,                // the documented Batches half price (D46) - applied to every rate when a
+                                                   // call goes through the Batches API, which is why every scheduled read is
+                                                   // batched and the interactive path is not
+    "DailyBudget": { "MaxCostUsd": 1.00, "MaxCalls": 10, "MaxTokens": 0 },
+                                                   // CLOSED [finding 320, at checkpoint 5.1]: MaxTokens is the third D24
+                                                   // ceiling, which the docs described ("tokens/calls/cost") and
+                                                   // llm_budget_log had a column for while no key existed to enforce it.
+                                                   // 0 disables it (cost and calls still apply). Cost NEARLY subsumes
+                                                   // tokens - and the exception is exactly what v1.9.60 did: a per-task
+                                                   // tier change moves the tokens-per-dollar ratio, so a cost ceiling alone
+                                                   // silently changes how much the lab reads whenever a model is re-pinned.
     "DegradationOrder": ["held_positions", "cached", "neutral_fallback"],
     "ScopeLevel": 1                               // 1 market-read; 2 shortlist(<=20); 3 unreachable
   },

@@ -1873,3 +1873,59 @@ The corpus has been citing **"Phase 5 checkpoint 5.7"** by name in three places 
 Recorded now as prep + eight checkpoints, with 5.7 left exactly where the corpus already put it. Three constraints drove the ordering and are stated in the prompt because they are not free choices: **the `ci.ps1` reference graph** allows `AlphaLab.Llm` only `Core`, so the provider interfaces go in Core (the finding-295 shape) and `ContextPackBuilder` goes in `AlphaLab.Evaluation`, which can reach the versioned read services; **`DescriptiveOnlyGuardTests`** is assembly-scoped and default-deny, so the digest must consume the FR-46 read-model's DTO and never `ISignal`; and **the arena floor published as a common pack field needs an as-of variant of the floor computation**, because `DetectabilityGate.Assess` resolves `ResolveCurrent` by design and wiring the operational path into a pack would put a post-as-of fact in it — `FX-PackNoLeak` would catch it, but the point is not to build it.
 
 Also carried into 5.4: **`signal_ic` moves from `Untouched` to `RewoundTables`**, which is arrival (b) of the two-arrival trigger recorded at its own `ScratchStore` classification — the digest entering a context pack means a reproduced session's pack would otherwise contain a grade that session itself produced.
+
+---
+
+## v1.9.61 — Phase 5 checkpoint 5.1: the provider seam (FR-21; finding 323, and 317/319/320 closed)
+
+*Recorded 2026-08-01 on `feat/phase5.1-provider-seam`. **The first `src/` change to `AlphaLab.Llm` since Phase 0 created it as an empty placeholder** — and therefore the first test of §23.8's bet, which was written before this code precisely so the code could contradict it. Tests **938 → 973**; migration **M7**; `ci.ps1` green.*
+
+### What shipped
+
+`IAnalysisProvider` on the Message Batches API with prompt caching and per-task tiering; the D24 budget enforced pre-token; the FR-21 cache; and the three LLM tables (`analysis_cache`, `llm_budget_log`, `news_items`).
+
+The layering is where the economics live: **L0+L1 are the cacheable prefix, L2 is the day's fresh block**, and because caching is a *prefix* match, anything volatile placed before the breakpoint invalidates everything after it. A cache *write* costs more than an uncached read, so a silent invalidator does not merely fail to save — it makes caching a **surcharge**. `FR21_PromptCache_BreakpointSitsOnTheStaticBlock_NotTheFreshOne` asserts the fresh block is absent from the cached prefix, which is the shape of that failure rather than a proxy for it.
+
+### Finding 323 — the recorded resilience policy was not reachable
+
+INTEGRATIONS §5 said the Anthropic client "inherits" the shared resilient client (§9.1: 30 s, 3 retries with backoff + jitter, circuit-break at 5). **Building it showed that inheritance was impossible in two independent ways.** `IResilientHttpClient` lives in `AlphaLab.Data`, which `ci.ps1` forbids `AlphaLab.Llm` from referencing; and it was **GET-only**, while Batches needs POST.
+
+This is exactly the class of defect §23.8 was written to produce: a specification written before its implementation can be **contradicted** by it, and the contradiction is the signal. Nothing was wrong with the policy — what was wrong was the claim that the LLM path could reach it.
+
+Resolved with two narrow additions rather than a second HTTP stack:
+
+- **`IResilientHttpSender`** — a **separate** interface adding POST and per-request headers. The first attempt added them to `IResilientHttpClient` and **broke three existing test stubs** that had no reason to care about POST; the break was the argument. A narrow interface keeps a new capability's blast radius at the one consumer that needs it.
+- **`IModelTransport`** in `AlphaLab.Core` — the port the LLM layer talks to, satisfied by `AnthropicHttpTransport` in `AlphaLab.Data`. The resilience policy stays in one place for every provider in the lab, and the LLM layer holds no transport concerns at all — which is also what makes the whole prompt/batch/cost/refusal path unit-testable against a fake, the "mocked provider for CI" TEST_PLAN §6 asks for.
+
+**POST is retried, on a specific argument rather than a general one:** batch-create and single-message are both safe to repeat (a duplicate batch costs a duplicate read the cache absorbs; a lost batch is a no-read day). Recorded as **not** a licence to retry any POST.
+
+### Three findings closed by building, not by editing
+
+| # | Closed how |
+|---|---|
+| **317** (three vocabularies) | **Became two, at zero migration cost.** The finding expected a rename touching a CHECK, a config key and a cached-row key at once. It did not, because `analysis_cache` **did not exist yet** — its vocabulary was *chosen* at `CREATE TABLE`. It adopts the `Llm.Tasks` names verbatim, since that is what the code must already read models from. **`jobs.kind` is deliberately unchanged: a JOB is not a TASK** — `analysis_brief` names the queued unit of Worker work, `research_brief` the model call inside it, and one job may make several. Collapsing them would have cost the very migration the finding feared |
+| **319** (no CHECK on `task`) | Added at `CREATE TABLE` — free there, a table rebuild afterwards. Generated from `AnalysisTaskNames.All` so DDL and enum cannot drift, with **both halves** pinned (unknown rejected, all five admitted) |
+| **320** (no tokens knob) | `Llm.DailyBudget.MaxTokens`. Cost *nearly* subsumes tokens — the exception is precisely what v1.9.60 did: a tier re-pin moves the tokens-per-dollar ratio, so a cost ceiling alone silently changes how much the lab reads |
+
+### Decisions inside the checkpoint worth keeping
+
+- **Pricing is CONFIG, not constants.** Vendor facts with a date; INTEGRATIONS' standing rule is that provider facts come from a recorded source, not memory. An **unpriced model throws** rather than costing zero, because a zero cost is indistinguishable from a free cache hit in `llm_budget_log` and would make the D24 ceiling unenforceable exactly when a newly-pinned model started spending.
+- **Cache before budget.** A hit must not consume headroom it never needed; checking the budget first would let an exhausted day refuse a read it was never going to pay for.
+- **`analysis_cache` is keyed on the model that SERVED the call**, so a re-pin correctly *misses* rather than serving an answer the current tier never produced.
+- **All three tables are `Untouched` in `ScratchStore`, on the D105 obligation rather than convenience.** Rewinding `analysis_cache` would delete the row a reproduction must replay and force the choice between calling the model (forbidden) and having no answer.
+- **`Llm.DegradationOrder` defaults empty** with a `Resolved*` accessor — the finding-301 binder trap, and worse here than for the Signal Library's horizons, since an un-removable default also stays *ahead* in priority order.
+
+### The tests that would otherwise have passed on a broken implementation
+
+- `FR21_CacheHit_CostsZero` asserts **three ways**: nothing reported, **nothing reached the transport**, nothing charged to the day. The weak version passes on a provider that calls the API and then reports zero.
+- `Batch_ResultsAreCorrelatedByCustomId_NotByPosition` scripts the two results **reversed**. A positional implementation passes every other test in the file and silently mis-attributes every answer in production.
+- The refusal test pins that `stop_reason: "refusal"` arrives on an **HTTP 200** with empty content — code that indexes `content[0]` breaks on a success status, which is what makes it easy to miss.
+- All three non-success batch kinds (`errored`/`canceled`/`expired`) are exercised; handling only `errored` is the easy mistake.
+
+### The live smoke test
+
+Added with `[Trait("Category","LiveSmoke")]` and **excluded from both CI legs** via `--filter "Category!=LiveSmoke"` — a trait filter rather than an env flag, on D67's reasoning extended from configuration to gating: the exclusion belongs in the command line the build runs, where it is visible, not in a machine's environment where it is neither visible nor reproducible.
+
+It **fails with an actionable message** when no key is configured. The first draft skipped, so a keyless developer would see no red — but that reasoning does not survive the gating: the test never runs unless someone explicitly asks for it, and someone who asks for a live smoke test and has no key is better served by being told than by a green tick over a test that did nothing.
+
+**Still owed:** the INTEGRATIONS §5 `⚠VERIFY` was closed at v1.9.60 against the *published reference*. The live confirmation is owed until the test is actually run, which is a 5.8 gate item — its existence does not discharge it.
