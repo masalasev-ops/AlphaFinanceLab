@@ -107,7 +107,7 @@ Stage 4 semantics: **the wish list opens/adds; only the `ExitPolicy` closes** �
 | Time-Series Momentum | trend | daily bars | medium | 6 | diversifier (absolute, not cross-sectional) |
 | Betting-Against-Beta | risk | daily bars (+ index proxy) | low (monthly) | 6 | diversifier (beta-ranked; low-vol's sibling) |
 | Value | value | fundamentals (PIT-validated) | low | **8 (contingent)** | fundamental |
-| Quality | quality | fundamentals (PIT-validated) | low | **8 (contingent)** | fundamental |
+| Quality | quality | fundamentals (PIT-validated) | low | **8 (contingent) — BLOCKED by D111** | fundamental (prohibited until the arena's membership methodology is verified and recorded) |
 | Blended / Meta | fusion | mixed signals | varies | 6+ | fusion (logistic → LightGBM) |
 
 ---
@@ -304,6 +304,8 @@ Record the protocol's results in `PROGRESS.md`; a pass names the source in the d
 
 ### 7.2 `QualityModel` — buy financially strong firms
 
+> **BLOCKED BY D111 — DO NOT REGISTER THIS STRATEGY YET, IN ANY ARENA.** A strategy must not be tested in an arena whose **membership rule screens on the same characteristic the strategy scores**: the cross-section is truncated on that characteristic, and index addition/deletion is asymmetric, so the measured effect is confounded with the index's own construction rule rather than being an independent finding. Whether a given arena's membership rule screens on profitability **has never been verified or recorded** in this corpus — D111 gates registration on reading the index provider's published methodology and recording it in `INTEGRATIONS_v1.9.md` beside the membership feeds. **Until that record exists this model is prohibited everywhere** (fail closed; Phase 8 is contingent anyway, so the prohibition costs nothing). This does **not** block `ValueModel` — valuation ratios are not a stated inclusion criterion.
+
 - **Parameters:** composite z-scores: `ROE` (higher better) − `debtToEquity` (lower better) − `earningsVariance` (lower better); PIT inputs, ≥ 3y quarterly depth.
 - **Horizon / exits:** `Horizon = ToNextRebalance`; `Exits = ScheduledRebalance(63)`.
 - **Gotchas:** z-scores cross-sectional at `asOf`; tilts defensive — judge β-adjusted.
@@ -371,7 +373,7 @@ For strategies whose `Horizon` is short and trade count high (fast MR, breakout)
 | 1–2 | `BuyAndHoldModel` ×2 (CW + EW), `RandomModel` population machinery + a trivial `ThresholdModel` — exercising ledger conventions, corporate-action semantics, funnel, exit plumbing |
 | 3 | Full baseline arena proving the loop: populations live; promotions ≤ chance; population bands rendered |
 | 6 | `MomentumModel` (banded, vol overlay), `MeanReversionModel` (std + fast, explicit exits, trade track), `LowVolModel` (252d, monthly, EODHD sector cap), `ResidualMomentumModel` (factor-residual, reuses momentum plumbing), `TimeSeriesMomentumModel` (absolute trend, defensive), `BettingAgainstBetaModel` (beta-ranked, reuses low-vol plumbing + D42 covariance), optional `BreakoutModel`; `BlendedModel` (weighted → logistic; LightGBM later, mechanical signals only). The **AI contestant seat** and its paired no-LLM twin are specified separately in MASTER §23, not here. |
-| **8 (contingent)** | `ValueModel` / `QualityModel` once a source **passes the §7.0 PIT protocol** (EODHD Fundamentals is the first candidate) |
+| **8 (contingent)** | `ValueModel` once a source **passes the §7.0 PIT protocol** (EODHD Fundamentals is the first candidate). **`QualityModel` carries a SECOND, independent gate — D111**: the arena's membership methodology must be verified and recorded first, because a membership rule that screens on profitability confounds exactly what Quality scores. Passing §7.0 does NOT unblock it |
 
 **Recommended day-one live arena (end of Phase 3):** Buy & Hold CW + EW · random populations (3 matched cadences + cost-free) · then Momentum and Mean-Reversion entering in Phase 6.
 
