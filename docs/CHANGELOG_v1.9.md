@@ -1590,7 +1590,7 @@ All 14 (signal × horizon) still read `gone`. **But the floors now show why, and
 
 | | check | proven to fire by |
 |---|---|---|
-| **3a** | every `D<n>` cited in `docs/`, the root `.md` files or `src/` resolves to a §2 row | injecting a `D999` citation |
+| **3a** | every `D<n>` cited in `docs/`, the root `.md` files or `src/` resolves to a §2 row | injecting a citation to a decision number that has no row |
 | **3b** | no document cites a **superseded** row without naming its successor | 63 live hits; and a probe citing D87 alone |
 | **3c** | register numbering is contiguous — a deliberate gap is a ROW with status `reserved`/`withdrawn`, never an absence | deleting D50's row |
 | **3d** | a pinned constant in a doc matches the value **read from the code at run time** | drifting `[ 21, 63 ]` to `[ 21, 99 ]` |
