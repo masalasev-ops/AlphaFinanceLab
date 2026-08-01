@@ -18,12 +18,21 @@ namespace AlphaLab.Api;
 /// <param name="ParentFinding">…or a recorded finding id.</param>
 /// <param name="ParentAttributionRef">…or an attribution row reference.</param>
 /// <param name="Topic">Optional steer for the researcher.</param>
+/// <param name="PriorProb">D110: the pre-registered P(confirmed), in (0,1). REQUIRED for a researcher
+/// proposal — an operator-authored hypothesis written directly to the journal may carry NULL, because a
+/// human is not being graded on calibration.</param>
 public sealed record HypothesesRequest(
     long? ParentEntryId = null,
     string? ParentFinding = null,
     string? ParentAttributionRef = null,
-    string? Topic = null)
+    string? Topic = null,
+    double? PriorProb = null)
 {
+    /// <summary>D110: the researcher's stated P(confirmed), strictly inside (0,1). Strictly, because a
+    /// log scoring rule is unbounded at both ends — 0 and 1 are not confident priors, they are claims
+    /// that no evidence could change, and the rule prices them at infinity.</summary>
+    public bool HasValidPrior => PriorProb is > 0 and < 1;
+
     /// <summary>D82: every proposal cites an outcome id, a finding, or an attribution row. **This is what
     /// makes the loop grow from measured outcomes rather than vibes**, which is why its absence is a 422
     /// rather than a defaulted field.</summary>
@@ -56,7 +65,7 @@ public static class AnalysisEndpoints
         v1.MapPost("/analysis/hypotheses", async (
             HypothesesRequest req, AlphaLabDbContext db, IWorkerLiveness liveness,
             ResearchOptions research, ILlmBudgetLedger budgetLedger, LlmOptions llm,
-            TimeProvider clock, CancellationToken ct) =>
+            GateOptions gate, TimeProvider clock, CancellationToken ct) =>
         {
             var worker = await liveness.GetAsync(staleThresholdSeconds, ct);
             if (worker.IsLive)
@@ -70,6 +79,37 @@ public static class AnalysisEndpoints
                     "A proposal must cite parent evidence — an outcome entry id, a finding, or an " +
                     "attribution row (D82). This is what makes the loop grow from measured outcomes " +
                     "rather than vibes; a proposal with no parent is refused rather than defaulted.");
+            }
+
+            // ---- D110: the pre-registered prior. ----
+            // Refused here rather than defaulted, and required only of the RESEARCHER: the whole
+            // calibration channel is "did the seat's stated confidence beat an uninformed base rate",
+            // and a default prior is the lab answering for the seat.
+            if (!req.HasValidPrior)
+            {
+                return ApiResults.Error(422, "unprocessable_entity",
+                    "A researcher proposal must carry prior_prob — the pre-registered P(confirmed), " +
+                    "strictly between 0 and 1 (D110). Strictly, because the log scoring rule is unbounded " +
+                    "at both ends: 0 and 1 are not confident priors but claims no evidence could change. " +
+                    "An operator-authored hypothesis written directly to the journal may carry NULL; a " +
+                    "proposal from the seat may not.");
+            }
+
+            // ---- D110: both score parameters must be PINNED before the first proposal exists. ----
+            // Fail closed and name the keys. A parameter chosen after the first scores are visible is a
+            // parameter chosen by looking at the answer, so the endpoint refuses rather than proceeding
+            // with proposals that could never be scored comparably.
+            var unpinned = ProposalScoreKeys.Unpinned(db);
+            if (unpinned.Count > 0)
+            {
+                return ApiResults.Error(422, "proposal_thresholds_unpinned",
+                    $"The D110 proposal-score parameters are not pinned: {string.Join(", ", unpinned)}. " +
+                    "They are versioned config rows (never appsettings) because they are score INPUTS — a " +
+                    "mid-experiment change breaks proposal-to-proposal comparability, and an appsettings " +
+                    "value is not as-of resolvable, so a later recomputation could not reproduce the score " +
+                    "a proposal was originally given. Pin them with the Worker's " +
+                    "`pin-proposal-thresholds` verb, then retry.",
+                    new { missing_keys = unpinned });
             }
 
             var asOf = clock.GetUtcNow().UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
@@ -98,6 +138,22 @@ public static class AnalysisEndpoints
                     bound = diet.Bound,
                     bound_key = "Research.MaxConcurrentCandidates",
                 });
+            }
+
+            // ---- D113: a proposal whose floor cannot be computed is permanently unscorable. ----
+            // Refused with a named reason and COUNTED, through D112's machinery — no third column and no
+            // new mechanism. The alternative, writing it as a silently unscorable row, is exactly the
+            // "missing first link" D110 warns about: the chain would have a gap nobody could see.
+            if (new DetectabilityGate(db, gate).ResolveCurrentFloor() is null)
+            {
+                RecordRefusal(db, asOf, UnscorableCode, diet.OverdueCount);
+                await db.SaveChangesAsync(ct);
+
+                return ApiResults.Error(422, UnscorableCode,
+                    "The arena has no computable detectability floor (unassessed_no_sigma: no power_reports " +
+                    "row with sigma > 0 for either run kind), so this proposal could never be scored on the " +
+                    "margin channel. Refused and counted rather than written as a silently unscorable row. " +
+                    "Run the replay calibration, which writes the sigma estimates the floor is built from.");
             }
 
             var jobId = await EnqueueAsync(db, "analysis_hypotheses", req, clock, ct);
@@ -207,6 +263,21 @@ public static class AnalysisEndpoints
             ErrorJson = JsonSerializer.Serialize(new { code = reason, overdue_outcomes = overdueCount }),
         });
     }
+
+    /// <summary>D113's unscorable-proposal refusal. A DIFFERENT code from the evidence diet because the
+    /// two are different debts — one is an unclosed outcome, the other an uncalibrated arena — but the
+    /// same recording machinery, exactly as D112 says ("one mechanism serves both").</summary>
+    public const string UnscorableCode = "proposal_unscorable_no_floor";
+
+    /// <summary>How many hypothesis proposals were refused because the arena had no computable floor.
+    /// Published beside the evidence-diet count for the same reason: a gap in the D110 proposal stream is
+    /// only interpretable if it is attributable.</summary>
+    public static Task<int> CountUnscorableRefusalsAsync(AlphaLabDbContext db, CancellationToken ct = default)
+        => db.Jobs.CountAsync(
+            j => j.Kind == "analysis_hypotheses"
+                 && j.Status == "failed"
+                 && j.ErrorJson != null
+                 && j.ErrorJson.Contains(UnscorableCode), ct);
 
     /// <summary>How many hypothesis proposals were refused by the evidence diet — published **beside the
     /// D110 proposal-quality score** so a gap in the stream reads as operator debt rather than as

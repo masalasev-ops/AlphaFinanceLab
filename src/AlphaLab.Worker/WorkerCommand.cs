@@ -31,6 +31,11 @@ public enum WorkerCommandKind
     /// 4.5.2) — the one sanctioned way to satisfy the backfill's pin refusal, since rule 15 forbids
     /// editing the store by hand. Pinned once; an existing key is left untouched.</summary>
     SignalPinThresholds,
+
+    /// <summary>Pin the two D110 proposal-score parameters as versioned config rows, BEFORE the first
+    /// proposal exists (checkpoint 5.7). Same shape and same reason as SignalPinThresholds: a parameter
+    /// chosen after the scores are visible is a parameter chosen by looking at the answer.</summary>
+    PinProposalThresholds,
 }
 
 /// <summary>The parsed command. <see cref="Date"/> is set only for
@@ -39,7 +44,7 @@ public enum WorkerCommandKind
 public sealed record WorkerCommand(
     WorkerCommandKind Kind, string? Date = null, string? ArenaId = null, ReplayRequest? Replay = null,
     bool ReportOnly = false, SignalBackfillRequest? SignalBackfill = null,
-    SignalPinRequest? SignalPin = null);
+    SignalPinRequest? SignalPin = null, ProposalPinRequest? ProposalPin = null);
 
 /// <summary>
 /// Pure parsing of the Worker's command line (the <see cref="WorkerModeParser"/> precedent —
@@ -64,6 +69,7 @@ public static class WorkerCommandParser
     public const string ReplayCalibrateVerb = "replay-calibrate";
     public const string SignalBackfillVerb = "signal-backfill";
     public const string SignalPinThresholdsVerb = "signal-pin-thresholds";
+    public const string PinProposalThresholdsVerb = "pin-proposal-thresholds";
 
     public static WorkerCommand Parse(string[] args)
     {
@@ -133,9 +139,42 @@ public static class WorkerCommandParser
                 SignalPin: new SignalPinRequest(gone, decay, power));
         }
 
+        if (string.Equals(verb, PinProposalThresholdsVerb, StringComparison.OrdinalIgnoreCase))
+        {
+            // BOTH required and explicit, unlike signal-pin-thresholds' optional --power: each of these
+            // governs a published SCORE rather than a diagnostic, and a missing value silently defaulting
+            // would record a decision nobody made.
+            var clampRaw = ValueOf(args, "--prior-clamp");
+            if (clampRaw is null ||
+                !double.TryParse(clampRaw, System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out var clamp))
+            {
+                throw new ArgumentException(
+                    $"{PinProposalThresholdsVerb} requires --prior-clamp <0..0.5> (got '{clampRaw ?? "(none)"}').");
+            }
+            if (clamp is <= 0 or >= 0.5)
+            {
+                throw new ArgumentException(
+                    $"{PinProposalThresholdsVerb}: --prior-clamp must be strictly between 0 and 0.5 (got {clampRaw}).");
+            }
+
+            var minRaw = ValueOf(args, "--min-closed");
+            if (minRaw is null ||
+                !int.TryParse(minRaw, System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture, out var minClosed) || minClosed < 1)
+            {
+                throw new ArgumentException(
+                    $"{PinProposalThresholdsVerb} requires --min-closed <int >= 1> (got '{minRaw ?? "(none)"}').");
+            }
+
+            return new WorkerCommand(WorkerCommandKind.PinProposalThresholds, null, arena,
+                ProposalPin: new ProposalPinRequest(clamp, minClosed));
+        }
+
         throw new ArgumentException(
             $"Unknown command '{verb}'. Expected '{ReproduceDayVerb}', '{VerifyWalVerb}', " +
-            $"'{ReplayCalibrateVerb}', '{SignalBackfillVerb}', '{SignalPinThresholdsVerb}', or no verb at " +
+            $"'{ReplayCalibrateVerb}', '{SignalBackfillVerb}', '{SignalPinThresholdsVerb}', " +
+            $"'{PinProposalThresholdsVerb}', or no verb at " +
             "all (the daily launch). Refusing to fall through to the daily run on a typo — that would start " +
             "the sole DB writer against the live arena.");
     }

@@ -3,6 +3,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using AlphaLab.Data.Entities;
+using AlphaLab.Evaluation.Candidates;
 
 namespace AlphaLab.Api.Tests;
 
@@ -16,6 +17,41 @@ namespace AlphaLab.Api.Tests;
 public class AnalysisEndpointsTests
 {
     private static StringContent Body(string json) => new(json, Encoding.UTF8, "application/json");
+
+    /// <summary>
+    /// An arena where a proposal CAN be accepted: the two D110 score parameters pinned (5.7) and a sigma
+    /// estimate so the detectability floor is computable.
+    ///
+    /// These are preconditions of the seat, not of these tests — an arena missing either refuses every
+    /// proposal for its own stated reason, which is what `ProposalInputsTests` asserts. Seeding them here
+    /// is what keeps THESE tests measuring the rail each of them is about.
+    /// </summary>
+    private static ApiArenaFactory Ready()
+    {
+        var f = new ApiArenaFactory();
+        using var db = f.Open();
+        db.Config.Add(new ConfigRow
+        {
+            Key = ProposalScoreKeys.PriorClamp, ValueJson = "0.02", Version = 1,
+            ChangedOn = "2026-08-01T00:00:00Z", Reason = "test",
+        });
+        db.Config.Add(new ConfigRow
+        {
+            Key = ProposalScoreKeys.ScoreMinClosed, ValueJson = "10", Version = 1,
+            ChangedOn = "2026-08-01T00:00:00Z", Reason = "test",
+        });
+        db.PowerReports.Add(new PowerReportRow
+        {
+            AsOf = "2026-07-31", StrategyA = "cand:a", StrategyB = "buyhold:cw", TDays = 500,
+            SigmaLr = 0.0008, NwLag = 21, MdeAnn = 0.03, ObservedGapAnn = 0.0,
+            Verdict = "TooEarly", RunKind = "replay",
+        });
+        db.SaveChanges();
+        return f;
+    }
+
+    /// <summary>A well-formed proposal body: parent evidence plus the D110 prior.</summary>
+    private const string ValidProposal = """{"parent_finding":"f-311","prior_prob":0.35}""";
 
     /// <summary>An unclosed, locked hypothesis whose evidence window elapsed long ago — overdue under any
     /// clock, so the fixture does not depend on the day it runs.</summary>
@@ -53,10 +89,10 @@ public class AnalysisEndpointsTests
     [Fact]
     public async Task FR32_LongRunningCommand_Returns202Job()
     {
-        using var f = new ApiArenaFactory();
+        using var f = Ready();
 
         var response = await f.CreateClient().PostAsync("/api/v1/analysis/hypotheses",
-            Body("""{"parent_entry_id":41,"topic":"why did the momentum candidate fade"}"""));
+            Body("""{"parent_entry_id":41,"topic":"why did the momentum candidate fade","prior_prob":0.4}"""));
 
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -95,7 +131,7 @@ public class AnalysisEndpointsTests
     [Fact]
     public async Task FX_EvidenceDietRefusal_AtTheBound_Refuses_WritesNoProposal_AndCountsTheRefusal()
     {
-        using var f = new ApiArenaFactory();
+        using var f = Ready();
         using (var db = f.Open())
         {
             // Three overdue outcomes == Research.MaxConcurrentCandidates. The bound is a COUNT with a
@@ -104,8 +140,7 @@ public class AnalysisEndpointsTests
             db.SaveChanges();
         }
 
-        var response = await f.CreateClient().PostAsync("/api/v1/analysis/hypotheses",
-            Body("""{"parent_finding":"f-311"}"""));
+        var response = await f.CreateClient().PostAsync("/api/v1/analysis/hypotheses", Body(ValidProposal));
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
         var json = await response.Content.ReadAsStringAsync();
@@ -129,7 +164,7 @@ public class AnalysisEndpointsTests
     [Fact]
     public async Task FX_EvidenceDietRefusal_BelowTheBound_Proceeds()
     {
-        using var f = new ApiArenaFactory();
+        using var f = Ready();
         using (var db = f.Open())
         {
             // Two late outcomes. Tolerating one or two while preventing the pile-up is the shape P8 asked
@@ -157,7 +192,7 @@ public class AnalysisEndpointsTests
         }
 
         var response = await f.CreateClient().PostAsync("/api/v1/analysis/hypotheses",
-            Body("""{"parent_attribution_ref":"attr:2026-07-31"}"""));
+            Body("""{"parent_attribution_ref":"attr:2026-07-31","prior_prob":0.35}"""));
 
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -174,7 +209,7 @@ public class AnalysisEndpointsTests
     [Fact]
     public async Task FR24_BudgetExhausted_Returns503_AndEnqueuesNothing()
     {
-        using var f = new ApiArenaFactory();
+        using var f = Ready();
         using (var db = f.Open())
         {
             // The committed Api ceiling is MaxCostUsd 1.00 (ConfigConsistencyTests holds it equal to the
@@ -187,8 +222,7 @@ public class AnalysisEndpointsTests
             db.SaveChanges();
         }
 
-        var response = await f.CreateClient().PostAsync("/api/v1/analysis/hypotheses",
-            Body("""{"parent_finding":"f-311"}"""));
+        var response = await f.CreateClient().PostAsync("/api/v1/analysis/hypotheses", Body(ValidProposal));
 
         // 503, not 422: the request is well-formed, the day is spent. The distinction matters because a
         // 422 tells the caller to change something, and there is nothing here to change.
@@ -216,8 +250,7 @@ public class AnalysisEndpointsTests
             db.SaveChanges();
         }
 
-        var response = await f.CreateClient().PostAsync("/api/v1/analysis/hypotheses",
-            Body("""{"parent_finding":"f-311"}"""));
+        var response = await f.CreateClient().PostAsync("/api/v1/analysis/hypotheses", Body(ValidProposal));
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
 

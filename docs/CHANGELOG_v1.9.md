@@ -2074,3 +2074,76 @@ The four pre-declared fields are named in the prompt because a hypothesis missin
 ### A refusal is recorded as a `failed` job, not a new table
 
 The D112 refusal is a `jobs` row with its reason, in the same stream successful attempts are counted from. A separate table would need its own join to answer *"how many proposals were attempted this quarter?"* — the question the D110 score depends on. The refusal **is** an attempt at the job, so it belongs where the attempts are.
+
+---
+
+## v1.9.67 — Phase 5 checkpoint 5.7: the D110 proposal-quality inputs and the D113 paper control (M10)
+
+*Recorded 2026-08-01. Tests **1,035 → 1,062**; migration **M10** (`Phase5ProposalInputs`); `ci.ps1` green.*
+
+### Inputs only, and the argument for that is substantive rather than procedural
+
+The scorer, its read-model, the `/api/v1` route and the panel are **not** built here. A scorer built now would be a consumer for data that does not exist, and the route would serve an `insufficient` series for years while `FX-ProposalScoreChain` read `insufficient` throughout. What this checkpoint delivers is the guarantee D110 actually needs first: that the chained criterion has **no missing first link** — every proposal from today forward carries its stated prior and the floor it was assessed against.
+
+### Three refusals, and the order they fire in is a decision
+
+`409` live run → `422` no parent evidence → `422` no prior → `422` unpinned score parameters → `503` budget spent → `422` evidence diet → `422` no computable floor.
+
+Two placements took an argument:
+
+- **The pin check precedes the budget.** A 503 on a day whose parameters were never pinned sends the operator to wait for tomorrow, when the real fix is a config write that has nothing to do with the day. `ThePinCheckPrecedesTheBudget_SoAConfigErrorIsNotHiddenByAnExhaustedDay` pins the ordering, because nothing else would notice it changing.
+- **The counted refusals go last** — the generalisation of 5.6's 503-before-diet argument. A refusal that is *counted* as debt should only be booked against a day the seat could otherwise have run on.
+
+**A prior outside (0,1) is refused, never clamped.** The clamp that does exist (`Kpi.ProposalPriorClamp`) bounds the log rule's **penalty** inside the scorer; clamping the **input** would be a number nobody stated being scored as though they had. Two different jobs that share a word.
+
+### The uncomputable floor resolves through D112's machinery, exactly as the decision said
+
+A proposal with no computable floor (`unassessed_no_sigma`) is permanently unscorable on the margin channel — the "missing first link" in its purest form. It is refused with its own code (`proposal_unscorable_no_floor`), recorded as a `failed` job and counted, reusing the machinery 5.6 built. **No third column, no new mechanism, and D110's two-column scope intact.** The code is distinct from the evidence diet's because an unclosed outcome and an uncalibrated arena are different debts owed by different people, even though the recording is identical.
+
+Phase 4's calibration wrote replay `power_reports`, so this branch is satisfied in the live arena today. That is precisely why `D113_NoComputableFloor_IsRefused_AndCounted_ThroughD112sMachinery` **asserts** it rather than assuming it.
+
+### The floor is now read one way and stamped once
+
+`DetectabilityGate` gained `ResolveCurrentFloor()` — the floor without an expected effect to judge against, because **the floor is a property of the arena, not of the proposal**. `Assess` was refactored to consume the same private computation rather than repeating it: a second copy is how the stamped floor and the gated floor would silently stop being the same number.
+
+`CandidateFactory` now persists the floor it has always computed and discarded — but **only if the row does not already carry one**. A seat-authored proposal was stamped at assessment, and overwriting it at admission would silently restore the very admission-time reading D113 replaced, and would make a real proposal incomparable with its paper control.
+
+### D113: what makes it a control rather than a duplicate
+
+Both arms run in **one job run**, from **one floor read**. `D113_OneJobRun_WritesBothArms_StampedWithTheSameFloor` asserts the floors are equal — the failure it guards is not an exception but a pair of proposals judged against bars one Bonferroni step apart, which would look fine and mean nothing.
+
+`D113_TheArmsDifferOnlyInTheSeam` is the load-bearing one. It asserts L0 and L1 are byte-identical (the cached prefix must not move, or the control is cheaper for a reason unrelated to the seam) and that the L2 blocks differ on **exactly one line** — the declared seam mode. Anything else differing would be an alternative explanation for a measured margin difference, which is what a control exists to eliminate.
+
+**The seam mode is stated in the prompt, not only in the wiring.** The arms must be distinguishable afterwards from the recorded prompt alone; an undeclared placebo leaves two L2 blocks differing by content nobody could attribute. The arm also rides in the journal entry's **title**, for the same reason: a margin series computed from entries that do not say which arm produced them is a series of unattributable numbers.
+
+**The control writes no `trials_registry` row and creates no strategy** — asserted, because that is the claim the whole "paper control is free" argument rests on. The tax is paid at admission, and a proposal that never seeks admission never pays it.
+
+### Budget pairing — the failure this prevents looks like success
+
+`FX-BudgetAbstain`: with a month that cannot fund a pair, **neither** arm dispatches. Asserted on the provider's recorded requests (zero, not one) as well as on the empty journal, because "one arm ran" is the specific defect and an entry count alone could be explained by a failure anywhere.
+
+`Ai.Researcher.MonthlyBudgetUsd` is now bound (`AiOptions`), and **only by `AddForwardLlmStage`** — the replay and reproduce compositions must stay provably seat-free, and binding it in the pipeline core would have made "no seat" a runtime fact instead of a structural one.
+
+**Per-seat spend is attributed from `analysis_cache`, not `llm_budget_log`.** The budget log is one row per DAY across every seat and task and structurally cannot answer a per-seat question; the cache carries the task and cost of each call. `TheSeatBudgetIsAttributedPerSeat_NotFromTheDailyLog` asserts the two exclusions that matter — a regime brief is the market seat's spend, and last month is last month's budget.
+
+### `pin-proposal-thresholds` — a fourth verb on the `signal-pin-thresholds` model
+
+Both values **required and explicit**. Unlike that verb's optional `--power`, each of these governs a published **score** rather than a diagnostic, so a missing value silently defaulting would record a decision nobody made. An out-of-range clamp is refused rather than clamped: at 0.5 every prior collapses to the same value and the calibration channel measures nothing — a silent failure rather than a loud one.
+
+Pinned once, never re-stamped (the D98/D108 precedent), because D110 R3 is explicit that the response to a flat improvement trend is to change the researcher's **inputs**, never the measurement, the clamp or the thresholds.
+
+### R1 and R2 are asserted now, before the scorer exists
+
+`ProposalScoreRailsTests` pins both rails against the machinery that already enforces them: the pack whitelist's **absences** (no `proposal_score`, no `detectability_margin`, no `calibration_skill` — and the closure is proven to fire against a deliberate violation), and the reference graph (no `AlphaLab.Evaluation` type takes an `IAnalysisProvider` or `IModelTransport`, so the scorer, wherever it lands, structurally cannot call a model).
+
+The contrast makes the rail meaningful rather than blanket: the arena's **floor** is admissible in the pack. R1 forbids reading a grade *on the researcher*; the floor is the bar every candidate faces. Different object, different rail.
+
+Writing these before the scorer is deliberate — it is what makes the scorer, when it arrives, land **inside** rails rather than beside them.
+
+### M10's `Down` is hand-edited even though its `Up` is not
+
+`Up` is two `ALTER TABLE ADD COLUMN`s — genuinely additive, so M9's rebuild trap does not arise. `Down` is a different matter: EF turns `DropColumn` into a rebuild, which re-adds the `AUTOINCREMENT` rule 14 strips. It is worth stating that this is on the down path and still matters — a rollback that quietly reshapes the table leaves the store in a state no forward migration produced, and the next `Up` would then apply to a schema nobody wrote.
+
+### `Research` moved to the Api's appsettings; `Ai` stays in the Worker's
+
+The consuming phase owns the bind (finding F). Both `Research.*` consumers — the D112 gate and the budget surfaced with a 202 — are endpoint-side; the Worker reads `Ai.*` and never `Research.*`. This is the same reasoning that put `Llm:DailyBudget` in *both* at 5.6, and it lands differently here for a stated reason rather than by habit.

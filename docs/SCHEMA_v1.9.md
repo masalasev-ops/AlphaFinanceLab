@@ -509,6 +509,17 @@ CREATE TABLE journal_entries (                     -- D52
 -- RULE (D110, v1.9.57): prior_prob and detectability_floor_ann are ADDITIVE and NULLABLE, and are
 -- BUILT AT PHASE 5 CHECKPOINT 5.7 beside the hypotheses endpoint that writes them - recorded here
 -- ahead of the migration exactly as expected_effect_ann (D89) was recorded before M5 built it.
+-- LANDED at M10 (Phase5ProposalInputs, checkpoint 5.7, v1.9.67). Two ALTER TABLE ADD COLUMNs - genuinely
+-- additive, so the rule-14 rebuild trap that bit M9 does not arise on the Up. The DOWN is hand-edited to
+-- raw ALTER TABLE DROP COLUMN for exactly that reason: EF turns DropColumn into a rebuild, and a rollback
+-- that quietly reshapes the table leaves a schema no forward migration produced.
+--
+-- WHO WRITES WHICH, and the ordering that makes the amendment real:
+--   * the seat's executor stamps BOTH at ASSESSMENT, on the unlocked draft, once per job run for both
+--     D113 arms (one floor read, so the pair is comparable by construction);
+--   * CandidateFactory stamps detectability_floor_ann at admission ONLY IF it is still NULL - i.e. for an
+--     operator-authored hypothesis that never passed through the seat. Overwriting a stamped value would
+--     silently restore the admission-time reading D113 replaced.
 -- RULE (D52): a locked hypothesis row is immutable except via the outcome-closure
 -- flow. CandidateFactory requires a linked hypothesis OR an 'unregistered' marker
 -- in strategies.config_json (rendered permanently on the strategy card).

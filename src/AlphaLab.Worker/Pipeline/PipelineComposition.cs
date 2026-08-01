@@ -103,6 +103,12 @@ public static class PipelineComposition
         var llm = Bind<LlmOptions>(configuration, LlmOptions.SectionName);
         services.AddSingleton(llm);
 
+        // The per-seat caps (D79-D82). Bound with the LLM stage rather than in the core because a graph
+        // with no provider has no seat to cap - the replay and reproduce compositions must stay free of
+        // both, and binding this in the core would have made "no seat" a runtime fact instead of a
+        // structural one.
+        services.AddSingleton(Bind<AiOptions>(configuration, AiOptions.SectionName));
+
         var anthropic = new AnthropicTransportOptions
         {
             // D67: the ONLY source. No env vars, no user secrets.

@@ -382,9 +382,11 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
       "Model": "llm-b",                            // may differ from the contestant's; a frozen param
       "MonthlyBudgetUsd": 5.0                       // on exhaustion the researcher job simply queues
     }
-  },                                               // NOTE: per-strategy frozen params (prompt hash, model id, shortlist size, memory option + rule R, the no-LLM twin's scoring rule — D85) live in strategies.config_json, NOT here (key rule 1). The twin's scoring rule is a FIXED FORM (equal-weight z-score blend of the pack features), not a tunable key; its feature set follows Ai.PackRecipeVersion, so a recipe change forks like any frozen-policy change.
+  },                                               // BOUND at checkpoint 5.7 (v1.9.67) as AiOptions, by AddForwardLlmStage ONLY - the replay and reproduce compositions must stay provably seat-free, and binding this in the pipeline CORE would have made "no seat" a runtime fact instead of a structural one. Ai.Researcher.MonthlyBudgetUsd is read as a PAIR headroom check (D113): both arms propose or neither does, because exhaustion between them would emit an unpaired observation into the margin series. Per-seat spend is attributed from analysis_cache (task + cost per call), NOT from llm_budget_log, which is one row per DAY across every seat and so cannot answer a per-seat question
+                                                   // NOTE: per-strategy frozen params (prompt hash, model id, shortlist size, memory option + rule R, the no-LLM twin's scoring rule — D85) live in strategies.config_json, NOT here (key rule 1). The twin's scoring rule is a FIXED FORM (equal-weight z-score blend of the pack features), not a tunable key; its feature set follows Ai.PackRecipeVersion, so a recipe change forks like any frozen-policy change.
 
-  "Research": {                                    // D82 — the trials budget that rations self-improvement's deflated-Sharpe spend (S2)
+  "Research": {                                    // COMMITTED IN src/AlphaLab.Api/appsettings.json ONLY (v1.9.67): the consuming phase owns the bind (finding F), and both consumers - the D112 gate and the budget surfaced with a 202 - are endpoint-side. The Worker reads Ai.*, never Research.*
+                                                   // D82 — the trials budget that rations self-improvement's deflated-Sharpe spend (S2)
     "ForkBudgetPerYear": 6,                        // fork cadence; surfaced beside the trials count in the research UI
     "MaxConcurrentCandidates": 3                   // matches the "1 Live + 2-3 Candidates" roster shape (§8); ALSO the D112 evidence-diet bound (v1.9.66) — see below
   },

@@ -55,21 +55,25 @@ public sealed record DetectabilityVerdict(bool Admitted, string Reason, Detectab
 /// </summary>
 public sealed class DetectabilityGate(AlphaLabDbContext db, GateOptions gate)
 {
+    /// <summary>
+    /// The arena's current detectability floor, WITHOUT an expected effect to judge against.
+    ///
+    /// **The floor is a property of the arena, not of the proposal** — `max(analytic, empirical)` reads
+    /// the trials count, σ and the frozen curves, and the expected effect enters only at the comparison.
+    /// D113 needs this separately because a proposal is stamped with the floor at ASSESSMENT, when there
+    /// may be no expected effect yet (the seat writes an unlocked draft; the operator pre-registers it
+    /// later). Returning null is the honest `unassessed_no_sigma` answer, never a zero — a zero floor
+    /// would say "anything is detectable", which is the opposite of what is known.
+    /// </summary>
+    public double? ResolveCurrentFloor() => Floor().Floor;
+
     public DetectabilityVerdict Assess(double expectedEffectAnn)
     {
-        var horizonSessions = (int)(Math.Max(1, gate.DetectabilityHorizonYears) * MetricsConstants.TradingDaysPerYear);
-        var trialsAfter = db.TrialsRegistry.Count(t => t.RunKind == "live") + 1;
-
-        var (sigma, sigmaSource) = ResolveSigma();
-        if (sigma is null)
+        var (floorOrNull, analytic, empirical, trialsAfter, sigmaSource) = Floor();
+        if (floorOrNull is not { } floor)
         {
             return new DetectabilityVerdict(true, "unassessed_no_sigma", null);
         }
-
-        var analytic = BonferroniZSum(trialsAfter) * sigma.Value
-                       * MetricsConstants.TradingDaysPerYear / Math.Sqrt(horizonSessions);
-        var empirical = EmpiricalAlphaStar(horizonSessions);
-        var floor = Math.Max(analytic, empirical ?? 0.0);
 
         var details = new DetectabilityDetails(
             expectedEffectAnn, floor, analytic, empirical,
@@ -80,12 +84,28 @@ public sealed class DetectabilityGate(AlphaLabDbContext db, GateOptions gate)
             throw new DetectabilityRefusedException(
                 $"Detectability refused (FR-40/D89): the pre-registered expected effect " +
                 $"{expectedEffectAnn:P2}/yr could not clear the detection floor {floor:P2}/yr within " +
-                $"{gate.DetectabilityHorizonYears} year(s) (analytic NW-MDE {analytic:P2} at N'={trialsAfter} trials" +
+                $"{gate.DetectabilityHorizonYears} year(s) (analytic NW-MDE {analytic!.Value:P2} at N'={trialsAfter} trials" +
                 (empirical is { } e ? $"; empirical C-1 floor {(double.IsPositiveInfinity(e) ? "unreachable" : e.ToString("P2"))}" : "; no C-1 curves — analytic only") +
                 "). Running it would spend the trials budget on a claim the arena cannot adjudicate.",
                 details);
         }
         return new DetectabilityVerdict(true, empirical is null ? "analytic_only" : "admitted", details);
+    }
+
+    /// <summary>The floor and everything it was computed from. ONE arithmetic, two callers — a second
+    /// copy is how the stamped floor and the gated floor would silently stop being the same number.</summary>
+    private (double? Floor, double? Analytic, double? Empirical, int TrialsAfter, string SigmaSource) Floor()
+    {
+        var horizonSessions = (int)(Math.Max(1, gate.DetectabilityHorizonYears) * MetricsConstants.TradingDaysPerYear);
+        var trialsAfter = db.TrialsRegistry.Count(t => t.RunKind == "live") + 1;
+
+        var (sigma, sigmaSource) = ResolveSigma();
+        if (sigma is null) return (null, null, null, trialsAfter, sigmaSource);
+
+        var analytic = BonferroniZSum(trialsAfter) * sigma.Value
+                       * MetricsConstants.TradingDaysPerYear / Math.Sqrt(horizonSessions);
+        var empirical = EmpiricalAlphaStar(horizonSessions);
+        return (Math.Max(analytic, empirical ?? 0.0), analytic, empirical, trialsAfter, sigmaSource);
     }
 
     // z_{1−α/(2N′)} + z_power — the Bonferroni-haircut z-sum (N′=1 reduces to MdeCalculator.ZSum).

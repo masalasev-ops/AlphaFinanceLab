@@ -658,6 +658,11 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
             e.Property(x => x.Locked).HasColumnName("locked").IsRequired().HasDefaultValue(false);
             // D89 (v1.9.35) / M5: the FR-40 gate's pre-declared expected annualized effect. REAL, nullable.
             e.Property(x => x.ExpectedEffectAnn).HasColumnName("expected_effect_ann");
+            // M10 (D110/D113): the two proposal-quality INPUTS. Both nullable and additive — the scorer,
+            // the read-model and the panel follow once proposals exist; capturing the inputs now is what
+            // keeps the chained criterion from having a missing first link.
+            e.Property(x => x.PriorProb).HasColumnName("prior_prob");
+            e.Property(x => x.DetectabilityFloorAnn).HasColumnName("detectability_floor_ann");
         });
 
         // ---- replay_regime_outcomes (D89/FR-41; M5) ---- PK (strategy_id, regime_episode_id, run_kind);

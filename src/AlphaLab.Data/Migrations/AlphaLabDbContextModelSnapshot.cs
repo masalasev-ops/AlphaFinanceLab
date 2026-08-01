@@ -909,6 +909,10 @@ namespace AlphaLab.Data.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("created_on");
 
+                    b.Property<double?>("DetectabilityFloorAnn")
+                        .HasColumnType("REAL")
+                        .HasColumnName("detectability_floor_ann");
+
                     b.Property<int?>("EvidenceWindowDays")
                         .HasColumnType("INTEGER")
                         .HasColumnName("evidence_window_days");
@@ -939,6 +943,10 @@ namespace AlphaLab.Data.Migrations
                     b.Property<string>("Outcome")
                         .HasColumnType("TEXT")
                         .HasColumnName("outcome");
+
+                    b.Property<double?>("PriorProb")
+                        .HasColumnType("REAL")
+                        .HasColumnName("prior_prob");
 
                     b.Property<string>("StrategyId")
                         .HasColumnType("TEXT")

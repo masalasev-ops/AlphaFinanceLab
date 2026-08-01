@@ -1,8 +1,11 @@
 using System.Globalization;
 using System.Text.Json;
+using AlphaLab.Core.Config;
 using AlphaLab.Core.Llm;
 using AlphaLab.Data;
 using AlphaLab.Data.Entities;
+using AlphaLab.Evaluation.Ai;
+using AlphaLab.Evaluation.Candidates;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -13,7 +16,8 @@ public sealed record HypothesesJobRequest(
     long? ParentEntryId = null,
     string? ParentFinding = null,
     string? ParentAttributionRef = null,
-    string? Topic = null);
+    string? Topic = null,
+    double? PriorProb = null);
 
 /// <summary>The `analysis_brief` / `analysis_skeptic` request (mirrors `AnalysisActionRequest`).</summary>
 public sealed record AnalysisActionJobRequest(string? StrategyId = null, string? Topic = null);
@@ -47,14 +51,70 @@ public sealed class ResearchJobExecutor(
         ArgumentNullException.ThrowIfNull(job);
 
         using var scope = scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AlphaLabDbContext>();
-        var analysis = scope.ServiceProvider.GetRequiredService<IAnalysisProvider>();
+        var sp = scope.ServiceProvider;
+        var db = sp.GetRequiredService<AlphaLabDbContext>();
+        var analysis = sp.GetRequiredService<IAnalysisProvider>();
 
         var asOf = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        var (task, journalKind, layers, linkedEntryId, strategyId) = Compose(job, asOf);
+
+        if (kind != "analysis_hypotheses")
+        {
+            await RunOneAsync(db, analysis, job, asOf, EvidencePriorMode.On, ct).ConfigureAwait(false);
+            return;
+        }
+
+        // ---- D113: the paper control. Two arms, ONE job run. ----
+        //
+        // Same seat, same pack recipe, same floor, differenced ONLY on the evidence-prior seam:
+        // treatment runs the digest, control runs it PLACEBO'd (shuffled grades of identical shape and
+        // token count, so a measured difference cannot be an artefact of prompt length). Two identical
+        // researchers would produce a margin difference of zero by construction and measure nothing.
+        //
+        // Same run, before any admission, is the other half: the floor resolves from CURRENT state, so an
+        // admission between the arms would move it by one Bonferroni step and the difference would stop
+        // being clean.
+        var ai = sp.GetRequiredService<AiOptions>();
+        var budget = new ResearcherSeatBudget(db, ai).Assess(asOf, EstimatedArmCostUsd);
+        if (!budget.PairFits)
+        {
+            // BOTH arms abstain or NEITHER does. Dispatching the treatment alone would emit an unpaired
+            // observation into the margin series - worse than no observation, because it looks like one.
+            throw new InvalidOperationException(
+                $"Researcher seat: the monthly budget cannot fund a PAIR of arms " +
+                $"(spent {budget.SpentUsd:C4} of {budget.CapUsd:C4}, pair needs ~{budget.EstimatedPairUsd:C4}). " +
+                "Both arms abstain - a treatment proposal without its control is an unpaired observation " +
+                "silently entering the D110 margin series (D113). The job queues; nothing was written.");
+        }
+
+        // The floor ONCE, before either arm writes, and stamped on both: it is a property of the arena
+        // rather than of the proposal, and reading it twice would risk two different numbers for a
+        // quantity the whole comparison assumes is shared.
+        var floorAnn = new DetectabilityGate(db, sp.GetRequiredService<GateOptions>()).ResolveCurrentFloor();
+
+        await RunOneAsync(db, analysis, job, asOf, EvidencePriorMode.On, ct, floorAnn, "treatment").ConfigureAwait(false);
+        await RunOneAsync(db, analysis, job, asOf, EvidencePriorMode.Placebo, ct, floorAnn, "control").ConfigureAwait(false);
+    }
+
+    /// <summary>A conservative per-arm estimate for the pairing check. Conservative deliberately: an
+    /// UNDER-estimate here produces exactly the unpaired observation the check exists to prevent.</summary>
+    public const decimal EstimatedArmCostUsd = 0.25m;
+
+    /// <summary>
+    /// One arm (or, for brief/skeptic, the whole job).
+    ///
+    /// <paramref name="arm"/> is null for the non-paired kinds and treatment/control for the D113 pair.
+    /// The control entry is written like any other, unlocked and never admitted - which is precisely what
+    /// makes it free of the trials tax: the tax is paid at ADMISSION, and a proposal that never seeks
+    /// admission never pays it.
+    /// </summary>
+    private async Task RunOneAsync(
+        AlphaLabDbContext db, IAnalysisProvider analysis, JobRow job, string asOf,
+        EvidencePriorMode seam, CancellationToken ct, double? floorAnn = null, string? arm = null)
+    {
+        var (task, journalKind, layers, linkedEntryId, strategyId, priorProb) = Compose(job, asOf, seam);
 
         var results = await analysis
-            .RunBatchAsync([new AnalysisRequest($"{kind}:{job.JobId}", task, layers)], ct)
+            .RunBatchAsync([new AnalysisRequest($"{kind}:{job.JobId}:{arm ?? "single"}", task, layers)], ct)
             .ConfigureAwait(false);
         var result = results[0];
 
@@ -62,19 +122,24 @@ public sealed class ResearchJobExecutor(
         {
             // Fail closed with the reason (rule 10): the drainer marks the job 'failed' and the operator
             // sees WHY. Writing an empty journal entry instead would put an unattributed blank into the
-            // D110 proposal stream — a gap that reads as the researcher having nothing to say.
+            // D110 proposal stream - a gap that reads as the researcher having nothing to say.
             throw new InvalidOperationException(
-                $"{kind}: the model was {result.Outcome} ({result.Detail ?? "no detail"}) — no journal entry written.");
+                $"{kind}: the model was {result.Outcome} ({result.Detail ?? "no detail"}) - no journal entry written.");
         }
 
         db.JournalEntries.Add(new JournalEntryRow
         {
             CreatedOn = asOf,
             Kind = journalKind,
-            Title = Title(job, asOf),
+            Title = Title(job, asOf, arm),
             BodyMd = result.RawOutput,
             StrategyId = strategyId,
             LinkedEntryId = linkedEntryId,
+            // D110: the stated prior, and the floor AS AT ASSESSMENT (D113's amendment). Both stamped
+            // here rather than at admission - a control proposal never reaches admission, so an
+            // admission-time reading would leave it permanently unscorable.
+            PriorProb = priorProb,
+            DetectabilityFloorAnn = floorAnn,
             // UNLOCKED, always. Locking is the operator's pre-registration act (D52/rule 30); a seat that
             // could lock its own hypothesis would be pre-registering itself, and the frozen claim would no
             // longer be a commitment made before the evidence.
@@ -83,13 +148,15 @@ public sealed class ResearchJobExecutor(
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
 
         logger.LogInformation(
-            "{Kind}: job {JobId} wrote an unlocked '{JournalKind}' entry ({Cost:C4}).",
-            kind, job.JobId, journalKind, result.Usage.CostUsd);
+            "{Kind}: job {JobId}{Arm} wrote an unlocked '{JournalKind}' entry (floor {Floor}, {Cost:C4}).",
+            kind, job.JobId, arm is null ? "" : $" [{arm}]", journalKind,
+            floorAnn?.ToString("P2", CultureInfo.InvariantCulture) ?? "n/a", result.Usage.CostUsd);
     }
 
     /// <summary>Task, journal kind, prompt and links for this job's kind.</summary>
-    private (AnalysisTask Task, string JournalKind, PromptLayers Layers, long? Linked, string? StrategyId)
-        Compose(JobRow job, string asOf)
+    private (AnalysisTask Task, string JournalKind, PromptLayers Layers, long? Linked, string? StrategyId,
+             double? PriorProb)
+        Compose(JobRow job, string asOf, EvidencePriorMode seam)
     {
         switch (kind)
         {
@@ -103,23 +170,27 @@ public sealed class ResearchJobExecutor(
                     $"Parent finding: {req.ParentFinding ?? "-"}",
                     $"Parent attribution: {req.ParentAttributionRef ?? "-"}",
                     $"Topic: {req.Topic ?? "(none — the operator left it open)"}",
+                    // The seam MODE is stated in the prompt, not only in the wiring. The arms must be
+                    // distinguishable afterwards from the recorded prompt alone, and an undeclared placebo
+                    // would leave two L2 blocks differing by content nobody could attribute.
+                    $"Evidence-prior seam: {seam.ToString().ToLowerInvariant()}",
                 });
                 return (AnalysisTask.Hypotheses, "hypothesis",
-                    new PromptLayers(HypothesesInstructions, "", fresh), req.ParentEntryId, null);
+                    new PromptLayers(HypothesesInstructions, "", fresh), req.ParentEntryId, null, req.PriorProb);
             }
 
             case "analysis_brief":
             {
                 var req = Parse<AnalysisActionJobRequest>(job);
                 return (AnalysisTask.ResearchBrief, "decision_note",
-                    new PromptLayers(BriefInstructions, "", FreshFor(req, asOf)), null, req.StrategyId);
+                    new PromptLayers(BriefInstructions, "", FreshFor(req, asOf)), null, req.StrategyId, null);
             }
 
             case "analysis_skeptic":
             {
                 var req = Parse<AnalysisActionJobRequest>(job);
                 return (AnalysisTask.Skeptic, "skeptic_review",
-                    new PromptLayers(SkepticInstructions, "", FreshFor(req, asOf)), null, req.StrategyId);
+                    new PromptLayers(SkepticInstructions, "", FreshFor(req, asOf)), null, req.StrategyId, null);
             }
 
             default:
@@ -139,9 +210,12 @@ public sealed class ResearchJobExecutor(
         ?? throw new InvalidOperationException(
             $"jobs.request_json for job {job.JobId} does not deserialize to {typeof(T).Name} (fail closed).");
 
-    private string Title(JobRow job, string asOf) => kind switch
+    /// <summary>The arm rides in the TITLE because it must survive into the journal: a margin series
+    /// computed from entries that do not say which arm produced them is a series of unattributable
+    /// numbers.</summary>
+    private string Title(JobRow job, string asOf, string? arm) => kind switch
     {
-        "analysis_hypotheses" => $"Proposed hypothesis ({asOf}, job {job.JobId})",
+        "analysis_hypotheses" => $"Proposed hypothesis [{arm ?? "single"}] ({asOf}, job {job.JobId})",
         "analysis_brief" => $"Research brief ({asOf}, job {job.JobId})",
         _ => $"Skeptic review ({asOf}, job {job.JobId})",
     };

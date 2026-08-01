@@ -44,6 +44,8 @@ public static class OpsCommandHost
                 await SignalBackfillAsync(command, configuration, arena, connectionString, loggerFactory, ct).ConfigureAwait(false),
             WorkerCommandKind.SignalPinThresholds =>
                 SignalPinThresholds(command, configuration, arena, connectionString, loggerFactory),
+            WorkerCommandKind.PinProposalThresholds =>
+                PinProposalThresholds(command, configuration, arena, connectionString, loggerFactory),
             _ => throw new ArgumentOutOfRangeException(nameof(command), command.Kind, "Not an ops verb."),
         };
     }
@@ -136,6 +138,36 @@ public static class OpsCommandHost
         catch (Exception ex)
         {
             logger.LogCritical(ex, "signal-pin-thresholds could not run.");
+            return 1;
+        }
+    }
+
+    // The two D110 proposal-score parameters (checkpoint 5.7). Same shape as SignalPinThresholds and for
+    // the same reason: the hypotheses endpoint refuses while either is unpinned, and rule 15 leaves no
+    // other legitimate way to satisfy that refusal than a verb that owns the write.
+    private static int PinProposalThresholds(
+        WorkerCommand command,
+        IConfiguration configuration,
+        ArenaOptions arena,
+        string connectionString,
+        ILoggerFactory loggerFactory)
+    {
+        var logger = loggerFactory.CreateLogger("AlphaLab.Worker.PinProposalThresholds");
+        try
+        {
+            var outcome = new ProposalThresholdPinner(configuration, arena, loggerFactory)
+                .Run(connectionString, command.ProposalPin!);
+            if (outcome.Written.Count == 0)
+            {
+                logger.LogInformation(
+                    "pin-proposal-thresholds: nothing written — all {Count} key(s) were already pinned.",
+                    outcome.AlreadyPinned.Count);
+            }
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            logger.LogCritical(ex, "pin-proposal-thresholds could not run.");
             return 1;
         }
     }

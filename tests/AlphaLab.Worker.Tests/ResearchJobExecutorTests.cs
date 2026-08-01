@@ -1,3 +1,4 @@
+using AlphaLab.Core.Config;
 using AlphaLab.Core.Llm;
 using AlphaLab.Data.Entities;
 using AlphaLab.Worker.Ops;
@@ -19,6 +20,7 @@ public class ResearchJobExecutorTests
         new(configure: s =>
         {
             s.AddScoped(_ => provider);
+            s.AddSingleton(new AiOptions());   // the D113 pairing check reads Ai.Researcher (5.7)
             foreach (var kind in ResearchJobExecutor.Kinds)
             {
                 var k = kind;
@@ -48,7 +50,14 @@ public class ResearchJobExecutorTests
         Assert.Equal(1, outcome.Done);
 
         using var db = h.Open();
-        var entry = Assert.Single(db.JournalEntries.ToList());
+
+        // TWO entries since 5.7: D113 runs a treatment and a paper-control arm in the same job run. This
+        // test is about what an ACCEPTED proposal looks like, so it reads the treatment; PaperControlTests
+        // owns the pairing itself.
+        var entries = db.JournalEntries.OrderBy(e => e.EntryId).ToList();
+        Assert.Equal(2, entries.Count);
+        var entry = entries[0];
+        Assert.Contains("[treatment]", entry.Title, StringComparison.Ordinal);
         Assert.Equal("hypothesis", entry.Kind);
 
         // THE invariant of this seat: the AI proposes, the operator pre-registers (rule 30). A locked row
@@ -56,7 +65,7 @@ public class ResearchJobExecutorTests
         // party that makes the claim is not a commitment — it is a label.
         Assert.False(entry.Locked);
         Assert.Null(entry.Outcome);
-        Assert.Equal(41, entry.LinkedEntryId);
+        Assert.All(entries, e => Assert.Equal(41, e.LinkedEntryId));
         Assert.Contains("momentum decays", entry.BodyMd, StringComparison.Ordinal);
 
         // And nothing else moved: no candidate, no trial. A proposal is a sentence, not an admission.
