@@ -9,7 +9,24 @@
 # the defect is present; these cannot.
 #
 # ASCII only (the .ps1 rule).
-#   pwsh tools/check-register.ps1 -Baseline  fail only on violations NOT in tools/register-baseline.txt
+#   pwsh tools/check-register.ps1 -Baseline  fail only on violations NOT in a baseline file
+#
+# THE BASELINE IS GONE AND THE GUARD IS NOW ABSOLUTE (v1.9.58). The 63 grandfathered violations this
+# check shipped with have all been retired, register-baseline.txt is deleted, and ci.ps1 calls this
+# script BARE: any violation fails the build. -Baseline is retained but has no file to read, so it
+# now behaves identically to bare mode (an absent file means an empty baseline).
+#
+# WHAT THAT COSTS, recorded so the next supersession is not surprised by it: every future
+# supersession must retire ALL its citations before its PR can go green. For D109 that would have
+# been 38 sites. It binds at PR level, NOT commit level - so a decision and its cleanup stay
+# separable, which is the shape v1.9.58 used (the meaning-changing rewrites in one commit, the
+# navigation pointers in the next). Keep that split: it is what stops a decision being buried
+# inside its own cleanup.
+#
+# AND WHAT THIS CHECK STILL CANNOT DO: it finds CITATIONS of a superseded row that omit the
+# successor. It cannot find a false CLAIM that never cites a decision at all - v1.9.58 found five
+# such lines only via a separate semantic sweep. Retiring a decision-s citations is not the same
+# job as retiring its claims; this script automates the first only.
 #
 # THE BASELINE IS A RATCHET, NOT AN EXEMPTION. The 63 violations present when these checks were
 # written are recorded in tools/register-baseline.txt and reported on every run, but do not fail the

@@ -1776,3 +1776,30 @@ Driving the baseline to zero makes the guard **absolute**, which is the point. T
 
 **It binds at PR level, not commit level** — so the decision and its cleanup stay separable exactly as they are here: the superseding decision lands in one commit, the citation retirement in the next, and the PR goes green when both are in. **That split is not a convenience. It is what keeps a decision reviewable on its own merits instead of buried inside its own cleanup** — which is why this pass separates the 23 meaning-changing rewrites from the 28 navigation-only pointers, and why the next supersession should copy the shape.
 
+### THE RATCHET REACHED ZERO — the baseline is deleted and the guard is absolute
+
+**63 → 51 → 28 → 0.** `tools/register-baseline.txt` is **deleted**, and `ci.ps1` now calls
+`check-register.ps1` **bare**: any citation of a superseded row that fails to name its successor
+fails the build, with nothing grandfathered.
+
+| | | violations |
+|---|---|---|
+| 1 | D46 reclassified `amended-by` — the register was wrong, not the twelve citations (finding 311) | 63 → 51 |
+| 2 | 28 sites **rewritten** — they asserted a superseded plan as current fact (finding 312) | 51 → 28 |
+| 3 | 28 same-line successor pointers on legitimate history — navigation only, no meaning changed | 28 → 0 |
+| 4 | baseline deleted; `ci.ps1` calls the check bare | absolute |
+
+**The cost is recorded in the script's own header**, not only here, because that is where the next
+person superseding a decision will be standing when it bites them.
+
+**Residue, checked and left deliberately:** four `S&P 1500` mentions survive outside the CHANGELOG.
+Two are the corrected text itself (`RUNBOOK` step 8 saying there *is no* such gate; `CLAUDE.md` rule
+25's worked example) whose D109 markers sit on the preceding line — a line-scoped grep flags them,
+a reader does not. The other two were dated 2026-07-18 `PROGRESS` session entries recording what
+that pass did to the SP1500 *proposal*; they cite no D-number, so `check-register` never saw them,
+and they now carry the same navigation pointer commit 3 gave every other historical entry.
+
+**And the question that started the pass** — *"how is someone supposed to build this system from
+scratch if it's filled with old decisions?"* — now has a **checkable** answer rather than an
+asserted one: `ORIENTATION.md`, `SETUP_v1.9.md`, `REBUILD.md` and `CLAUDE.md` rule 22 no longer
+point a newcomer at a universe this lab will never build, and **CI fails if they ever do again.**
