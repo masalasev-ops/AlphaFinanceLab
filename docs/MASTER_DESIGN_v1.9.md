@@ -1007,7 +1007,7 @@ Within the covered side there are **two implementation tiers**:
 | Tier | Change it covers | Inputs it needs |
 |---|---|---|
 | **Direct-read** | threshold changes, sustain-count changes | `overfitting_checks.value` + `contribution` alone |
-| **Derived-input** | a band-definition change (central 60% rather than 50%) **AND — added v1.9.72, finding 340 — any change to S6's NEGATIVE-ALPHA THRESHOLD** | member window alphas **re-derived from `control_equity`** — still no simulation, but not a stored column |
+| **Derived-input** *(IMPLEMENTED v1.9.75)* | a band-definition change (central 60% rather than 50%) **AND — added v1.9.72, finding 340 — any change to S6's NEGATIVE-ALPHA THRESHOLD** | member window alphas **re-derived from `control_equity`** plus the subject's own window from `equity_curve` — still no simulation, but not stored columns. Validated by a NO-OP band spec (25/75, the live values) reproducing generation 1 exactly: 95,600 statuses, 75 promotions, 31,327 would-be-retires, **0 differing** |
 | **Equity-derived** *(added v1.9.72, D117 clause 4 — finding 339)* | the alpha definition and the gate rules that consume it | the paired return series from **`equity_curve`** + `StrategyMetrics.JensenAlpha` — still no simulation |
 
 A v1 harness reading only the stored columns would otherwise **appear** to cover the band case and quietly return a wrong answer for it.

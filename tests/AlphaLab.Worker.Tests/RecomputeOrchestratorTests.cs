@@ -133,9 +133,9 @@ public class RecomputeOrchestratorTests : IDisposable
         [
             saturated,
             discriminating with { Label = "2 years" },
-        ]).Discriminating!.Label);
+        ], []).Discriminating!.Label);
 
         // Every horizon saturated ⇒ no verdict is available, which is itself the finding.
-        Assert.Null(new CohortSeparationResult([saturated]).Discriminating);
+        Assert.Null(new CohortSeparationResult([saturated], []).Discriminating);
     }
 }

@@ -28,7 +28,8 @@ public sealed record RecomputedStatus(
 /// <see cref="MonitorSignals"/>; a second copy of a rule here is a second definition that would drift from
 /// the one the arena actually runs.
 /// </summary>
-public sealed class MonitorRecompute(AlphaLabDbContext db, RecomputeSpec spec, string runKind = "replay")
+public sealed class MonitorRecompute(
+    AlphaLabDbContext db, RecomputeSpec spec, string runKind = "replay", BandInputs? bands = null)
 {
     /// <summary>A stored check row, reduced to what a recompute can read from it.</summary>
     private sealed record StoredCheck(string Signal, double? Value, string Contribution, string ThresholdJson);
@@ -37,15 +38,20 @@ public sealed class MonitorRecompute(AlphaLabDbContext db, RecomputeSpec spec, s
     {
         ArgumentNullException.ThrowIfNull(subjects);
 
-        // Tier 2/3 monitor inputs are specified (§25.2/D117) but not yet computed — see RecomputeHarness's
-        // refusal. Guarded here too so a direct caller cannot bypass it.
-        if (spec.Tier == RecomputeTier.DerivedBand)
+        // The DerivedBand tier is computed from v1.9.75 — but only when its inputs were actually supplied.
+        // A caller that asks for a band-tier spec and forgets to wire BandInputs must NOT silently fall back
+        // to token recovery: that recovery is valid only while the negative-alpha threshold is unchanged,
+        // which is precisely the case this tier is not needed for (finding 340). Refusing is the same
+        // §25.2 conformance it always was, now scoped to the case that genuinely cannot be answered.
+        if (spec.Tier == RecomputeTier.DerivedBand && bands is null)
         {
             throw new RecomputeRefusedException(
                 "Recompute refused: this specification needs DerivedBand inputs (member window alphas " +
-                "re-derived from control_equity), which this harness version does not compute. Refusing is " +
-                "deliberate — §25.2 records that a harness reading only the stored columns would APPEAR to " +
-                "cover the band case and quietly return a wrong answer for it.");
+                "re-derived from control_equity, and the subject's own window alpha from equity_curve), and " +
+                "none were supplied. Recovering band membership from the stored contribution token is valid " +
+                "ONLY while the negative-alpha threshold is unchanged — moving it is exactly what makes the " +
+                "recovery invalid (finding 340), so answering from stored columns here would look correct " +
+                "and be wrong.");
         }
 
         var autoRetireEvals = spec.Int(RecomputeParameters.AutoRetireEvals, OverfittingMonitor.AutoRetireConsecutiveSuspect);
@@ -82,7 +88,7 @@ public sealed class MonitorRecompute(AlphaLabDbContext db, RecomputeSpec spec, s
 
                 var s2 = RecomputeS2(checks);
                 var s3 = RecomputeS3(checks, belowAnchor);
-                var s6 = RecomputeS6(checks, insideBand, negativeT);
+                var s6 = RecomputeS6(checks, strategyId, session.Key, insideBand, negativeT);
 
                 var aggregate = MonitorSignals.Aggregate([s2.Status, s3.Status, s6.Status]);
                 var wouldRetire = aggregate == MonitorStatus.Suspect && suspectRun >= autoRetireEvals - 1;
@@ -169,14 +175,32 @@ public sealed class MonitorRecompute(AlphaLabDbContext db, RecomputeSpec spec, s
     /// Moving that threshold is classified <see cref="RecomputeTier.DerivedBand"/> and refused upstream, so
     /// by the time control reaches here the recovery is valid.
     /// </summary>
-    private SignalOutcome RecomputeS6(IReadOnlyDictionary<string, StoredCheck> checks, int priorInside, int priorNegative)
+    private SignalOutcome RecomputeS6(
+        IReadOnlyDictionary<string, StoredCheck> checks, string strategyId, string asOf,
+        int priorInside, int priorNegative)
     {
         if (!checks.TryGetValue("S6", out var c)) return Absent("S6");
         if (c.Value is not { } t) return new SignalOutcome("S6", null, c.Contribution, StatusOf(c.Contribution, "S6"));
 
-        var insideBand = MonitorSignals.ContinuesInsideBandStreak(c.Contribution);
         var sustain = spec.Int(RecomputeParameters.S6SustainEvals, MonitorSignals.FlatAnchorSustainEvals);
         var negativeT = spec.Double(RecomputeParameters.S6NegativeAlphaT, MonitorSignals.S6NegativeAlphaT);
+
+        // Band membership: DERIVED when the tier supplies the inputs (the only way a moved negative-alpha
+        // threshold can be scored — the rows that fall through recorded no band token), RECOVERED from the
+        // contribution otherwise, which is sound exactly while that threshold is unchanged.
+        bool insideBand;
+        if (bands is not null)
+        {
+            var lowPct = spec.Double(RecomputeParameters.S6BandLowPct, 25.0);
+            var highPct = spec.Double(RecomputeParameters.S6BandHighPct, 75.0);
+            insideBand = bands.StrategyWindow(strategyId, asOf) is { } w
+                         && bands.MemberBand(asOf, lowPct, highPct) is { } band
+                         && w.Alpha >= band.Lo && w.Alpha <= band.Hi;
+        }
+        else
+        {
+            insideBand = MonitorSignals.ContinuesInsideBandStreak(c.Contribution);
+        }
 
         if (t < negativeT)
         {

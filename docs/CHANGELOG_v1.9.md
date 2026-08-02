@@ -2593,3 +2593,56 @@ The `LedgerStoreTests` flake first noted at v1.9.73 recurred twice here, and its
 ### Deliberately NOT in this pass
 
 No migration and **no column rename** — `observed_gap_ann` now holds an alpha, and renaming is a migration over 95,770 rows plus every reader for cosmetic gain; SCHEMA records what each column holds instead. No French RF series (finding 285's own second-order note — Phase 6). No generation-2 run: this changes what a *future* run computes, and re-freezing the curves is the separate confirmation-slice step (D117 clause 2). **`raw_gap` is retained deliberately** — the harness's parity arm must keep reproducing generation 1 forever, so deleting it as unused would break `FX-RecomputeParity` against every stored generation.
+
+---
+
+## v1.9.75 — the `derived-band` tier: finding 280's remaining candidates scored, and the metric that could not see them replaced (findings 346–347)
+
+*Recorded 2026-08-02. **No new decision** — implements D117 clause 4's third tier. Tests **1,109 → 1,115**; no migration; `ci.ps1` green; `check-register` green at 118 rows.*
+
+### The tier, and the check that earns it
+
+Finding 280 named two knobs; v1.9.73 measured `sustain_evals` out. The remaining one — S6's negative-alpha threshold — was **refused** by the harness, correctly and by prediction: a row that took the negative-alpha branch never evaluated band membership, so moving the threshold drops rows into a check whose input was never stored (finding 340). `BandInputs` re-derives the matched population's member band from `control_equity` and each subject's own 63-day window from `equity_curve`, point-in-time by index slicing, with the band memoised per **session** (it does not depend on the subject) rather than per subject.
+
+**Validated by a no-op band spec.** Setting the band to its *live* values (25/75) makes a `derived-band` run that must change nothing if the re-derivation is faithful: **95,600 statuses, 75 promotions, 31,327 would-be-retires, 0 differing.** A subtly wrong window, population or slice would have moved statuses; none moved. That is a stronger check than comparing t-statistics, and it is what the tier is earned by.
+
+**The refusal is SCOPED, not lifted:** a band-tier spec with no inputs supplied still refuses, because token recovery is valid only while the threshold is unchanged — the one case the tier is not needed for.
+
+### finding 346 — finding 280's headline evidence cannot discriminate
+
+Finding 280 states the defect as *"50/50 no-edge plants ever Suspect and 50/50 anti-predictive plants ever Suspect"* — identical rates, therefore no discrimination. But the ever-Suspect predicate **saturates for both cohorts inside one year** (measured: `anti` 49/50, `noedge` 50/50 at 252 sessions). A predicate that both cohorts reach regardless would read 50/50 vs 50/50 **whether or not the monitor discriminates**, so the observation is consistent with the defect AND with its absence.
+
+This does not make finding 280 wrong — its per-signal contribution evidence (S6 at 43/50 of first-Suspect) is a separate and still-live argument. It makes the **headline number** unable to carry the weight it is given, and unable to score any candidate fix. Both candidates below returned *"Not readable — every horizon is saturated"* on it.
+
+### The metric the corpus names but did not have
+
+`anti_detection_speed` is defined as *"<50 % of anti plants ever Suspect"* — **an EVER predicate wearing the word "speed"**. D63's asymmetry was never "anti is eventually caught and edgeless is not"; over a long enough window both are. It is that anti should be caught **fast** and edgeless **slowly**, and speed stays distinguishable however long the window runs. The report now carries **median sessions-to-first-Suspect per cohort**, a never-flagged count, and the **speed gap** (anti median − noedge median; negative is the D63 direction).
+
+### finding 347 — the first Suspect is a function of TRACK LENGTH, not of behaviour
+
+On the non-saturating metric, measured against the live store:
+
+| cohort | n | median sessions to first Suspect | never flagged |
+|---|---:|---|---|
+| `anti` | 50 | 126 | 0 |
+| `noedge` | 50 | 126 | 0 |
+| `naive` | 50 | 126 | 0 |
+| `edge` | 250 | 420 | 2 |
+
+**Three cohorts with completely different true behaviour — anti-predictive, edgeless, naive — are first flagged at an identical median of 126 sessions**, which is exactly 2 × the 63-day rolling window. That is a far sharper statement of the defect than the saturated 50/50: the first flag is not cohort-discriminating at all, and its timing points at window mechanics (everything trips once the window fills and the sustain count becomes reachable) rather than at what the strategy is doing. Only `edge` differs, because a genuine edge stays out of the negative-alpha arm longer.
+
+### Both named candidates are now measured out
+
+| candidate | statuses moved | would-be-retires | speed gap | `edge` median |
+|---|---:|---|---|---|
+| `monitor.s6.sustain_evals = 4` (v1.9.73) | 2,946 | 31,327 → 29,987 | — | 248/250 → 219/250 ever |
+| `monitor.s6.negative_alpha_t = -1.5` | **15,379** | 31,327 → **20,089** | 0 → **0** | 420 → 441 (never-flagged 2 → **28**) |
+| central-60 % band (20/80) | 775 | unchanged | 0 → **0** | 420 → **420** (inert) |
+
+The threshold change is enormous — it removes 11,238 would-be-retires — and moves the discrimination **not at all**; what it actually does is make the monitor quieter on *genuine edges*. The band change is inert on speed in every cohort.
+
+**So the remedy is not a threshold and not a sustain count.** It is whatever makes first-Suspect time depend on behaviour rather than on track length — a different and larger change than finding 280 proposed, now diagnosed rather than guessed. Recorded as the open item; deliberately NOT chosen here, because choosing a fix in the same pass that built the instrument to score it is the thing this harness exists to prevent.
+
+### Also
+
+`OverfittingMonitor.SafeAlpha` promoted to `internal` so the harness drives THAT function rather than a copy (the D118 one-definition discipline). `EvalArena`'s generation now runs a final session on the last date — not cosmetic: the arena seeds the whole curve up front, so a fixture monitor run at session *i* reads future rows and is not point-in-time the way a real replay is; the two coincide only at the last date, which is the one session where a fixture built this way can compare a derived-band recompute against a stored value. The full comparison is the live run.

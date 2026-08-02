@@ -393,7 +393,10 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
 
     // β-adjusted alpha with a degenerate-safe fallback: a constant-benchmark window makes the OLS
     // regressor variation-free (β unidentified), so fall back to the mean active return (β implicitly 1).
-    private static (double Alpha, double T) SafeAlpha(IReadOnlyList<double> strat, IReadOnlyList<double> bench)
+    /// <summary>Internal from v1.9.75 so the recompute harness's derived-band tier drives THIS function
+    /// rather than a copy of it: a second degenerate-safe alpha is how the monitor and the harness would
+    /// silently stop agreeing about the same window (the D118 one-function-two-callers discipline).</summary>
+    internal static (double Alpha, double T) SafeAlpha(IReadOnlyList<double> strat, IReadOnlyList<double> bench)
     {
         try
         {
