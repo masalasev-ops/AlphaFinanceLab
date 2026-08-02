@@ -41,6 +41,12 @@ public enum WorkerCommandKind
     /// re-deriving verdicts from the stored generation instead of paying a multi-day replay. REPORT-ONLY —
     /// it writes an artefact under docs/calibration and never a row (D117 clause 1).</summary>
     ReplayRecompute,
+
+    /// <summary>The D120 stored-corpus quality sweep (findings 350/351): re-run the CURRENT data-quality
+    /// gate + the member-window detectors over the stored bar corpus (which predates the v1.9.41 R2
+    /// guard) and report the securities recommended for `Universe:Exclusions`. REPORT-ONLY — it writes
+    /// an artefact under docs/calibration and never a row, a flag, or a config value.</summary>
+    StoreSweep,
 }
 
 /// <summary>The `replay-recompute` request: the candidate rule change, and whether this run is the §25.3
@@ -81,6 +87,7 @@ public static class WorkerCommandParser
     public const string SignalPinThresholdsVerb = "signal-pin-thresholds";
     public const string PinProposalThresholdsVerb = "pin-proposal-thresholds";
     public const string ReplayRecomputeVerb = "replay-recompute";
+    public const string StoreSweepVerb = "store-sweep";
 
     public static WorkerCommand Parse(string[] args)
     {
@@ -106,6 +113,11 @@ public static class WorkerCommandParser
         if (string.Equals(verb, VerifyWalVerb, StringComparison.OrdinalIgnoreCase))
         {
             return new WorkerCommand(WorkerCommandKind.VerifyWal, null, arena);
+        }
+
+        if (string.Equals(verb, StoreSweepVerb, StringComparison.OrdinalIgnoreCase))
+        {
+            return new WorkerCommand(WorkerCommandKind.StoreSweep, null, arena);
         }
 
         if (string.Equals(verb, ReplayRecomputeVerb, StringComparison.OrdinalIgnoreCase))
@@ -207,7 +219,7 @@ public static class WorkerCommandParser
         throw new ArgumentException(
             $"Unknown command '{verb}'. Expected '{ReproduceDayVerb}', '{VerifyWalVerb}', " +
             $"'{ReplayCalibrateVerb}', '{SignalBackfillVerb}', '{SignalPinThresholdsVerb}', " +
-            $"'{PinProposalThresholdsVerb}', or no verb at " +
+            $"'{PinProposalThresholdsVerb}', '{ReplayRecomputeVerb}', '{StoreSweepVerb}', or no verb at " +
             "all (the daily launch). Refusing to fall through to the daily run on a typo — that would start " +
             "the sole DB writer against the live arena.");
     }

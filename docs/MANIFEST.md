@@ -388,6 +388,19 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   reproducing generation 1 exactly — 0 differing across 95,600 statuses.** The refusal is SCOPED rather than
   lifted: a band-tier spec with no inputs still refuses, because token recovery is valid only in the case the
   tier is not needed for.
+- **v1.9.76 — the horizon table, and its contamination caveat** (2026-08-02; finding 348; no new decision;
+  this row back-filled at v1.9.77 — the pass itself omitted it): the C-1 curves measured at 1y/3y/5y/10y/15y/20y
+  PLATEAU (2 %/yr is 0.10 at one year AND twenty), so patience is not the lever. **Marked CONTAMINATED the
+  same day:** the noise the curves rest on carries a data defect, so the table stands as a direction only
+  until generation 2 re-derives it (the v1.9.77 diagnosis is the follow-through).
+- **v1.9.77 — the contamination's root cause: three defects, none of them the ones guessed** (2026-08-02;
+  **D119** amends D86, **D120** new; findings 349–353): the store predates its own R2 guard (55 securities,
+  1,763 >×10 jump-days — ACS flaps $0.15↔$25 and moved the EW basket ±33 %/day); the missing-bar freeze
+  marked at cost basis against its own "last print" wording (the OEF 2014-04-22 −27 %/+37 % pair — D119
+  makes the mark independent of the frozen flag); HNZ's dividends are stored ×100 on a real price series.
+  Built the report-only `store-sweep` verb (D120): 1,208 audited, 39 recommended, 28 excluded after a
+  name-by-name price review (11 kept — a detector hit is a claim, not a verdict), `Universe:Exclusions`
+  1 → 29. Generation 2 on the cleaned roster is the gate to re-deriving finding 348.
 - The mockups were consolidated into the single `alphalab_ux_mockups.html` in the v1.9.21/v1.9.22 passes
   (the earlier per-topic and v2 files are gone; the consolidated file gained the UX-14 paired-comparison block
   and the slate-grey replay tokens in v1.9.22). SCHEMA received its first post-v1.9.1 edit in v1.9.7

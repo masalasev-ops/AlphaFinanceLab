@@ -675,11 +675,11 @@ public sealed class DailyPipeline(
         ledger.GetCashEvents(accountId, kind).Sum(e => e.Amount)
         + ledger.GetTrades(accountId, kind).Sum(t => t.CashDelta);
 
-    // Mark the book at today's raw close. With no bar today the two no-price cases are DISTINCT (finding 275,
-    // BasisMath.MarkOne): a FROZEN name (unmapped CA / genuine halt) marks at cost basis (D86), but a NON-frozen
-    // name whose bar is merely MISSING (a vendor data gap on a session it actually traded — e.g. OEF 2014-04-22)
-    // CARRIES FORWARD its last known close, not a years-old cost basis. The old code applied cost basis to any
-    // missing bar, which would fabricate a one-day equity round-trip for a held name on a plain data gap.
+    // Mark the book at today's raw close; with no bar today, at the last known close — frozen or not
+    // (D119, finding 352). Finding 275's frozen/gap distinction was unreachable in practice: the §13.6
+    // stoppage freeze fires on the same session as the gap, so a plain vendor gap (OEF 2014-04-22) froze
+    // and marked at a years-old cost basis anyway, fabricating a one-day equity round-trip. A freeze
+    // halts trading, never valuation; cost basis remains only for a name never priced at all.
     private decimal MarkToMarket(IReadOnlyList<Position> held, DateOnly asOf, BarFeatureView features)
     {
         var total = 0m;
@@ -687,7 +687,7 @@ public sealed class DailyPipeline(
         {
             var today = features.RawClose(p.SecurityId, asOf);
             var lastKnown = today is null ? features.LastRawCloseOnOrBefore(p.SecurityId) : null;
-            total += BasisMath.MarkOne(today, p.Frozen, lastKnown, p.Shares, p.CostBasis);
+            total += BasisMath.MarkOne(today, lastKnown, p.Shares, p.CostBasis);
         }
         return total;
     }
