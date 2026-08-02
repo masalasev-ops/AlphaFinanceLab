@@ -1,6 +1,7 @@
 using System.Globalization;
 using AlphaLab.Core.Config;
 using AlphaLab.Data;
+using AlphaLab.Data.Services;
 using AlphaLab.Evaluation.Recompute;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -51,6 +52,8 @@ public static class OpsCommandHost
 
             WorkerCommandKind.ReplayRecompute =>
                 ReplayRecompute(command, configuration, arena, connectionString, loggerFactory),
+            WorkerCommandKind.StoreSweep =>
+                StoreSweep(configuration, arena, connectionString, loggerFactory),
             _ => throw new ArgumentOutOfRangeException(nameof(command), command.Kind, "Not an ops verb."),
         };
     }
@@ -229,6 +232,39 @@ public static class OpsCommandHost
         catch (Exception ex)
         {
             logger.LogCritical(ex, "replay-recompute could not run.");
+            return 1;
+        }
+    }
+
+    // The D120 stored-corpus quality sweep. REPORT-ONLY like replay-recompute: no writer guard, no
+    // transaction — it reads the stored corpus and writes one markdown artefact naming the securities
+    // recommended for Universe:Exclusions. A non-empty recommendation is exit 0, not an error: finding
+    // garbage is the verb's PRODUCT, and the operator acts on the report, not on the exit code.
+    private static int StoreSweep(
+        IConfiguration configuration,
+        ArenaOptions arena,
+        string connectionString,
+        ILoggerFactory loggerFactory)
+    {
+        var logger = loggerFactory.CreateLogger("AlphaLab.Worker.StoreSweep");
+        try
+        {
+            var dataOptions = configuration.GetSection(DataQualityOptions.SectionName)
+                .Get<DataQualityOptions>() ?? new DataQualityOptions();
+
+            var resolved = DbPathResolver.ResolvePath(connectionString, arena.Id);
+            DbPathResolver.RequireAbsoluteStorePath(resolved);
+
+            using var db = new AlphaLabDbContext(
+                new DbContextOptionsBuilder<AlphaLabDbContext>().UseSqlite(resolved).Options);
+
+            new StoreSweepOrchestrator(db, dataOptions, arena, loggerFactory.CreateLogger<StoreSweepOrchestrator>())
+                .Run(DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            logger.LogCritical(ex, "store-sweep could not run.");
             return 1;
         }
     }

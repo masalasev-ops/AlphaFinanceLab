@@ -89,6 +89,17 @@ public sealed class DataQualityOptions
     /// fall outside [1/factor, factor]. CONFIG default 10.0.</summary>
     public double MaxSingleDayPriceFactor { get; set; } = 10.0;
 
+    /// <summary>D120 sweep detector: the largest single-event dividend-per-share/price ratio a real index
+    /// member can pay (the biggest real specials are ~0.3; GR's garbage prints imply 0.72). Judged only
+    /// inside a membership spell, by <see cref="StoredSeriesAudit"/> — never by this gate, which is
+    /// membership-blind by design. CONFIG default 0.5.</summary>
+    public double SweepMaxSingleDividendYield { get; set; } = 0.5;
+
+    /// <summary>D120 sweep detector: the floor on a member's 63-session median close×volume, in dollars.
+    /// An S&amp;P member trades tens of millions a day; the recycled-ticker garbage trades hundreds. Judged
+    /// only inside a membership spell, by <see cref="StoredSeriesAudit"/>. CONFIG default 1000000.</summary>
+    public double SweepMinMemberDollarVolume { get; set; } = 1_000_000;
+
     /// <summary>Rotating names/day cross-checked vs Alpaca (CONFIG default 10). INERT at launch.</summary>
     public int BarCrossCheckSampleSize { get; set; } = 10;
 

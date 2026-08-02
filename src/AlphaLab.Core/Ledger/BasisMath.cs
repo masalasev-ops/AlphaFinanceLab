@@ -22,21 +22,23 @@ public static class BasisMath
     public static decimal ReduceForSale(decimal existingBasis, double newShares, double oldShares) =>
         existingBasis * (decimal)newShares / (decimal)oldShares;
 
-    /// <summary>The mark for ONE held position at a session's close (D86 / hard rule 10). Priced today ⇒ its
-    /// raw close × shares. With NO bar today the two no-price cases are DISTINCT (finding 275 — the general
-    /// marking bug): a <paramref name="frozen"/> position (unmapped CA / genuine bar-stoppage-without-event)
-    /// marks at its <paramref name="costBasis"/> per D86 — a stale last print could misstate an unpriceable
-    /// name in the one direction the honesty rails must never allow silently; but a NON-frozen position whose
-    /// bar is merely MISSING (a vendor data gap on a session the name actually traded, e.g. OEF 2014-04-22)
-    /// CARRIES FORWARD its <paramref name="lastKnownRawClose"/> × shares — its value has not changed as far as
-    /// the lab knows, and jumping it to a years-old cost basis would fabricate a one-day round-trip in equity.
-    /// Cost basis is the deep fallback only when the name was never priced at all ≤ today (should not occur for
-    /// a held name). The OLD code applied cost basis to ANY missing bar, conflating the two.</summary>
-    public static decimal MarkOne(double? rawCloseToday, bool frozen, double? lastKnownRawClose, double shares, decimal costBasis)
+    /// <summary>The mark for ONE held position at a session's close (D119, amending D86 / hard rule 10).
+    /// Priced today ⇒ its raw close × shares. No bar today ⇒ CARRY FORWARD <paramref name="lastKnownRawClose"/>
+    /// × shares — frozen or not. Cost basis only when the name was never priced at all ≤ today.
+    ///
+    /// Finding 275 drew the frozen/gap distinction (frozen → cost basis per D86, plain gap → carry forward)
+    /// but the stoppage freeze fires on the SAME session as the gap (§13.6 freezes on a single missing bar),
+    /// so the carry-forward branch was unreachable for exactly the case it was written for: OEF 2014-04-22
+    /// froze and marked at its 2006 cost basis, fabricating a −27 %/+37 % equity round-trip (finding 352).
+    /// D119 resolves it: the last print is the lab's best point-in-time estimate and is the price the freeze
+    /// reason already promises ("freezing at the last print"); a years-old cost basis carries NO information
+    /// about today and misstates in EITHER direction. A freeze halts ACTION (no trading until an operator
+    /// resolves), never VALUATION — which is why this signature no longer takes `frozen` at all: the mark
+    /// must not depend on it, and removing the parameter makes that structural.</summary>
+    public static decimal MarkOne(double? rawCloseToday, double? lastKnownRawClose, double shares, decimal costBasis)
     {
         if (rawCloseToday is { } c) return (decimal)c * (decimal)shares;
-        if (frozen) return costBasis;                                              // D86 — unpriceable frozen name
-        if (lastKnownRawClose is { } last) return (decimal)last * (decimal)shares; // data gap ⇒ carry the last mark forward
+        if (lastKnownRawClose is { } last) return (decimal)last * (decimal)shares; // no bar today ⇒ last print (D119)
         return costBasis;                                                          // never priced ≤ today (conservative)
     }
 }

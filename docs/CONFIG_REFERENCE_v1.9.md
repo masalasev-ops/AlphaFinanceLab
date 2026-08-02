@@ -53,6 +53,8 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     "BarCrossCheckTolerancePct": 0.5,
     "OutlierZ": 8.0,                              // quality gate daily-return z cutoff (Warn)
     "MaxSingleDayPriceFactor": 10.0              // physically-impossible single-session price ratio (close_t/close_{t-1}); a move ≥×this or ≤÷this is a vendor bad print — R2 rejects it at ingestion, R1 neutralizes it (no return) at read time for bars already stored (D21/D40)
+    "SweepMaxSingleDividendYield": 0.5,           // D120 store-sweep detector: max plausible single-event dividend/price ratio INSIDE a membership spell (largest real specials ~0.3; the GR garbage implies 0.72). Read only by the report-only `store-sweep` verb, never by the ingest gate
+    "SweepMinMemberDollarVolume": 1000000,        // D120 store-sweep detector: floor on a member's 63-session median close*volume, dollars. An S&P member trades tens of millions/day; recycled-ticker fiction trades hundreds. In-spell only; report-only
     // BackfillYears moved to the Backfill CLI section — the live key is `Backfill:BackfillYears` (v1.9.12 finding 158)
   },
 

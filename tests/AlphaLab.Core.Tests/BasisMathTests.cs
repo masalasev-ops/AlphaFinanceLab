@@ -44,40 +44,36 @@ public class BasisMathTests
         Assert.Equal(basis / (decimal)oldShares, reduced / (decimal)newShares, 20); // per-share basis unchanged
     }
 
-    // finding 275 — the general marking bug: with no bar today, a FROZEN name marks at cost basis (D86), but a
-    // NON-frozen name whose bar is merely missing (a data gap) carries forward its last known close — NOT a
-    // years-old cost basis, which would fabricate a one-day equity round-trip.
+    // D119 (finding 352, amending D86): with no bar today the position carries forward its last known
+    // close — frozen or not. Finding 275's frozen→cost-basis branch was unreachable for the case it was
+    // written for (the §13.6 stoppage freeze fires on the same session as the gap), so OEF 2014-04-22
+    // froze and marked at its 2006 cost basis anyway — a fabricated −27 %/+37 % equity round-trip. A
+    // freeze halts trading, never valuation; MarkOne no longer takes `frozen` so the mark CANNOT depend
+    // on it.
     [Fact]
     public void MarkOne_PricedToday_UsesTodaysRawClose()
     {
-        // 10 sh @ $85 today ⇒ $850, regardless of frozen flag / last-known / cost basis.
-        Assert.Equal(850m, BasisMath.MarkOne(rawCloseToday: 85.0, frozen: false, lastKnownRawClose: 84.0, shares: 10, costBasis: 700m));
-        Assert.Equal(850m, BasisMath.MarkOne(rawCloseToday: 85.0, frozen: true, lastKnownRawClose: null, shares: 10, costBasis: 700m));
+        // 10 sh @ $85 today ⇒ $850, regardless of last-known / cost basis.
+        Assert.Equal(850m, BasisMath.MarkOne(rawCloseToday: 85.0, lastKnownRawClose: 84.0, shares: 10, costBasis: 700m));
+        Assert.Equal(850m, BasisMath.MarkOne(rawCloseToday: 85.0, lastKnownRawClose: null, shares: 10, costBasis: 700m));
     }
 
     [Fact]
-    public void MarkOne_FrozenNoBar_MarksAtCostBasis_D86()
+    public void MarkOne_NoBarToday_CarriesForwardLastKnownClose_NotCostBasis_D119()
     {
-        // An unpriceable FROZEN name marks at cost basis even though a last-known close exists (D86: a stale
-        // print could misstate an unpriceable name silently).
-        Assert.Equal(700m, BasisMath.MarkOne(rawCloseToday: null, frozen: true, lastKnownRawClose: 84.0, shares: 10, costBasis: 700m));
-    }
-
-    [Fact]
-    public void MarkOne_NonFrozenDataGap_CarriesForwardLastKnownClose_NotCostBasis()
-    {
-        // The OEF-2014-04-22 case: no bar today, NOT frozen, name traded (a last-known close exists). It marks
-        // at 10 × $84 = $840 (carry-forward), NOT the $700 cost basis (which would crash-and-recover in a day).
-        var mark = BasisMath.MarkOne(rawCloseToday: null, frozen: false, lastKnownRawClose: 84.0, shares: 10, costBasis: 700m);
+        // The OEF-2014-04-22 case (finding 352): no bar today, name traded before (a last-known close
+        // exists). It marks at 10 × $84 = $840 — the "last print" the freeze reason promises — NOT the
+        // $700 cost basis, which fabricated a one-day crash-and-recover in the benchmark account.
+        var mark = BasisMath.MarkOne(rawCloseToday: null, lastKnownRawClose: 84.0, shares: 10, costBasis: 700m);
         Assert.Equal(840m, mark);
-        Assert.NotEqual(700m, mark);   // never the years-old cost basis for a plain data gap
+        Assert.NotEqual(700m, mark);   // never the years-old cost basis when a last print exists
     }
 
     [Fact]
     public void MarkOne_NeverPriced_FallsBackToCostBasis()
     {
-        // No bar today, not frozen, and NO prior bar at all ≤ today (should not happen for a held name) ⇒ the
+        // No bar today and NO prior bar at all ≤ today (should not happen for a held name) ⇒ the
         // conservative cost-basis fallback, never a fabricated price.
-        Assert.Equal(700m, BasisMath.MarkOne(rawCloseToday: null, frozen: false, lastKnownRawClose: null, shares: 10, costBasis: 700m));
+        Assert.Equal(700m, BasisMath.MarkOne(rawCloseToday: null, lastKnownRawClose: null, shares: 10, costBasis: 700m));
     }
 }

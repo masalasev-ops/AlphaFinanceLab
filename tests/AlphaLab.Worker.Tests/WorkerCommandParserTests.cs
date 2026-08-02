@@ -45,6 +45,15 @@ public class WorkerCommandParserTests
         Assert.Equal(WorkerCommandKind.VerifyWal, WorkerCommandParser.Parse(["verify-wal"]).Kind);
 
     [Fact]
+    public void StoreSweep_Parses_WithAnArena()
+    {
+        // The D120 stored-corpus sweep: report-only, so the verb takes nothing but the arena.
+        var c = WorkerCommandParser.Parse(["store-sweep", "--arena", "sp500"]);
+        Assert.Equal(WorkerCommandKind.StoreSweep, c.Kind);
+        Assert.Equal("sp500", c.ArenaId);
+    }
+
+    [Fact]
     public void UnknownVerb_FailsClosed_RatherThanStartingTheDailyRun()
     {
         // The one that matters: a typo must NOT fall through and launch the sole DB writer against the
