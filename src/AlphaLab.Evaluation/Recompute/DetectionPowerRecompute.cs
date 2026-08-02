@@ -14,11 +14,21 @@ public sealed record RungPower(
     double StoredPAtHorizon, double RecomputedPAtHorizon,
     int? StoredMedianSessions, int? RecomputedMedianSessions);
 
+/// <summary>One candidate patience horizon: what each rung's detection probability is by then, and the
+/// empirical floor that implies. **The decision input** — `Gate.DetectabilityHorizonYears` is what makes
+/// finding 336's floor unreachable, and choosing it should be a reading of this table rather than an
+/// argument (v1.9.76).</summary>
+public sealed record HorizonPower(
+    int Years, int Sessions,
+    IReadOnlyList<(double AlphaAnnPct, double StoredP, double RecomputedP)> Rungs,
+    double? StoredAlphaStarAnn, double? RecomputedAlphaStarAnn);
+
 /// <summary>The C-1 detection-power comparison and the floor each side implies.</summary>
 public sealed record DetectionPowerComparison(
     int HorizonYears, double Power, int HorizonSessions,
     IReadOnlyList<RungPower> Rungs,
-    double? StoredAlphaStarAnn, double? RecomputedAlphaStarAnn);
+    double? StoredAlphaStarAnn, double? RecomputedAlphaStarAnn,
+    IReadOnlyList<HorizonPower> Horizons);
 
 /// <summary>
 /// Rebuilds the **C-1 detection-power curve** from RECOMPUTED promotions, beside the one generation 1's
@@ -90,10 +100,37 @@ public sealed class DetectionPowerRecompute(AlphaLabDbContext db, GateOptions ga
             recomputedLevels.Add((alphaPct, recomputedP));
         }
 
+        // The same arithmetic across a ladder of candidate PATIENCE horizons. `Gate.DetectabilityHorizonYears`
+        // is what puts the floor out of reach (finding 336), and it is an appsettings value rather than a
+        // spec parameter — so without this table the only way to ask "what would 5 years buy?" is to edit
+        // config and re-run, which is exactly the shape of change rule 8 exists to make deliberate. Reading
+        // it off a table instead keeps the question separate from the act.
+        var horizons = new List<HorizonPower>();
+        foreach (var years in new[] { 1, 2, 3, 5, 10, 15, 20 })
+        {
+            var t = (int)(years * MetricsConstants.TradingDaysPerYear);
+            var perRung = new List<(double, double, double)>();
+            var storedAt = new List<(double AlphaPct, double PromotedAtH)>();
+            var recomputedAt = new List<(double AlphaPct, double PromotedAtH)>();
+            foreach (var (alphaPct, ids) in cohorts.OrderBy(kv => kv.Key))
+            {
+                var sp = Fraction(SessionIndexes(ids, stored, sessions), t, ids.Count);
+                var rp = Fraction(SessionIndexes(ids, recomputedPromotions, sessions), t, ids.Count);
+                perRung.Add((alphaPct, sp, rp));
+                storedAt.Add((alphaPct, sp));
+                recomputedAt.Add((alphaPct, rp));
+            }
+            horizons.Add(new HorizonPower(
+                years, t, perRung,
+                storedAt.Count == 0 ? null : DetectionCurves.AlphaStar(storedAt, gate.Power),
+                recomputedAt.Count == 0 ? null : DetectionCurves.AlphaStar(recomputedAt, gate.Power)));
+        }
+
         return new DetectionPowerComparison(
             gate.DetectabilityHorizonYears, gate.Power, horizonSessions, rungs,
             storedLevels.Count == 0 ? null : DetectionCurves.AlphaStar(storedLevels, gate.Power),
-            recomputedLevels.Count == 0 ? null : DetectionCurves.AlphaStar(recomputedLevels, gate.Power));
+            recomputedLevels.Count == 0 ? null : DetectionCurves.AlphaStar(recomputedLevels, gate.Power),
+            horizons);
     }
 
     /// <summary>`plant:edge:monthly:{alpha}:{seed}` → the alpha token, or null if the id is not that shape.</summary>

@@ -161,7 +161,7 @@ public sealed class RecomputeOrchestrator(
     /// </summary>
     private static void AppendDetectionPower(StringBuilder sb, DetectionPowerComparison dp)
     {
-        static string Floor(double? a) => a switch
+        static string FloorText(double? a) => a switch
         {
             null => "n/a (no rungs)",
             { } v when double.IsPositiveInfinity(v) => "**unreachable (+∞)** — no rung reaches the power at this horizon",
@@ -181,12 +181,39 @@ public sealed class RecomputeOrchestrator(
                 $"| {g.AlphaAnnPct:0.##} %/yr | {g.Seeds} | {g.StoredPromoted} → **{g.RecomputedPromoted}** | {g.StoredPAtHorizon:0.00} → **{g.RecomputedPAtHorizon:0.00}** | {g.StoredMedianSessions?.ToString(CultureInfo.InvariantCulture) ?? "—"} → **{g.RecomputedMedianSessions?.ToString(CultureInfo.InvariantCulture) ?? "—"}** |");
         }
         sb.AppendLine();
-        sb.AppendLine(CultureInfo.InvariantCulture, $"- **α\\*(H) implied by the FROZEN promotions:** {Floor(dp.StoredAlphaStarAnn)}");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"- **α\\*(H) implied by the RECOMPUTED promotions:** {Floor(dp.RecomputedAlphaStarAnn)}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- **α\\*(H) implied by the FROZEN promotions:** {FloorText(dp.StoredAlphaStarAnn)}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- **α\\*(H) implied by the RECOMPUTED promotions:** {FloorText(dp.RecomputedAlphaStarAnn)}");
         sb.AppendLine();
 
         sb.AppendLine(GateVerdict(dp.StoredAlphaStarAnn, dp.RecomputedAlphaStarAnn));
         sb.AppendLine();
+
+        if (dp.Horizons.Count > 0)
+        {
+            sb.AppendLine("### What each candidate PATIENCE HORIZON would buy");
+            sb.AppendLine();
+            sb.AppendLine(CultureInfo.InvariantCulture,
+                $"*`Gate.DetectabilityHorizonYears` is what puts the floor out of reach (finding 336), and it is an appsettings value rather than a spec parameter — so without this table the only way to ask \"what would 5 years buy?\" is to EDIT the threshold and re-run, which is the shape of change rule 8 exists to make deliberate. Reading it off a table keeps the question separate from the act. Current setting: **{dp.HorizonYears} years**.*");
+            sb.AppendLine();
+            sb.AppendLine(@"| horizon | P(promoted) per rung, recomputed | α\*(H) frozen | α\*(H) recomputed |");
+            sb.AppendLine("|---|---|---|---|");
+            foreach (var h in dp.Horizons)
+            {
+                var perRung = string.Join(" · ", h.Rungs.Select(r =>
+                    string.Create(CultureInfo.InvariantCulture, $"{r.AlphaAnnPct:0.##}%: {r.RecomputedP:0.00}")));
+                sb.AppendLine(CultureInfo.InvariantCulture,
+                    $"| **{h.Years}y** ({h.Sessions}) | {perRung} | {FloorText(h.StoredAlphaStarAnn)} | **{FloorText(h.RecomputedAlphaStarAnn)}** |");
+            }
+            sb.AppendLine();
+
+            var firstReachable = dp.Horizons.FirstOrDefault(h =>
+                h.RecomputedAlphaStarAnn is { } v && !double.IsPositiveInfinity(v));
+            sb.AppendLine(firstReachable is null
+                ? "**No horizon in this table makes the floor reachable.** Patience is not the binding constraint — the machinery cannot detect the swept effects at ANY horizon the generation covers, and reopening the gate needs a different change entirely."
+                : string.Create(CultureInfo.InvariantCulture,
+                    $@"**The shortest horizon at which the floor becomes reachable is {firstReachable.Years} years** (α\* {FloorText(firstReachable.RecomputedAlphaStarAnn)}). That is the number the patience decision is about: it is what the arena would have to be willing to wait before it could adjudicate ANY pre-registered claim. Choosing it is a decision about patience and takes its own D-number — never a config edit to make an unwelcome answer go away (rule 8, D110 R3)."));
+            sb.AppendLine();
+        }
     }
 
     /// <summary>

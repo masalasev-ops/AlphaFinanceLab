@@ -2646,3 +2646,38 @@ The threshold change is enormous — it removes 11,238 would-be-retires — and 
 ### Also
 
 `OverfittingMonitor.SafeAlpha` promoted to `internal` so the harness drives THAT function rather than a copy (the D118 one-definition discipline). `EvalArena`'s generation now runs a final session on the last date — not cosmetic: the arena seeds the whole curve up front, so a fixture monitor run at session *i* reads future rows and is not point-in-time the way a real replay is; the two coincide only at the last date, which is the one session where a fixture built this way can compare a derived-band recompute against a stored value. The full comparison is the live run.
+
+---
+
+## v1.9.76 — the horizon table: patience is not the lever, and the curves say so (finding 348)
+
+*Recorded 2026-08-02. No new decision. Tests unchanged; `ci.ps1` green; `check-register` green at 118 rows.*
+
+### Why the table exists
+
+`Gate.DetectabilityHorizonYears` is what puts the detectability floor out of reach (finding 336), and it is an **appsettings value rather than a spec parameter** — so the only way to ask *"what would five years buy?"* was to edit the threshold and re-run. That is exactly the shape of change rule 8 and D110 R3 exist to make deliberate: you cannot evaluate a threshold by moving it. The recompute report now derives P(promoted by H) and α\*(H) across a ladder of candidate horizons from the SAME promotions, so the question can be asked without the act being performed.
+
+### finding 348 — the detection curves PLATEAU, so patience buys almost nothing
+
+Measured against the live store under the corrected (D118) alpha:
+
+| horizon | 2 %/yr | 4 %/yr | 8 %/yr | 16 %/yr | α\*(H) |
+|---|---|---|---|---|---|
+| 1y | 0.10 | 0.18 | 0.28 | 0.46 | unreachable |
+| 3y *(current)* | 0.10 | 0.20 | 0.38 | 0.52 | unreachable |
+| 5y | 0.10 | 0.20 | 0.42 | 0.60 | unreachable |
+| 10y | 0.10 | 0.20 | 0.46 | 0.74 | unreachable |
+| **15y** | 0.10 | 0.22 | 0.52 | **0.82** | **15.47 %/yr** |
+| 20y | 0.10 | 0.24 | 0.60 | 0.88 | 13.71 %/yr |
+
+**The 2 %/yr rung is 0.10 at ONE year and 0.10 at TWENTY.** The 4 % rung moves 0.18 → 0.24 across two decades. These curves are close to flat in time: a plant whose realised edge lands below the noise never promotes however long the arena waits, and multiplying the wait does not change that. This is not "the lab needs more patience" — it is **a structural ceiling on what the machinery can detect at all**.
+
+The floor becomes reachable only at **15 years**, and only at **α\* ≈ 15.5 %/yr**. Combined with D116's plausibility ceiling of 32 %/yr, the widest admissible band the arena could ever offer is roughly **[15.5 %, 32 %] per year** — and published cross-sectional equity anomalies live at **2–5 %/yr**. **The arena, as currently constituted, cannot adjudicate the size of effect it exists to study, at any patience.**
+
+### What this settles, and what it does not
+
+**Settled:** the horizon is not the lever. Raising `DetectabilityHorizonYears` to 15 would reopen the gate in the narrowest possible sense — the arena could then adjudicate claims of ≥15.5 %/yr — while leaving every realistic effect exactly as undetectable as it is now. Recommending that change on the strength of "the gate reopens" would be the rule-8 reflex with extra steps.
+
+**Not settled, and deliberately not decided here:** what the right lever is. The candidates are all larger than a threshold — the cost model and cadence (finding 288 already retargeted the primary daily→monthly for exactly this reason), the effect sizes the lab pre-registers, the universe, or accepting that the honest product of this arena is *"no edge is detectable here"* and that this is a real result rather than a defect. Each is a decision; none is a config edit.
+
+**And the third reading, recorded because it is the one a reader will resist:** a lab that reports it cannot detect a 4 %/yr edge is not broken. It is doing the job §1.1 sets it — *"whether you can trust it when it says there is no edge"* — and this table is what that trust is made of. The uncomfortable version of that sentence is that most of what the lab could ever certify would be implausibly large, which is a fact about the difficulty of the problem, not about the code.
