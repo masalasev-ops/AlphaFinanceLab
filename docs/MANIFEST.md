@@ -369,6 +369,15 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   once horizon-bounded, read a verdict from a horizon where both cohorts sat ONE PLANT apart at the ceiling and
   called a noise-level sign flip an improvement. Saturation is now defined against `1/n`, the measurement's own
   resolution, and the verdict refuses to name a direction below it.
+- **v1.9.74 — finding 285 FIXED: the gate's effect and its MDE become one estimator pair** (2026-08-02;
+  **D118** amends D48; finding 345): `EvaluationStep` had computed a raw active-return gap with no beta term
+  since Phase 3, against D26 and hard rule 6, feeding the gate, the allocator's weights and the Strategies
+  screen alike. The fix is not the numerator alone — judging Jensen's α against the MDE of the β = 1
+  difference series pairs an intercept with the noise of a different estimator, which is what the recompute
+  harness itself did first (finding 345) and why its curve was a lower bound. One `NeweyWest.Ols` fit now
+  yields the effect, the MDE and the persisted σ together, with σ defined so the allocator's shrinkage SE and
+  the detectability floor keep measuring the noise of what the gate actually judges. First rule change in this
+  corpus PRICED before it landed (35 promotions earlier, 30 gained, 0 lost).
 - The mockups were consolidated into the single `alphalab_ux_mockups.html` in the v1.9.21/v1.9.22 passes
   (the earlier per-topic and v2 files are gone; the consolidated file gained the UX-14 paired-comparison block
   and the slate-grey replay tokens in v1.9.22). SCHEMA received its first post-v1.9.1 edit in v1.9.7

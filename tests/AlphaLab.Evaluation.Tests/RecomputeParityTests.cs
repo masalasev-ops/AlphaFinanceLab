@@ -346,7 +346,7 @@ public class RecomputeParityTests
 
         using var db = arena.Open();
         var sep = new RecomputeHarness(db, Gate, Replay).Run(RecomputeSpec.Parity).Separation;
-        var noEdge = Assert.Single(sep!.Horizons[^1].Cohorts.Where(c => c.Kind == "noedge"));
+        var noEdge = Assert.Single(sep!.Horizons[^1].Cohorts, c => c.Kind == "noedge");
 
         Assert.DoesNotContain("999", noEdge.Cohort.ToString(System.Globalization.CultureInfo.InvariantCulture));
         Assert.Equal(db.OverfittingChecks.Where(c => c.RunKind == Replay)

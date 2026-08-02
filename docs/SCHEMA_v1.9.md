@@ -269,7 +269,7 @@ CREATE TABLE trials_registry (
   run_kind TEXT NOT NULL DEFAULT 'live'            -- replay trials separate (D37)
 );
 
-CREATE TABLE power_reports (                        -- NW-corrected MDE (D48)
+CREATE TABLE power_reports (                        -- NW-corrected MDE (D48, as amended by D118)
   report_id INTEGER PRIMARY KEY,
   as_of TEXT NOT NULL,
   strategy_a TEXT NOT NULL, strategy_b TEXT NOT NULL,
@@ -277,6 +277,22 @@ CREATE TABLE power_reports (                        -- NW-corrected MDE (D48)
   mde_ann REAL NOT NULL, observed_gap_ann REAL, verdict TEXT,
   run_kind TEXT NOT NULL DEFAULT 'live'
 );
+-- D118 (v1.9.74) — WHAT THESE THREE COLUMNS HOLD CHANGED; THE NAMES DID NOT.
+--   observed_gap_ann : ~~the raw active-return gap `mean(r_s − r_b) × 252`~~ -> **Jensen's α, annualized**
+--                      (D26 / hard rule 6 — "never a raw return gap"; the old contents were finding 285).
+--                      The NAME is historical and is deliberately NOT renamed: a rename is a migration over
+--                      95,770 rows plus every reader, for cosmetic gain. Recorded here so the next reader
+--                      does not have to infer it from the column name, which now understates what it holds.
+--   sigma_lr         : ~~σ_LR of the β = 1 paired difference series~~ -> **`AlphaSe × √T`**, the effective
+--                      long-run sigma implied by the fit's HAC α standard error. Chosen so that
+--                      `mde_ann = ZSum · sigma_lr · 252/√t_days` STILL HOLDS — which is what keeps the
+--                      allocator's shrinkage SE (`mde/zsum`) and `DetectabilityGate`'s analytic floor
+--                      (median sigma_lr over recent rows) measuring the noise of the quantity the gate
+--                      actually judges on.
+--   mde_ann          : now `ZSum · AlphaSe · 252` — the SAME fit that produced the effect. Effect and MDE
+--                      are one estimator pair; judging one against the other's noise is finding 345.
+-- Rows written BEFORE v1.9.74 hold the old quantities. They are not migrated and must not be compared
+-- across the boundary: the recompute harness's `raw_gap` arm exists precisely to reproduce them (§25.1).
 
 CREATE TABLE trade_evidence (                       -- D44
   strategy_id TEXT NOT NULL, as_of TEXT NOT NULL,

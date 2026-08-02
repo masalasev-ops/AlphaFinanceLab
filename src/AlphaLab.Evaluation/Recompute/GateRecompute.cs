@@ -34,8 +34,9 @@ public sealed class GateRecompute(AlphaLabDbContext db, RecomputeSpec spec, Gate
     {
         ArgumentNullException.ThrowIfNull(subjects);
 
-        var useJensen = spec.Text(RecomputeParameters.AlphaDefinition, RecomputeParameters.AlphaRawGap)
-            == RecomputeParameters.AlphaJensen;
+        // The spec's definition, passed straight through to the shared estimator (D118). `raw_gap` is the
+        // default because a parity run must reproduce generation 1, which the raw gap produced.
+        var definition = spec.Text(RecomputeParameters.AlphaDefinition, RecomputeParameters.AlphaRawGap);
 
         var benchAccount = db.Accounts.FirstOrDefault(a => a.StrategyId == benchmarkStrategyId && a.RunKind == runKind);
         if (benchAccount is null) return [];
@@ -79,26 +80,22 @@ public sealed class GateRecompute(AlphaLabDbContext db, RecomputeSpec spec, Gate
                 if (s.Count < 2 || b.Count < 2) continue;
 
                 var (stratReturns, benchReturns) = CurveMath.AlignedReturns(s, b);
-                if (stratReturns.Count < 2) continue;
 
-                var d = new double[stratReturns.Count];
-                for (var i = 0; i < d.Length; i++) d[i] = stratReturns[i] - benchReturns[i];
-
-                var mde = MdeCalculator.Compute(d, maxHorizon, gate);
-
-                // THE one line finding 285 is about. `raw_gap` is generation 1's behaviour, bug included.
+                // ONE estimator pair, the same call the live gate makes (D118). Until v1.9.74 this arm
+                // substituted Jensen's α for the effect while still judging it against the MDE of the β = 1
+                // difference series — an intercept against the noise of a different estimator, which is not
+                // a coherent test and made the resulting curve a LOWER BOUND (finding 345).
                 //
-                // The corrected arm uses the MDE's OWN Newey-West lag rather than a separate default: the
-                // gate compares the effect against `mde.MdeAnn`, and two numbers on two different lag
-                // conventions are not comparable. Recorded here because the corrected-alpha pass inherits
-                // the choice, and `rfDaily: 0.0` carries finding 285's second-order note forward — the
-                // French RF series is Phase 6, so even the beta-adjusted arm is not yet RF-correct.
-                var effect = useJensen
-                    ? StrategyMetrics.JensenAlpha(stratReturns, benchReturns, rfDaily: 0.0, lag: mde.NwLag).AlphaAnnualized
-                    : d.Average() * MetricsConstants.TradingDaysPerYear;
+                // `raw_gap` stays the DEFAULT and is not dead code: it reproduces generation 1's arithmetic,
+                // bug included, which is exactly what FX-RecomputeParity requires (§25.1). The live gate no
+                // longer computes it; this arm must, against every stored generation, forever.
+                if (PairedEffect.Compute(stratReturns, benchReturns, definition, maxHorizon, gate)
+                    is not { } paired) continue;
 
-                var verdict = PromotionGate.Decide(effect, mde.MdeAnn, d.Length, gate.MinTrackDays);
-                results.Add(new RecomputedVerdict(strategyId, asOf, effect, mde.MdeAnn, mde.TDays, verdict));
+                var verdict = PromotionGate.Decide(
+                    paired.EffectAnn, paired.Mde.MdeAnn, paired.Mde.TDays, gate.MinTrackDays);
+                results.Add(new RecomputedVerdict(
+                    strategyId, asOf, paired.EffectAnn, paired.Mde.MdeAnn, paired.Mde.TDays, verdict));
             }
         }
 
