@@ -2674,6 +2674,20 @@ Measured against the live store under the corrected (D118) alpha:
 
 The floor becomes reachable only at **15 years**, and only at **α\* ≈ 15.5 %/yr**. Combined with D116's plausibility ceiling of 32 %/yr, the widest admissible band the arena could ever offer is roughly **[15.5 %, 32 %] per year** — and published cross-sectional equity anomalies live at **2–5 %/yr**. **The arena, as currently constituted, cannot adjudicate the size of effect it exists to study, at any patience.**
 
+### ⚠️ CONTAMINATED — read this before acting on the table above (added the same day)
+
+**The noise these curves are built on is inflated by a DATA DEFECT, so finding 348's strength is overstated.** Prompted by the operator asking whether zero-commission brokers were the holdup, the cost model was checked and `CommissionPerTrade` is already **0.0** — commissions are not the constraint and never were. Following the noise instead:
+
+- **Equal-weight vs cap-weight — two pure buy-and-hold baselines, ZERO skill on either side — shows a 22.04 %/yr tracking error.** Real-world EW-vs-CW on one universe runs ~4–6 %/yr.
+- **37 sessions of 5,030 (0.7 %) carry physically impossible baseline moves**, including a cap-weight basket printing **−26.9 % then +36.9 %** on consecutive days (2014-04-22/23). A buy-and-hold basket of 100 large-caps cannot do that.
+- **Excluding them drops the tracking error to 8.66 %/yr** — a 2.5× reduction, and because detection time scales with the SQUARE of noise, a **6.5× reduction in years-to-detect**: 16 %/yr goes 10.5 → **2.3 years**, 8 %/yr goes 42 → **9.2 years**.
+
+The culprits are penny-priced securities (`NCC` 3.83→0.90, `TIN` 0.60→0.856→0.60, `GR` 0.30→0.40→0.30) whose whole-cent jitter is enormous in percentage terms, **held by the baselines**. All three carry `delisted_on = NULL`, and their price levels are inconsistent with S&P 100 membership. **This is NOT the already-known corrupt-bars finding** (a single ÷4,467 garbage session per name, exemplar CFC) and it is **not caught by R2's `MaxSingleDayPriceFactor = 10`**, because these moves are ×1.3–×1.4.
+
+**Root cause NOT yet diagnosed** — the candidates are ticker recycling resolved to the wrong `security_id` as-of (the defect hard rule 2 and `ticker_history` exist to prevent), a membership filter admitting non-members, or unapplied delisting corporate actions. It needs its own scoped investigation and is not guessed at here.
+
+**What survives and what does not.** The *shape* survives: the curves still plateau, and 2–4 %/yr still looks out of reach. What does **not** survive is the strong form — *"the arena cannot adjudicate at any patience"* — because on cleaned noise 8 %/yr lands at ~9 years and 16 %/yr at ~2.3, which is a different lab from the one the table below describes. **Finding 348 stands as a direction, not as a settled quantity, until the noise is clean.**
+
 ### What this settles, and what it does not
 
 **Settled:** the horizon is not the lever. Raising `DetectabilityHorizonYears` to 15 would reopen the gate in the narrowest possible sense — the arena could then adjudicate claims of ≥15.5 %/yr — while leaving every realistic effect exactly as undetectable as it is now. Recommending that change on the strength of "the gate reopens" would be the rule-8 reflex with extra steps.
