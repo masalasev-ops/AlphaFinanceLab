@@ -87,4 +87,55 @@ public class RecomputeOrchestratorTests : IDisposable
         try { if (File.Exists(_dbPath)) File.Delete(_dbPath); } catch (IOException) { }
         GC.SuppressFinalize(this);
     }
+
+    /// <summary>
+    /// The four-way gate verdict, pinned. Getting "the gate would reopen" backwards is the most
+    /// consequential thing this report can say — a reader acts on that sentence without re-deriving it —
+    /// so the branch is a pure function with a fixture rather than a switch buried in string building.
+    /// `+∞` is finding 336's state: no rung reaches the power at the horizon.
+    /// </summary>
+    [Theory]
+    // stored unreachable → recomputed reachable: the change REOPENS the gate
+    [InlineData(double.PositiveInfinity, 0.16, "THE GATE WOULD REOPEN")]
+    // both unreachable: finding 336 persists
+    [InlineData(double.PositiveInfinity, double.PositiveInfinity, "The gate stays CLOSED")]
+    // stored reachable → recomputed unreachable: the change CLOSES it — an argument against the change
+    [InlineData(0.16, double.PositiveInfinity, "WARNING — this change CLOSES the gate")]
+    // both reachable: the level moves, the existence does not
+    [InlineData(0.16, 0.08, "moves its level rather than its existence")]
+    public void GateVerdict_NamesTheConsequenceInEachDirection(double stored, double recomputed, string expected)
+    {
+        Assert.Contains(expected, RecomputeOrchestrator.GateVerdict(stored, recomputed), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// **Finding 344, pinned.** A horizon where both judged cohorts sit within ONE PLANT of the ceiling
+    /// cannot discriminate, and the sign of its separation is noise. The live `sustain_evals=4` run produced
+    /// exactly that — `anti` 49/50 vs `noedge` 50/50 — and the first version read its −0.02 as a real
+    /// starting point and called the move to 0.00 an improvement.
+    /// </summary>
+    [Fact]
+    public void CohortSeparation_TreatsAWithinOnePlantHorizon_AsSaturated_NotAsASignal()
+    {
+        var saturated = new SeparationAtHorizon("1 year", 252,
+            [new CohortFlagRate("anti", 50, 49, 49), new CohortFlagRate("noedge", 50, 50, 49)],
+            -0.02, 0.00);
+        var discriminating = new SeparationAtHorizon("1 year", 252,
+            [new CohortFlagRate("anti", 50, 45, 45), new CohortFlagRate("noedge", 50, 10, 5)],
+            0.70, 0.80);
+
+        Assert.True(saturated.Saturated);
+        Assert.False(discriminating.Saturated);
+        Assert.Equal(0.02, saturated.Resolution!.Value, 6);
+
+        // …and the selector must SKIP the saturated horizon rather than read a verdict from it.
+        Assert.Equal("2 years", new CohortSeparationResult(
+        [
+            saturated,
+            discriminating with { Label = "2 years" },
+        ]).Discriminating!.Label);
+
+        // Every horizon saturated ⇒ no verdict is available, which is itself the finding.
+        Assert.Null(new CohortSeparationResult([saturated]).Discriminating);
+    }
 }

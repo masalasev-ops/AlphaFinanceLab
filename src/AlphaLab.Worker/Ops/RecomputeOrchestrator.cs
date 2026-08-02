@@ -64,6 +64,118 @@ public sealed class RecomputeOrchestrator(
         return new RecomputeRun(report, path);
     }
 
+    /// <summary>
+    /// The finding-280 section. The defect is NOT that the monitor flags too much — it is that it flags the
+    /// two cohorts at IDENTICAL rates, so only the differential can judge a fix. A rule change that
+    /// suppresses both equally has fixed nothing while the raw counts look like progress.
+    /// </summary>
+    private static void AppendSeparation(StringBuilder sb, CohortSeparationResult sep)
+    {
+        sb.AppendLine("## Cohort separation — the finding-280 measurement");
+        sb.AppendLine();
+        sb.AppendLine("*D63 is asymmetric: `anti` SHOULD be caught, `noedge` should NOT — \"S3 never flags a merely edgeless strategy\" (OVERFITTING_MONITOR §3). Finding 280 measured both at 50/50 **live at session 639** (~2.5y), which is why this is reported at several horizons: the ever-Suspect predicate SATURATES, and over a full 20-year window every cohort reaches it. A single full-window number would discriminate nothing — finding 289's window-monotonicity lesson, applied to a different EVER predicate.*");
+        sb.AppendLine();
+        foreach (var h in sep.Horizons)
+        {
+            sb.AppendLine(CultureInfo.InvariantCulture, $"### {h.Label}");
+            sb.AppendLine();
+            sb.AppendLine("| cohort | n | ever-Suspect stored | ever-Suspect recomputed |");
+            sb.AppendLine("|---|---:|---|---|");
+            foreach (var c in h.Cohorts)
+            {
+                sb.AppendLine(CultureInfo.InvariantCulture,
+                    $"| `{c.Kind}` | {c.Cohort} | {c.StoredEverSuspect}/{c.Cohort} | **{c.RecomputedEverSuspect}/{c.Cohort}** |");
+            }
+            sb.AppendLine();
+            if (h.StoredSeparation is { } was && h.RecomputedSeparation is { } now)
+            {
+                sb.AppendLine(CultureInfo.InvariantCulture,
+                    $"Separation (anti − noedge): **{was:0.00} → {now:0.00}**{(h.Saturated ? "  — *SATURATED: both judged cohorts are within one plant of the ceiling, so this horizon cannot discriminate and the sign of its separation is noise*" : "")}");
+                sb.AppendLine();
+            }
+        }
+
+        var d = sep.Discriminating;
+        sb.AppendLine("**Verdict (read from the shortest non-saturated horizon):**");
+        sb.AppendLine();
+        if (d is null || d.StoredSeparation is not { } dWas || d.RecomputedSeparation is not { } dNow)
+        {
+            sb.AppendLine("**Not readable — every horizon is saturated.** The instrument cannot judge this change, and that is a statement about the MEASUREMENT, not evidence that the change did nothing. A shorter horizon or a per-evaluation flag rate is needed before any finding-280 candidate can be scored.");
+        }
+        else
+        {
+            // The change is reported in PLANTS, not just as a rate: a rate difference at or below 1/n is one
+            // plant moving, and calling that an improvement is reading the noise floor as data (finding 344).
+            var delta = dNow - dWas;
+            var resolution = d.Resolution ?? 0.0;
+            var plants = resolution > 0 ? Math.Abs(delta) / resolution : 0.0;
+            sb.AppendLine(CultureInfo.InvariantCulture,
+                $"At **{d.Label}**: separation {dWas:0.00} → {dNow:0.00} (a move of ~{plants:0.#} plant(s); this instrument cannot resolve less than {resolution:0.00}).");
+            sb.AppendLine();
+            sb.AppendLine(Math.Abs(delta) <= resolution + 1e-9
+                ? "**Within the instrument's resolution — NOT a result.** The separation moved by at most one plant, which is the smallest difference this cohort size can express. Read it as *no measured effect on finding 280*, never as a direction."
+                : delta > 0
+                    ? "**Improved.** The change separates anti-predictive plants from merely edgeless ones by more than the instrument's resolution, which is the direction D63 conformance requires. Judge it on this number, never on the raw status count."
+                    : "**WORSE — this change moves finding 280 backwards.** It suppresses the cohort that SHOULD be caught more than the one that should not. A falling status count is not progress here; it is the monitor going quiet on anti-predictive drift.");
+        }
+        sb.AppendLine();
+    }
+
+    /// <summary>
+    /// The C-1 detection-power section — the part that turns "promotions changed" into an answer about the
+    /// GATE. `α*(H)` is the empirical detectability floor: the smallest simulated edge whose detection
+    /// curve reaches `Gate.Power` within the horizon. `unreachable` is finding 336's state — no rung gets
+    /// there, so the floor is `+∞` and NO candidate is admissible until the curves are re-measured.
+    /// </summary>
+    private static void AppendDetectionPower(StringBuilder sb, DetectionPowerComparison dp)
+    {
+        static string Floor(double? a) => a switch
+        {
+            null => "n/a (no rungs)",
+            { } v when double.IsPositiveInfinity(v) => "**unreachable (+∞)** — no rung reaches the power at this horizon",
+            { } v => v.ToString("P2", CultureInfo.InvariantCulture) + "/yr",
+        };
+
+        sb.AppendLine(CultureInfo.InvariantCulture,
+            $"## C-1 detection power — recomputed vs frozen (horizon {dp.HorizonYears}y = {dp.HorizonSessions} sessions, power {dp.Power:P0})");
+        sb.AppendLine();
+        sb.AppendLine("*The monthly edge ladder IS the C-1 sweep (Change 4 / D101 — daily cannot promote under its cost drag). Same denominator, same session-index grid and same selection rule as the frozen curve, or the two would not be comparable.*");
+        sb.AppendLine();
+        sb.AppendLine("| rung | seeds | promoted (stored → recomputed) | P(promoted by H) stored → recomputed | median sessions stored → recomputed |");
+        sb.AppendLine("|---:|---:|---|---|---|");
+        foreach (var g in dp.Rungs)
+        {
+            sb.AppendLine(CultureInfo.InvariantCulture,
+                $"| {g.AlphaAnnPct:0.##} %/yr | {g.Seeds} | {g.StoredPromoted} → **{g.RecomputedPromoted}** | {g.StoredPAtHorizon:0.00} → **{g.RecomputedPAtHorizon:0.00}** | {g.StoredMedianSessions?.ToString(CultureInfo.InvariantCulture) ?? "—"} → **{g.RecomputedMedianSessions?.ToString(CultureInfo.InvariantCulture) ?? "—"}** |");
+        }
+        sb.AppendLine();
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- **α\\*(H) implied by the FROZEN promotions:** {Floor(dp.StoredAlphaStarAnn)}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- **α\\*(H) implied by the RECOMPUTED promotions:** {Floor(dp.RecomputedAlphaStarAnn)}");
+        sb.AppendLine();
+
+        sb.AppendLine(GateVerdict(dp.StoredAlphaStarAnn, dp.RecomputedAlphaStarAnn));
+        sb.AppendLine();
+    }
+
+    /// <summary>
+    /// The sentence a human actually reads. Public and pure so the four-way branch is pinned by fixture
+    /// rather than buried in string building: getting "the gate would reopen" backwards is the single most
+    /// consequential thing this report can say, and it is the claim a reader will act on without re-deriving.
+    /// An `unreachable` floor is finding 336's state — no rung reaches the power at the horizon.
+    /// </summary>
+    public static string GateVerdict(double? storedAlphaStarAnn, double? recomputedAlphaStarAnn)
+    {
+        var wasUnreachable = storedAlphaStarAnn is { } sv && double.IsPositiveInfinity(sv);
+        var nowUnreachable = recomputedAlphaStarAnn is { } rv && double.IsPositiveInfinity(rv);
+        return (wasUnreachable, nowUnreachable) switch
+        {
+            (true, false) => "**THE GATE WOULD REOPEN.** The frozen curves put the detectability floor out of reach at this horizon (finding 336), and the recomputed ones do not — under these rules the arena can adjudicate a pre-registered claim again. This is a RECOMPUTED result: D117 clause 2 still requires the confirmation slice before it is treated as sign-off evidence.",
+            (true, true) => "**The gate stays CLOSED** (finding 336). Detection may have improved, but no rung reaches the power within the horizon under these rules either, so the floor is still unreachable and no candidate is admissible. Reopening it needs a larger effect, a longer horizon under its own decision, or a different change — never a lowered bar.",
+            (false, true) => "**WARNING — this change CLOSES the gate**: the frozen curves imply a reachable floor and the recomputed ones do not. That is an argument against the change, not a detail.",
+            _ => "Both sides imply a reachable floor; this change moves its level rather than its existence.",
+        };
+    }
+
     private static string Sanitize(string name) =>
         new(name.Select(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_' ? ch : '-').ToArray());
 
@@ -104,6 +216,27 @@ public sealed class RecomputeOrchestrator(
             sb.AppendLine(CultureInfo.InvariantCulture, $"| `{d.Artefact}` | {d.Stored} | {d.Recomputed} | **{d.Differing}** |");
         }
         sb.AppendLine();
+
+        // How the promotion set changed, not merely how much — moved / gained / LOST mean opposite things.
+        var shape = r.PromotionShape;
+        if (shape.Moved + shape.Gained + shape.Lost > 0)
+        {
+            sb.AppendLine("### How the promotion set changed");
+            sb.AppendLine();
+            sb.AppendLine(CultureInfo.InvariantCulture, $"- **Moved** (same edge, different date): {shape.Moved}");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"- **Gained** (found by the new rule, never by the old): {shape.Gained}");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"- **LOST** (found by the old rule, NOT by the new): {shape.Lost}");
+            sb.AppendLine();
+            sb.AppendLine(shape.Lost == 0
+                ? "A LOST promotion is the one direction that argues AGAINST a rule change — an edge the arena used to find and would stop finding. There are none here, so the change is strictly additive on this artefact."
+                : "**Every LOST subject is listed below in full, never sampled** — it is the direction that argues against the change, so it is the last thing an example cap may elide:");
+            sb.AppendLine();
+            foreach (var subject in shape.LostSubjects) sb.AppendLine(CultureInfo.InvariantCulture, $"- {subject}");
+            sb.AppendLine();
+        }
+
+        if (r.Separation is { Horizons.Count: > 0 } sep) AppendSeparation(sb, sep);
+        if (r.DetectionPower is { Rungs.Count: > 0 } dp) AppendDetectionPower(sb, dp);
 
         foreach (var d in new[] { r.Statuses, r.Promotions, r.WouldReverts }.Where(x => x.Examples.Count > 0))
         {

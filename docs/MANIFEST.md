@@ -355,6 +355,20 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   row for the alpha-definition change its own prose listed as covered), **340** (S6's negative-alpha
   threshold is `derived-band`, not `direct-read` — the branch that fires never records band membership).
   `derived-band` is classified and REFUSED out loud, which is §25.2's own instruction rather than a gap.
+- **v1.9.73 — the harness answers the question it was run for** (2026-08-02; finding 342; no new decision —
+  this completes D117/§25.5(b)'s stated capability rather than changing it): the v1.9.72 harness reported
+  COUNTS and stopped short of conclusions. Scoring finding 285 moved 65 of 75 promotions; scoring finding 280
+  moved 2,946 statuses — and neither report could say whether the detection floor moved, whether the gate
+  reopens, or whether the cohorts separated. Added: the **C-1 detection-power curve** rebuilt from recomputed
+  promotions with α*(H) derived by the gate's own selection rule; a **cohort separation** table (anti-rate −
+  noedge-rate, the only number that judges a finding-280 fix); promotion diffs classified **moved / gained /
+  LOST** with every LOST subject listed in full; and the example cap raised from 10 to 40 after a 65-row
+  change sampled only the alphabetically-first cohort. **Findings 343 and 344 are the instrument correcting
+  itself twice on live data**: the separation metric first SATURATED (ever-Suspect over 20 years catches every
+  cohort — finding 289's EVER-predicate lesson, inside the tool built to prevent that class of error), then,
+  once horizon-bounded, read a verdict from a horizon where both cohorts sat ONE PLANT apart at the ceiling and
+  called a noise-level sign flip an improvement. Saturation is now defined against `1/n`, the measurement's own
+  resolution, and the verdict refuses to name a direction below it.
 - The mockups were consolidated into the single `alphalab_ux_mockups.html` in the v1.9.21/v1.9.22 passes
   (the earlier per-topic and v2 files are gone; the consolidated file gained the UX-14 paired-comparison block
   and the slate-grey replay tokens in v1.9.22). SCHEMA received its first post-v1.9.1 edit in v1.9.7

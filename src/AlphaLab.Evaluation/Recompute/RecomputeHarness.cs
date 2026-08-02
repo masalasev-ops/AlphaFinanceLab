@@ -8,6 +8,15 @@ namespace AlphaLab.Evaluation.Recompute;
 /// three is <c>FX-RecomputeParity</c>'s pass condition — an EXACT equality, never a tolerance (§25.3).</summary>
 public sealed record ArtefactDiff(string Artefact, int Stored, int Recomputed, int Differing, IReadOnlyList<string> Examples);
 
+/// <summary>
+/// How the promotion set CHANGED, not merely how much. A bare count cannot distinguish the three cases,
+/// and they mean opposite things: <c>Moved</c> is the same edge found at a different time, <c>Gained</c> is
+/// an edge the old rule never found at all, and <c>Lost</c> is an edge the new rule STOPS finding — the one
+/// direction that would argue against a change. Added v1.9.73 after the finding-285 run reported "65
+/// differing" with a ten-line example cap, from which the lost count could not be read.
+/// </summary>
+public sealed record PromotionBreakdown(int Moved, int Gained, int Lost, IReadOnlyList<string> LostSubjects);
+
 /// <summary>The harness's whole answer. Report-only by construction (D117 clause 1): nothing here is
 /// written to the store.</summary>
 public sealed record RecomputeReportModel(
@@ -18,7 +27,10 @@ public sealed record RecomputeReportModel(
     int SubjectsRecomputed,
     ArtefactDiff Statuses,
     ArtefactDiff Promotions,
-    ArtefactDiff WouldReverts)
+    ArtefactDiff WouldReverts,
+    PromotionBreakdown PromotionShape,
+    DetectionPowerComparison? DetectionPower,
+    CohortSeparationResult? Separation)
 {
     /// <summary>§25.3: parity holds only when all three artefacts match exactly.</summary>
     public bool ParityHolds => Statuses.Differing == 0 && Promotions.Differing == 0 && WouldReverts.Differing == 0;
@@ -46,7 +58,7 @@ public sealed record RecomputeReportModel(
 /// </summary>
 public sealed class RecomputeHarness(AlphaLabDbContext db, GateOptions gate, string runKind = "replay")
 {
-    private const int MaxExamples = 10;
+    private const int MaxExamples = 40;
 
     public RecomputeReportModel Run(RecomputeSpec spec, string benchmarkStrategyId = EvaluationStep.DefaultBenchmarkStrategyId)
     {
@@ -58,11 +70,25 @@ public sealed class RecomputeHarness(AlphaLabDbContext db, GateOptions gate, str
         var statuses = new MonitorRecompute(db, spec, runKind).Run(subjects);
         var verdicts = new GateRecompute(db, spec, gate, runKind).Run(subjects, benchmarkStrategyId);
 
+        // A strategy is promoted at most ONCE: the gate writes the row only while its effective status is
+        // still 'candidate', and a promotion flips it to 'live' (EvaluationStep.cs:111). So the recomputed
+        // promotion is the FIRST session whose verdict is Promoted. Built once and used twice — the diff
+        // and the detection-power curve must not disagree about what was promoted.
+        var recomputedPromotions = verdicts
+            .Where(v => v.Verdict == PromotionVerdict.Promoted)
+            .GroupBy(v => v.StrategyId, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.OrderBy(v => v.AsOf, StringComparer.Ordinal).First().AsOf, StringComparer.Ordinal);
+
+        var (promotions, shape) = DiffPromotions(recomputedPromotions, subjects);
+
         return new RecomputeReportModel(
             runKind, spec.Describe(), tier, excluded, subjects.Count,
             DiffStatuses(statuses, subjects),
-            DiffPromotions(verdicts, subjects),
-            DiffWouldReverts(statuses, subjects));
+            promotions,
+            DiffWouldReverts(statuses, subjects),
+            shape,
+            new DetectionPowerRecompute(db, gate, runKind).Build(recomputedPromotions),
+            new CohortSeparation(db, runKind).Build(statuses));
     }
 
     /// <summary>Everything the generation monitored or evaluated, minus the truncation-limited subjects.</summary>
@@ -123,10 +149,12 @@ public sealed class RecomputeHarness(AlphaLabDbContext db, GateOptions gate, str
         return new ArtefactDiff("overfitting_status", stored.Count, recomputed.Count, count, differing);
     }
 
-    /// <summary>A strategy is promoted at most ONCE: the gate writes the row only while its effective status
-    /// is still 'candidate', and a promotion flips it to 'live' (EvaluationStep.cs:111). So the recomputed
-    /// promotion is the FIRST session whose verdict is Promoted.</summary>
-    private ArtefactDiff DiffPromotions(IReadOnlyList<RecomputedVerdict> verdicts, IReadOnlyCollection<string> subjects)
+    /// <summary>Diffs the promotion set AND classifies how it changed (v1.9.73): moved / gained / LOST.
+    /// The three mean opposite things and a bare count hides the one that matters — an edge the new rule
+    /// stops finding. Every LOST subject is listed in full, never sampled: it is the direction that would
+    /// argue against a rule change, so it is the last thing an example cap may elide.</summary>
+    private (ArtefactDiff Diff, PromotionBreakdown Shape) DiffPromotions(
+        IReadOnlyDictionary<string, string> recomputed, IReadOnlyCollection<string> subjects)
     {
         var stored = db.GoLiveLog
             .Where(g => g.RunKind == runKind && g.Verdict == "Promoted" && g.Promoted != null)
@@ -135,27 +163,32 @@ public sealed class RecomputeHarness(AlphaLabDbContext db, GateOptions gate, str
             .Where(g => subjects.Contains(g.Strategy))
             .ToDictionary(g => g.Strategy, g => g.AsOf, StringComparer.Ordinal);
 
-        var recomputed = verdicts
-            .Where(v => v.Verdict == PromotionVerdict.Promoted)
-            .GroupBy(v => v.StrategyId, StringComparer.Ordinal)
-            .ToDictionary(g => g.Key, g => g.OrderBy(v => v.AsOf, StringComparer.Ordinal).First().AsOf, StringComparer.Ordinal);
-
-        var count = 0;
+        int moved = 0, gained = 0;
+        var lost = new List<string>();
         var differing = new List<string>();
         foreach (var (strategy, asOf) in recomputed.OrderBy(kv => kv.Key, StringComparer.Ordinal))
         {
             if (!stored.TryGetValue(strategy, out var was))
-            { count++; Note(differing, $"{strategy}: recomputed promotion @{asOf}, none stored"); }
+            { gained++; Note(differing, $"{strategy}: GAINED — recomputed promotion @{asOf}, none stored"); }
             else if (was != asOf)
-            { count++; Note(differing, $"{strategy}: stored promotion @{was} → recomputed @{asOf}"); }
+            {
+                moved++;
+                var direction = string.CompareOrdinal(asOf, was) < 0 ? "EARLIER" : "LATER";
+                Note(differing, $"{strategy}: MOVED {direction} — stored @{was} → recomputed @{asOf}");
+            }
         }
         foreach (var (strategy, was) in stored.OrderBy(kv => kv.Key, StringComparer.Ordinal))
         {
             if (!recomputed.ContainsKey(strategy))
-            { count++; Note(differing, $"{strategy}: stored promotion @{was}, none recomputed"); }
+            {
+                lost.Add($"{strategy} (stored @{was})");
+                differing.Add($"{strategy}: LOST — stored promotion @{was}, none recomputed");
+            }
         }
 
-        return new ArtefactDiff("go_live_log(Promoted)", stored.Count, recomputed.Count, count, differing);
+        var diff = new ArtefactDiff(
+            "go_live_log(Promoted)", stored.Count, recomputed.Count, moved + gained + lost.Count, differing);
+        return (diff, new PromotionBreakdown(moved, gained, lost.Count, lost));
     }
 
     private ArtefactDiff DiffWouldReverts(IReadOnlyList<RecomputedStatus> recomputed, IReadOnlyCollection<string> subjects)
