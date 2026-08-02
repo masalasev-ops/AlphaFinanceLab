@@ -80,13 +80,24 @@ public sealed class EvaluationStep(AlphaLabDbContext db, GateOptions gate)
             var (stratReturns, benchReturns) = CurveMath.AlignedReturns(stratCurve, benchCurve);
             if (stratReturns.Count < 2) continue;
 
-            var d = new double[stratReturns.Count];
-            for (var i = 0; i < d.Length; i++) d[i] = stratReturns[i] - benchReturns[i];
-
             var maxHorizon = Math.Max(strat.HoldingHorizonDays ?? DefaultHorizonDays, benchHorizon);
-            var mde = MdeCalculator.Compute(d, maxHorizon, gate);
-            var gap = d.Average() * MetricsConstants.TradingDaysPerYear;
-            var verdict = PromotionGate.Decide(gap, mde.MdeAnn, d.Length, gate.MinTrackDays);
+
+            // D118 (v1.9.74) — the effect and the MDE it is judged against come from ONE estimator, at one
+            // lag, in one call. Until v1.9.74 this computed `mean(r_s − r_b) × 252`: a RAW ACTIVE-RETURN GAP
+            // with no beta term, against D26 ("never a raw return gap") and hard rule 6 (finding 285). The
+            // fix is not merely to swap the numerator: judging Jensen's α against the MDE of the β = 1
+            // difference series pairs an intercept with the noise of a DIFFERENT estimator and is not a
+            // coherent test (finding 345). PairedEffect returns both or neither.
+            //
+            // A null result is a SKIP — fewer than three observations, or a benchmark with no variation so β
+            // is unidentified. Never a zero, never a fallback to the raw gap (rule 10): a pair the arena
+            // cannot evaluate must not acquire a verdict by defaulting.
+            if (PairedEffect.Compute(stratReturns, benchReturns, PairedEffect.Jensen, maxHorizon, gate)
+                is not { } paired) continue;
+
+            var mde = paired.Mde;
+            var gap = paired.EffectAnn;
+            var verdict = PromotionGate.Decide(gap, mde.MdeAnn, mde.TDays, gate.MinTrackDays);
 
             db.PowerReports.Add(new PowerReportRow
             {
