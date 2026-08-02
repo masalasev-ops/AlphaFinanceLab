@@ -378,6 +378,16 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   yields the effect, the MDE and the persisted σ together, with σ defined so the allocator's shrinkage SE and
   the detectability floor keep measuring the noise of what the gate actually judges. First rule change in this
   corpus PRICED before it landed (35 promotions earlier, 30 gained, 0 lost).
+- **v1.9.75 — the `derived-band` tier, built: finding 280's remaining candidate becomes scorable**
+  (2026-08-02; no new decision — implements D117 clause 4's third tier): finding 280 named two knobs, and
+  v1.9.73 measured the cheap one out. The remaining one — S6's negative-alpha threshold — was REFUSED by the
+  harness, correctly and by prediction (finding 340: a row that took the negative branch never evaluated band
+  membership, so moving the threshold drops rows into a check whose input was never stored). `BandInputs`
+  re-derives the member band from `control_equity` and each subject's window from `equity_curve`,
+  point-in-time, with the band memoised per session rather than per subject. **Validated by a no-op band spec
+  reproducing generation 1 exactly — 0 differing across 95,600 statuses.** The refusal is SCOPED rather than
+  lifted: a band-tier spec with no inputs still refuses, because token recovery is valid only in the case the
+  tier is not needed for.
 - The mockups were consolidated into the single `alphalab_ux_mockups.html` in the v1.9.21/v1.9.22 passes
   (the earlier per-topic and v2 files are gone; the consolidated file gained the UX-14 paired-comparison block
   and the slate-grey replay tokens in v1.9.22). SCHEMA received its first post-v1.9.1 edit in v1.9.7

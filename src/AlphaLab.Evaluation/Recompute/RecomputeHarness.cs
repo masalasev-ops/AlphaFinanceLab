@@ -67,7 +67,13 @@ public sealed class RecomputeHarness(AlphaLabDbContext db, GateOptions gate, str
 
         var (subjects, excluded) = ResolveSubjects();
 
-        var statuses = new MonitorRecompute(db, spec, runKind).Run(subjects);
+        // The band inputs are built ONLY for a spec that needs them — a tier-1 run pays nothing for the
+        // control_equity load, which is the expensive part.
+        var bands = tier == RecomputeTier.DerivedBand
+            ? BandInputs.Build(db, subjects, benchmarkStrategyId, runKind)
+            : null;
+
+        var statuses = new MonitorRecompute(db, spec, runKind, bands).Run(subjects);
         var verdicts = new GateRecompute(db, spec, gate, runKind).Run(subjects, benchmarkStrategyId);
 
         // A strategy is promoted at most ONCE: the gate writes the row only while its effective status is

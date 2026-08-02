@@ -7,6 +7,17 @@ namespace AlphaLab.Evaluation.Recompute;
 /// edgeless strategy" (OVERFITTING_MONITOR §3).</summary>
 public sealed record CohortFlagRate(string Kind, int Cohort, int StoredEverSuspect, int RecomputedEverSuspect);
 
+/// <summary>
+/// A cohort's median sessions-to-FIRST-Suspect, stored beside recomputed. **The metric that does not
+/// saturate** (finding 346): D63's asymmetry is not that anti plants are eventually caught and edgeless ones
+/// never are — over a long enough window both are. It is that anti should be caught FAST and edgeless slowly.
+/// A plant never flagged contributes no median and is counted in <c>NeverFlagged</c>, which is the other half
+/// of the picture.
+/// </summary>
+public sealed record CohortSpeed(
+    string Kind, int Cohort, int? StoredMedianSessions, int? RecomputedMedianSessions,
+    int StoredNeverFlagged, int RecomputedNeverFlagged);
+
 /// <summary>The finding-280 measurement AT ONE HORIZON. <paramref name="Sessions"/> is null for the full
 /// window.</summary>
 public sealed record SeparationAtHorizon(
@@ -40,8 +51,27 @@ public sealed record SeparationAtHorizon(
 /// form returns 50/50 for everything and discriminates nothing. Finding 280's own 50/50 was measured
 /// "live at session 639" — about 2.5 years — not over the whole generation.
 /// </summary>
-public sealed record CohortSeparationResult(IReadOnlyList<SeparationAtHorizon> Horizons)
+public sealed record CohortSeparationResult(
+    IReadOnlyList<SeparationAtHorizon> Horizons,
+    IReadOnlyList<CohortSpeed> Speeds)
 {
+    /// <summary>anti's median minus noedge's, in sessions — NEGATIVE is the D63 direction (anti caught
+    /// sooner than edgeless). Null when either cohort has no median. Unlike the ever-rates this does not
+    /// saturate, which is why finding 346 exists.</summary>
+    public (int? Stored, int? Recomputed) SpeedGap
+    {
+        get
+        {
+            var anti = Speeds.FirstOrDefault(s => s.Kind == "anti");
+            var noEdge = Speeds.FirstOrDefault(s => s.Kind == "noedge");
+            int? Gap(int? a, int? n) => a is { } av && n is { } nv ? av - nv : null;
+            return anti is null || noEdge is null
+                ? (null, null)
+                : (Gap(anti.StoredMedianSessions, noEdge.StoredMedianSessions),
+                   Gap(anti.RecomputedMedianSessions, noEdge.RecomputedMedianSessions));
+        }
+    }
+
     /// <summary>
     /// The horizon a verdict may be read from: the shortest one that is NOT saturated. Null when every
     /// horizon saturates — which is itself the finding, and must be reported as an inability to measure
@@ -130,7 +160,55 @@ public sealed class CohortSeparation(AlphaLabDbContext db, string runKind = "rep
                 label, limit, rows,
                 Separation(rows, r => r.StoredEverSuspect), Separation(rows, r => r.RecomputedEverSuspect)));
         }
-        return new CohortSeparationResult(result);
+        return new CohortSeparationResult(result, Speeds(subjects, storedSuspect, recomputedSuspect, sessions));
+    }
+
+    /// <summary>Median sessions-to-first-Suspect per cohort (finding 346). The ever-rates saturate; this
+    /// does not, because a cohort caught on day 30 and one caught on day 900 are distinguishable however
+    /// long the window runs.</summary>
+    private List<CohortSpeed> Speeds(
+        List<string> subjects,
+        IEnumerable<dynamic> storedSuspect,
+        IReadOnlyList<RecomputedStatus> recomputedSuspect,
+        List<string> sessions)
+    {
+        var index = new Dictionary<string, int>(sessions.Count, StringComparer.Ordinal);
+        for (var i = 0; i < sessions.Count; i++) index[sessions[i]] = i + 1;
+
+        var storedFirst = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var x in storedSuspect)
+        {
+            string id = x.StrategyId; string asOf = x.AsOf;
+            if (!index.TryGetValue(asOf, out var i)) continue;
+            if (!storedFirst.TryGetValue(id, out var cur) || i < cur) storedFirst[id] = i;
+        }
+        var recomputedFirst = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var r in recomputedSuspect)
+        {
+            if (!index.TryGetValue(r.AsOf, out var i)) continue;
+            if (!recomputedFirst.TryGetValue(r.StrategyId, out var cur) || i < cur) recomputedFirst[r.StrategyId] = i;
+        }
+
+        static int? Median(List<int> xs)
+        {
+            if (xs.Count == 0) return null;
+            var sorted = xs.Order().ToList();
+            return sorted[sorted.Count / 2];
+        }
+
+        var rows = new List<CohortSpeed>();
+        foreach (var kind in Kinds)
+        {
+            var prefix = $"plant:{kind}:";
+            var cohort = subjects.Where(s => s.StartsWith(prefix, StringComparison.Ordinal)).ToList();
+            if (cohort.Count == 0) continue;
+            var storedIdx = cohort.Where(storedFirst.ContainsKey).Select(c => storedFirst[c]).ToList();
+            var recomputedIdx = cohort.Where(recomputedFirst.ContainsKey).Select(c => recomputedFirst[c]).ToList();
+            rows.Add(new CohortSpeed(
+                kind, cohort.Count, Median(storedIdx), Median(recomputedIdx),
+                cohort.Count - storedIdx.Count, cohort.Count - recomputedIdx.Count));
+        }
+        return rows;
     }
 
     /// <summary>anti-rate − noedge-rate. Null when either cohort is absent — a separation computed against

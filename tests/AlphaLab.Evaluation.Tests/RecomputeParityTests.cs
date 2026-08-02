@@ -78,6 +78,13 @@ public class RecomputeParityTests
                 gate.Run(dates[i], Bench, Replay);
                 monitor.Run(dates[i], Bench, popId, Replay);
             }
+            // …and one final session ON THE LAST DATE. Not cosmetic: EvalArena seeds the whole equity curve
+            // up front, so a monitor run at session i reads the FULL curve rather than the curve as it stood
+            // at i — the fixture is not point-in-time the way a real replay is. The two coincide only where
+            // the session IS the last date, which is the one place a derived-band recompute can be compared
+            // against a stored value here (FX_DerivedBand_TStatMatchesStored_AtTheFinalSession).
+            gate.Run(dates[^1], Bench, Replay);
+            monitor.Run(dates[^1], Bench, popId, Replay);
         }
         return (arena, dates, popId);
     }
@@ -310,9 +317,18 @@ public class RecomputeParityTests
         var sep = new RecomputeHarness(db, Gate, Replay).Run(RecomputeSpec.Parity).Separation;
 
         Assert.NotNull(sep);
+        // The non-saturating instrument (finding 346) is present and unchanged under parity.
+        Assert.NotEmpty(sep!.Speeds);
+        foreach (var sp in sep.Speeds)
+        {
+            Assert.Equal(sp.StoredMedianSessions, sp.RecomputedMedianSessions);
+            Assert.Equal(sp.StoredNeverFlagged, sp.RecomputedNeverFlagged);
+        }
+        Assert.Equal(sep.SpeedGap.Stored, sep.SpeedGap.Recomputed);
+
         // Reported at SEVERAL horizons, never one: the ever-Suspect predicate saturates over a long window
         // (finding 343), so a single full-window number would discriminate nothing.
-        Assert.True(sep!.Horizons.Count >= 3);
+        Assert.True(sep.Horizons.Count >= 3);
         Assert.Contains(sep.Horizons, h => h.Sessions is null);        // the full window is carried
         Assert.Contains(sep.Horizons, h => h.Sessions == 252);         // ...and a short one, to expose saturation
         foreach (var h in sep.Horizons)
@@ -352,6 +368,110 @@ public class RecomputeParityTests
         Assert.Equal(db.OverfittingChecks.Where(c => c.RunKind == Replay)
             .Select(c => c.StrategyId).Distinct().AsEnumerable()
             .Count(id => id.StartsWith("plant:noedge:", StringComparison.Ordinal)), noEdge.Cohort);
+    }
+
+    /// <summary>
+    /// **The check that earns the `derived-band` tier (v1.9.75).** The tier's whole premise is that it can
+    /// re-derive the 63-day window the monitor used; the way to believe that is to reproduce a quantity the
+    /// monitor RECORDED — the S6 t-statistic stored in `overfitting_checks.value`.
+    ///
+    /// **Asserted at the FINAL session only, and the reason is a property of the fixture, not of the tier.**
+    /// `EvalArena.SeedStrategy` writes the whole equity curve up front, so when this fixture runs the monitor
+    /// at session *i* the monitor reads the FULL curve — future rows included — and its stored value is the
+    /// tail of the whole series, not the tail as of *i*. A real replay grows day by day, so its stored values
+    /// ARE point-in-time. At the last session the two coincide exactly, which makes it the one session where
+    /// a fixture built this way can compare the two honestly. The full-generation comparison is the LIVE
+    /// operator run, and that is the one the tier is actually earned by.
+    /// </summary>
+    [Fact]
+    public void FX_DerivedBand_TStatMatchesStored_AtTheFinalSession()
+    {
+        var (arena, dates, _) = SeedGeneration();
+        using var _a = arena;
+        using var db = arena.Open();
+
+        var lastSession = db.OverfittingChecks
+            .Where(c => c.RunKind == Replay && c.Signal == "S6")
+            .Select(c => c.AsOf).AsEnumerable().Max(StringComparer.Ordinal)!;
+
+        var subjects = db.OverfittingChecks.Where(c => c.RunKind == Replay)
+            .Select(c => c.StrategyId).Distinct().ToList();
+        var bands = BandInputs.Build(db, subjects, Bench, Replay);
+        Assert.NotNull(bands);
+
+        var compared = 0;
+        foreach (var row in db.OverfittingChecks
+                     .Where(c => c.RunKind == Replay && c.Signal == "S6" && c.AsOf == lastSession && c.Value != null)
+                     .Select(c => new { c.StrategyId, c.Value })
+                     .AsEnumerable())
+        {
+            var window = bands!.StrategyWindow(row.StrategyId, lastSession);
+            Assert.NotNull(window);
+            Assert.Equal(row.Value!.Value, window!.Value.T, 9);
+            compared++;
+        }
+        Assert.True(compared >= 3, $"only {compared} S6 rows compared — the fixture is too thin to mean anything");
+    }
+
+    /// <summary>The window is POINT-IN-TIME: an earlier session's window must not equal a later one's on a
+    /// series that is still moving. Without this, a bug that ignored the as-of would pass the t-stat check
+    /// above (which is deliberately taken at the last session) and be wrong everywhere else.</summary>
+    [Fact]
+    public void FX_DerivedBand_WindowIsPointInTime()
+    {
+        var (arena, dates, _) = SeedGeneration();
+        using var _a = arena;
+        using var db = arena.Open();
+
+        var subjects = new[] { "plant:edge:monthly:16:0" };
+        var bands = BandInputs.Build(db, subjects, Bench, Replay)!;
+
+        var early = bands.StrategyWindow(subjects[0], dates[100]);
+        var late = bands.StrategyWindow(subjects[0], dates[^1]);
+
+        Assert.NotNull(early);
+        Assert.NotNull(late);
+        Assert.NotEqual(early!.Value.Alpha, late!.Value.Alpha, 6);
+
+        // …and before the window is full there is no answer at all — the monitor's `insufficient_track`.
+        Assert.Null(bands.StrategyWindow(subjects[0], dates[10]));
+    }
+
+    /// <summary>
+    /// **Finding 340, made executable.** Under the STORED threshold a row took the negative-alpha branch and
+    /// therefore recorded no band token. Move the threshold so it falls through, and the answer must come
+    /// from the DERIVED band — with no band inputs the harness must refuse rather than recover a token that
+    /// does not mean what it would need to mean.
+    /// </summary>
+    [Fact]
+    public void FX_DerivedBand_MovedThreshold_RefusesWithoutInputs_AndAnswersWithThem()
+    {
+        var (arena, _, _) = SeedGeneration();
+        using var _a = arena;
+        using var db = arena.Open();
+
+        var moved = new RecomputeSpec("s6-negt",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [RecomputeParameters.S6NegativeAlphaT] = "-1.5",
+            });
+        Assert.Equal(RecomputeTier.DerivedBand, moved.Tier);
+
+        // No inputs supplied ⇒ refused, out loud.
+        var subjects = db.OverfittingChecks.Where(c => c.RunKind == Replay)
+            .Select(c => c.StrategyId).Distinct().ToList();
+        var ex = Assert.Throws<RecomputeRefusedException>(
+            () => new MonitorRecompute(db, moved, Replay).Run(subjects));
+        Assert.Contains("none were supplied", ex.Message, StringComparison.Ordinal);
+
+        // Inputs supplied ⇒ it answers, and the harness wires them for a band-tier spec.
+        var withBands = new MonitorRecompute(db, moved, Replay, BandInputs.Build(db, subjects, Bench, Replay))
+            .Run(subjects);
+        Assert.NotEmpty(withBands);
+
+        var viaHarness = new RecomputeHarness(db, Gate, Replay).Run(moved);
+        Assert.Equal(RecomputeTier.DerivedBand, viaHarness.Tier);
+        Assert.True(viaHarness.Statuses.Recomputed > 0);
     }
 }
 

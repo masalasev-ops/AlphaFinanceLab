@@ -95,6 +95,38 @@ public sealed class RecomputeOrchestrator(
             }
         }
 
+        // The non-saturating instrument (finding 346). D63's asymmetry is not that anti plants are EVER
+        // caught and edgeless ones never are — over a long enough window both are. It is that anti should be
+        // caught FAST and edgeless slowly, and speed is distinguishable however long the window runs.
+        if (sep.Speeds.Count > 0)
+        {
+            sb.AppendLine("### Detection SPEED — median sessions to first Suspect");
+            sb.AppendLine();
+            sb.AppendLine("*The ever-Suspect rates above saturate; this does not. `anti_detection_speed` is named for speed but is itself an EVER predicate (\"<50 % of anti plants ever Suspect\"), so this is the first thing in the corpus that measures what that name says.*");
+            sb.AppendLine();
+            sb.AppendLine("| cohort | n | median sessions stored → recomputed | never flagged stored → recomputed |");
+            sb.AppendLine("|---|---:|---|---|");
+            foreach (var sp in sep.Speeds)
+            {
+                sb.AppendLine(CultureInfo.InvariantCulture,
+                    $"| `{sp.Kind}` | {sp.Cohort} | {sp.StoredMedianSessions?.ToString(CultureInfo.InvariantCulture) ?? "—"} → **{sp.RecomputedMedianSessions?.ToString(CultureInfo.InvariantCulture) ?? "—"}** | {sp.StoredNeverFlagged} → **{sp.RecomputedNeverFlagged}** |");
+            }
+            sb.AppendLine();
+            var (gapWas, gapNow) = sep.SpeedGap;
+            if (gapWas is { } gw && gapNow is { } gn)
+            {
+                sb.AppendLine(CultureInfo.InvariantCulture,
+                    $"**Speed gap (anti median − noedge median): {gw} → {gn} sessions.** NEGATIVE is the D63 direction — anti caught sooner than merely edgeless.");
+                sb.AppendLine();
+                sb.AppendLine(gn == gw
+                    ? "Unchanged: this rule change does not alter how much sooner anti-predictive plants are caught than edgeless ones."
+                    : gn < gw
+                        ? "**Improved** — the gap widened in the D63 direction: the change delays flagging of edgeless plants more than it delays anti-predictive ones."
+                        : "**WORSE** — the gap narrowed or reversed: the change delays anti-predictive detection at least as much as edgeless detection, which is the monitor going quiet on the cohort it exists to catch.");
+                sb.AppendLine();
+            }
+        }
+
         var d = sep.Discriminating;
         sb.AppendLine("**Verdict (read from the shortest non-saturated horizon):**");
         sb.AppendLine();
