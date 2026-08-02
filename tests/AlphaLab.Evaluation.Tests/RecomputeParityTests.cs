@@ -218,6 +218,141 @@ public class RecomputeParityTests
         Assert.Contains("plain:retired", report.ExcludedTruncationLimited);
         Assert.True(report.ParityHolds, "excluding the truncation-limited subject must leave parity intact");
     }
+
+    /// <summary>
+    /// v1.9.73: the harness recomputes the **C-1 detection-power curve**, which is what turns "promotions
+    /// changed" into an answer about the GATE. Under the parity spec both sides must be identical — the
+    /// recomputed curve is derived from the recomputed promotions, and parity says those equal the stored
+    /// ones, so any divergence here is the CURVE arithmetic disagreeing with itself rather than a result.
+    /// </summary>
+    [Fact]
+    public void FX_RecomputeDetectionPower_UnderParity_StoredAndRecomputedCurvesAgree()
+    {
+        var (arena, _, _) = SeedGeneration();
+        using var _a = arena;
+        using var db = arena.Open();
+
+        var report = new RecomputeHarness(db, Gate, Replay).Run(RecomputeSpec.Parity);
+        var dp = report.DetectionPower;
+
+        Assert.NotNull(dp);
+        Assert.NotEmpty(dp!.Rungs);                       // the seeded monthly:16 cohort is the sweep
+        Assert.Equal(Gate.DetectabilityHorizonYears, dp.HorizonYears);
+        foreach (var rung in dp.Rungs)
+        {
+            Assert.Equal(rung.StoredPromoted, rung.RecomputedPromoted);
+            Assert.Equal(rung.StoredPAtHorizon, rung.RecomputedPAtHorizon);
+            Assert.Equal(rung.StoredMedianSessions, rung.RecomputedMedianSessions);
+        }
+        Assert.Equal(dp.StoredAlphaStarAnn, dp.RecomputedAlphaStarAnn);
+    }
+
+    /// <summary>The promotion breakdown distinguishes moved / gained / LOST. Under parity all three are
+    /// zero — the assertion that the classifier does not invent movement where there is none.</summary>
+    [Fact]
+    public void FX_RecomputePromotionShape_UnderParity_IsAllZero()
+    {
+        var (arena, _, _) = SeedGeneration();
+        using var _a = arena;
+        using var db = arena.Open();
+
+        var shape = new RecomputeHarness(db, Gate, Replay).Run(RecomputeSpec.Parity).PromotionShape;
+
+        Assert.Equal(0, shape.Moved);
+        Assert.Equal(0, shape.Gained);
+        Assert.Equal(0, shape.Lost);
+        Assert.Empty(shape.LostSubjects);
+    }
+
+    /// <summary>
+    /// A LOST promotion — an edge the old rule found and the new one does not — is the direction that
+    /// argues AGAINST a rule change, so it is listed in FULL and never sampled. Provoked by planting a
+    /// stored promotion for a subject the recompute will not promote.
+    /// </summary>
+    [Fact]
+    public void FX_RecomputePromotionShape_ListsEveryLostPromotion_NeverSampled()
+    {
+        var (arena, dates, _) = SeedGeneration();
+        using var _a = arena;
+
+        using (var seed = arena.Open())
+        {
+            seed.GoLiveLog.Add(new GoLiveLogRow
+            {
+                AsOf = dates[30], Promoted = "plant:noedge:daily:0:0", Verdict = "Promoted",
+                EvidenceJson = "{}", RunKind = Replay,
+            });
+            seed.SaveChanges();
+        }
+
+        using var db = arena.Open();
+        var report = new RecomputeHarness(db, Gate, Replay).Run(RecomputeSpec.Parity);
+
+        Assert.Equal(1, report.PromotionShape.Lost);
+        Assert.Contains(report.PromotionShape.LostSubjects, s => s.Contains("plant:noedge:daily:0:0", StringComparison.Ordinal));
+        Assert.Contains(report.Promotions.Examples, e => e.Contains("LOST", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// The finding-280 instrument (v1.9.73). Finding 280 is that anti-predictive and merely-edgeless plants
+    /// are flagged at IDENTICAL rates, so only the DIFFERENTIAL judges a fix — a change suppressing both
+    /// equally has fixed nothing while the raw status count falls and looks like progress. Under parity the
+    /// separation must be unchanged, and both cohorts must actually be present, or the instrument is
+    /// measuring nothing.
+    /// </summary>
+    [Fact]
+    public void FX_CohortSeparation_UnderParity_IsUnchanged_AndBothCohortsPresent()
+    {
+        var (arena, _, _) = SeedGeneration();
+        using var _a = arena;
+        using var db = arena.Open();
+
+        var sep = new RecomputeHarness(db, Gate, Replay).Run(RecomputeSpec.Parity).Separation;
+
+        Assert.NotNull(sep);
+        // Reported at SEVERAL horizons, never one: the ever-Suspect predicate saturates over a long window
+        // (finding 343), so a single full-window number would discriminate nothing.
+        Assert.True(sep!.Horizons.Count >= 3);
+        Assert.Contains(sep.Horizons, h => h.Sessions is null);        // the full window is carried
+        Assert.Contains(sep.Horizons, h => h.Sessions == 252);         // ...and a short one, to expose saturation
+        foreach (var h in sep.Horizons)
+        {
+            Assert.Contains(h.Cohorts, c => c.Kind == "anti");
+            Assert.Contains(h.Cohorts, c => c.Kind == "noedge");
+            foreach (var c in h.Cohorts) Assert.Equal(c.StoredEverSuspect, c.RecomputedEverSuspect);
+            Assert.Equal(h.StoredSeparation, h.RecomputedSeparation);
+        }
+    }
+
+    /// <summary>The denominator comes from the RECOMPUTED SUBJECTS, not the strategies table: a plant that
+    /// was never simulated (finding 341's pre-Change-4 residue) cannot be flagged, and counting it would
+    /// silently deflate the rate it lands in.</summary>
+    [Fact]
+    public void FX_CohortSeparation_DenominatorExcludesNeverSimulatedPlants()
+    {
+        var (arena, _, _) = SeedGeneration();
+        using var _a = arena;
+
+        using (var seed = arena.Open())
+        {
+            // A plant row with no account, no curve and no checks — exactly finding 341's shape.
+            seed.Strategies.Add(new StrategyRow
+            {
+                StrategyId = "plant:noedge:daily:0:999", Family = "test", ConfigJson = "{}",
+                ExitPolicyJson = "{}", CreatedOn = "2020-01-01", Status = "candidate",
+            });
+            seed.SaveChanges();
+        }
+
+        using var db = arena.Open();
+        var sep = new RecomputeHarness(db, Gate, Replay).Run(RecomputeSpec.Parity).Separation;
+        var noEdge = Assert.Single(sep!.Horizons[^1].Cohorts.Where(c => c.Kind == "noedge"));
+
+        Assert.DoesNotContain("999", noEdge.Cohort.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal(db.OverfittingChecks.Where(c => c.RunKind == Replay)
+            .Select(c => c.StrategyId).Distinct().AsEnumerable()
+            .Count(id => id.StartsWith("plant:noedge:", StringComparison.Ordinal)), noEdge.Cohort);
+    }
 }
 
 /// <summary>Tier classification and the refusals (MASTER §25.2 as amended by D117). These are pure over the

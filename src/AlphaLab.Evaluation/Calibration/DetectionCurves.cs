@@ -84,7 +84,16 @@ public static class DetectionCurves
         return (top * step / 100.0, CeilingApplied);
     }
 
-    private static double? AlphaStar(List<(double AlphaPct, double PromotedAtH)> levels, double power)
+    /// <summary>
+    /// α*(H): the smallest swept rung whose detection curve reaches <paramref name="power"/> by the
+    /// horizon, interpolated between rungs; <c>+∞</c> when none does; null with no rungs.
+    ///
+    /// **Public because the recompute harness computes it over RECOMPUTED promotions** (v1.9.73). The
+    /// floor a corrected generation would carry has to be derived by the SAME selection rule the gate
+    /// applies to the frozen one, or the comparison "did the floor move?" would be between two different
+    /// questions. <paramref name="levels"/> is (alpha in PERCENT, P(promoted by H)), ascending by alpha.
+    /// </summary>
+    public static double? AlphaStar(List<(double AlphaPct, double PromotedAtH)> levels, double power)
     {
         for (var i = 0; i < levels.Count; i++)
         {

@@ -2492,3 +2492,61 @@ No fix to finding 280 or 285; no generation-2 run; no confirmation slice; no thr
 ### Also folded in
 
 The v1.9.71 records were stamped `2026-08-02` (UTC) where the corpus dates by **local** date — corrected to `2026-08-01`, matching how v1.9.70 is dated despite its own PR landing after midnight UTC. And at the operator's request **`BUILD_AND_PROMPTS` gained a post-Phase-5 section** recording the v1.9.70–v1.9.72 passes: the phase table says what was supposed to happen, and these passes are what did. The Phase-6 prompt's "BUILD THE RECOMPUTE HARNESS FIRST" is struck-and-corrected to "built at v1.9.72; what remains is to use it", with the two tier amendments carried into it.
+
+---
+
+## v1.9.73 — the harness answers the question it was run for: the C-1 curve, cohort separation, and the shape of a promotion change (findings 342–343)
+
+*Recorded 2026-08-02. **No new decision** — this completes the capability D117/§25.5(b) already ascribed to the harness rather than changing what any decision says. Tests **1,095 → 1,105**; no migration; `ci.ps1` green; `check-register` green at 117 rows.*
+
+### finding 342 — the v1.9.72 harness reported COUNTS and stopped short of conclusions
+
+Two live scoring runs exposed it on the same afternoon it shipped:
+
+- **Finding 285's alpha change moved 65 of 75 promotions** — and the report could not say whether the detectability floor moved or whether the gate reopens, which is the only reason that count was wanted (finding 336).
+- **Finding 280's `sustain_evals=4` moved 2,946 statuses** — and the report could not say whether the *cohorts separated*, which is the entire content of finding 280. Worse, the examples are ordered by strategy id, so `plant:anti:*` filled all forty sample lines regardless of what happened to `plant:noedge:*`. The count was authoritative and the question was untouched.
+
+§25.5(b) had described the harness as something that would *"recompute the C-1 detection-power curve and the status-derived KPIs"*; v1.9.72 built the three §25.3 parity artefacts and none of that. Added here:
+
+1. **The C-1 detection-power curve**, rebuilt from recomputed promotions with α\*(H) derived by **the same selection rule the gate applies to the frozen curve** — same monthly-ladder sweep, same session-index grid, same cohort denominator, or the two would not be comparable. The section ends in an explicit four-way verdict (reopens / stays closed / **closes** the gate / level moves), extracted as a pure function and pinned by fixture: it is the one sentence a reader acts on without re-deriving.
+2. **Cohort separation** — `anti` rate minus `noedge` rate, the only number that can judge a finding-280 candidate.
+3. **Promotion diffs classified moved / gained / LOST**, with every LOST subject listed in full and never sampled — it is the one direction that argues *against* a change. Example cap raised 10 → 40.
+
+### finding 343 — the separation instrument saturated on its first live run, and it is finding 289's defect class
+
+The first horizon-free version returned `anti` 50/50, `noedge` 50/50, separation **0.00 → 0.00**, and a confident *"does not address finding 280."* That number was **saturated, not measured**: ever-Suspect over a **20-year** window catches every cohort eventually, and every cohort sitting at exactly 100 % is the signature. Finding 280's own 50/50 was measured **live at session 639** — about 2.5 years — not over the whole generation.
+
+This is **finding 289's lesson** (*"an EVER predicate over 23× more start positions cannot get easier as the window grows"*) landing on a different EVER predicate — inside the instrument built to stop precisely this class of error from going unnoticed. Recorded rather than quietly patched, because the near-miss is the useful part: the number was clean, confident, and wrong, and only its *suspicious tidiness* gave it away.
+
+Separation is now reported at **1 year / 3 years / full window**; the verdict reads from the shortest non-saturated horizon; and when every horizon saturates the report says **"not readable — a statement about the MEASUREMENT, not evidence that the change did nothing"** rather than returning 0.00 with a verdict attached.
+
+### finding 344 — the horizon fix was right and the horizon SELECTION was still wrong
+
+The finding-343 fix added 1y/3y/full horizons and read the verdict from "the shortest horizon with a non-zero stored separation". On the live store that selected the 1-year horizon, where the numbers are `anti` **49/50** and `noedge` **50/50** — two cohorts BOTH at the ceiling, one plant apart. Its −0.02 is not a starting point, it is the noise floor; and the instrument duly reported the move to 0.00 as **"Improved. The change separates anti-predictive plants from merely edgeless ones."**
+
+That sentence was wrong in substance, and a reader would have acted on it. Three corrections:
+
+- **Saturated is now defined against the measurement's own resolution:** a horizon is saturated when both judged cohorts sit within **one plant** (`1/n`) of the ceiling — derived from the cohort size, not an authored threshold.
+- **The selector skips saturated horizons** rather than seeking a non-zero number in one.
+- **The verdict reports the change in PLANTS** and refuses to call anything at or below `1/n` a direction: *"Within the instrument's resolution — NOT a result… read it as no measured effect, never as a direction."*
+
+Recorded separately from 343 because they are different mistakes: 343 was measuring over the wrong window, 344 was reading a real number at the wrong precision. The first was caught by the answer looking too tidy; the second only by checking what the "improvement" consisted of — **one plant out of fifty**.
+
+### What the two live runs actually established
+
+**Finding 285's fix is real, strictly additive, and does NOT reopen the gate.** Promotions 75 → 105 (**35 moved, 30 gained, 0 LOST** — it never stops finding an edge the old rule found). Per rung, P(promoted by 3y): 2 % 0.02→0.02 · 4 % 0.10→0.12 · 8 % 0.30→0.36 · **16 % 0.42→0.52**, and the 16 % median time-to-detection more than halves (861 → 294 sessions). But α\*(3y) stays **unreachable** on both sides: 0.52 against a required 0.80. **Finding 336 is not resolved by fixing finding 285** — the gate needs something else, most plausibly the horizon question, which is a decision and not a config edit.
+
+*(The 2 % and 4 % medians rising is a selection effect, not a regression: with 5 promotions the median was of the fastest five; with 23 it includes the slow ones.)*
+
+**Finding 280's cheap candidate (`sustain_evals=4`) has NO MEASURABLE EFFECT — and the instrument's own verdict is `Not readable`, which is the honest form of that.** Every available horizon is saturated: at 1 year `anti` is 49/50 and `noedge` 50/50 → 49/50, so the whole movement on the two cohorts finding 280 is about is **one plant in fifty**, at the resolution limit. What is established is that any effect is smaller than one plant at one year — **not** that there is none. It does change something real (`edge` flagging 93/250 → 72/250 at 1y, 248/250 → 219/250 over the full window), just not the thing finding 280 asks about.
+
+**The consequence is concrete:** finding 280 named two candidate knobs, and the sustain count is now measured out. **The remaining candidate is the negative-alpha threshold — the `derived-band` tier this harness deliberately refuses (finding 340).** That tier has to be built before finding 280 can be scored at all, which is precisely what finding 340 predicted when it re-classified that knob.
+
+### Two process errors worth recording, since both nearly shipped a wrong answer
+
+- **A `build | grep && run` chain masked a failed build.** `grep` matched the compiler errors and *succeeded*, so `&&` proceeded and `--no-build` ran a **stale binary** — producing a report in the old format that looked like a result. Same shape as the earlier `tail`-swallows-the-exit-code slip. Build and test exit codes are now checked directly, never through a pipe.
+- **A Worker compile error survived a green test run**, because `dotnet test tests/AlphaLab.Evaluation.Tests` builds only that project and its dependencies — not `AlphaLab.Worker`. A per-project test run is not a build check.
+
+### Also observed, not actioned
+
+`LedgerStoreTests` has now flaked twice under parallel load with transient SQLite `unable to open database file` errors (`FR8_Decision_IsIdempotentPerDay`, `D90_PositionSnapshot_RoundTripsTheWholeBook`), both passing in isolation and both green on CI's Linux leg. Recorded as an observation; not enough evidence yet to call it a defect, and it is nowhere near this pass's code.
