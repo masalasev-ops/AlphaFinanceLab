@@ -338,13 +338,23 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   "digest is wired" closure struck (finding 333); `Research` config in both processes (finding 334); the
   architecture SVG's rule-grades edge re-drawn off the judging layer and CLAUDE.md's diagram description
   corrected (finding 335); this MANIFEST trail back-filled (finding 332).
-- **v1.9.71 — the plausibility ceiling** (2026-08-02; D116; findings 336–337): the detectability gate stops
+- **v1.9.71 — the plausibility ceiling** (2026-08-01; D116; findings 336–337): the detectability gate stops
   refusing in one direction only — a ceiling of `top swept rung × the ladder's own geometric step` (32 %/yr
   here), derived from the frozen C-1 row rather than authored, with three fail-open valves; the researcher's
   pack carries BOTH ends of the band (cp-1.0 → cp-1.1, prompt rs-1.0 → rs-1.1, taken while the store held zero
   proposals so no margin series lost comparability); and **finding 336** records that the arena's own frozen
   curves put the gate on its `+∞` branch at the configured 3-year horizon — every registered candidate refuses
   until generation-2 recalibration, a fact no document had multiplied out. No threshold tuned, no migration.
+- **v1.9.72 — the recompute harness, built** (2026-08-02; D117 amends D106; findings 338–340): MASTER §25's
+  D106 harness exists — score a monitor- or gate-rule change by re-deriving verdicts from the stored
+  generation instead of paying a multi-day replay. **D117 settles §25.5's two open questions**: report-only
+  (no rows, ever), and a recomputed number IS sign-off evidence for retire-exempt subjects but only when
+  `FX-RecomputeParity` AND a **confirmation slice** both agree — parity exercises the unchanged path, so it
+  structurally cannot validate the changed one. Three findings came out of building against the spec: **338**
+  (retire-exemption is load-bearing for recomputability, not incidental), **339** (§25.2's tier table had no
+  row for the alpha-definition change its own prose listed as covered), **340** (S6's negative-alpha
+  threshold is `derived-band`, not `direct-read` — the branch that fires never records band membership).
+  `derived-band` is classified and REFUSED out loud, which is §25.2's own instruction rather than a gap.
 - The mockups were consolidated into the single `alphalab_ux_mockups.html` in the v1.9.21/v1.9.22 passes
   (the earlier per-topic and v2 files are gone; the consolidated file gained the UX-14 paired-comparison block
   and the slate-grey replay tokens in v1.9.22). SCHEMA received its first post-v1.9.1 edit in v1.9.7

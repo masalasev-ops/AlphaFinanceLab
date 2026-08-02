@@ -2374,7 +2374,7 @@ No scorer, no new pack fields beyond cp-1.0 (§23.1's fuller read set is deferre
 
 ## v1.9.71 — the plausibility ceiling: the gate stops refusing in one direction only, and the closed gate becomes visible (D116; findings 336–337)
 
-*Recorded 2026-08-02, from the operator's question about how the researcher seat is prevented from escalating its claims indefinitely without becoming too conservative to find anything. Tests **1,074 → 1,080**; no migration; `ci.ps1` green; `check-register` green at 116 rows.*
+*Recorded 2026-08-01, from the operator's question about how the researcher seat is prevented from escalating its claims indefinitely without becoming too conservative to find anything. Tests **1,074 → 1,080**; no migration; `ci.ps1` green; `check-register` green at 116 rows.*
 
 ### finding 336 — the arena's gate is CLOSED, and no document said so
 
@@ -2424,3 +2424,71 @@ No scorer, no new pack fields beyond cp-1.0 (§23.1's fuller read set is deferre
 ### What is deliberately NOT in this pass
 
 No threshold tuned (`Gate.Power`, `Gate.DetectabilityHorizonYears` untouched); no migration; no new config key; no change to the floor's arithmetic or its existing refusal message; no scorer; no brief/skeptic changes; no live-smoke re-run (it exercises `regime_brief`, untouched here).
+
+---
+
+## v1.9.72 — the recompute harness, built: D106 exists, and §25.5's two open questions are answered (D117; findings 338–340)
+
+*Recorded 2026-08-02. Tests **1,080 → 1,095**; no migration, no new config key, no schema change; `ci.ps1` green; `check-register` green at 117 rows.*
+
+### Why now
+
+Finding 336 (v1.9.71) made generation 2 the critical path rather than owed tidy-up: the detectability gate's empirical floor is `+∞` at the configured horizon, so **no candidate is admissible until the C-1 curves are re-measured**. Three findings now converge on that one run — **285(d)** (the gate consumed a raw-gap alpha, so generation 1's per-rung promotion numbers are contingent), **280** (S6 is the dominant flat-anchor false alarm), and **336**. MASTER §25 had already specified the instrument that makes such a run affordable; this pass builds it.
+
+**The premise that makes it possible, restated because everything else rests on it:** both fixes are *downstream of the simulation*. Neither changes a trade, a fill, a cost or an equity curve. So the expensive artefact — **5,031 replayed sessions, 383,075 `overfitting_checks`, 2.03 M `equity_curve` rows, 3.27 M `control_equity` rows** — stays valid, and only the verdicts need re-deriving.
+
+### D117 — the four settlements
+
+**(1) Where it writes: nowhere.** A markdown artefact under `docs/calibration/{arena}/`; not one row, asserted by fixture at both the harness and the orchestration layer. A distinct `run_kind` was rejected **not for its migration but for its audit** — it adds a third run kind that every quarantine filter, read-model and guard would have to be re-checked against, and rule 1 reasons in forward-vs-replay terms throughout. Nothing is foreclosed: `Calibration.ReportRef`'s existing `{path, sha256}` shape already carries a report as evidence.
+
+**(2) Sign-off: yes for retire-exempt subjects, gated on TWO checks.** `FX-RecomputeParity` under the current rules, AND a **confirmation slice** — a narrow `replay-calibrate --from/--to` under the *corrected* rules, agreeing with the harness over that same window. This is the substantive clause. **Parity exercises the UNCHANGED path; the code that differs under a changed rule is exactly what parity never runs.** A version of this decision reading "parity passed, therefore trust it" would license the harness on a test that structurally cannot cover its use. With the slice, generation 2 costs hours instead of days and every later monitor-rule change costs minutes.
+
+**(3) and (4)** are findings 338 and 339/340 below, promoted into the decision because they change what the harness may answer and what it can read.
+
+### finding 338 — §25.1's "no feedback breaks it" is incomplete, and the omission is load-bearing
+
+The paragraph verifies that the allocator moves no money and notes that plants are retire-exempt — without saying that **the exemption is what makes a monitor-rule change recomputable at all.** There are two loops:
+
+- **Promotion does not feed back.** `promotable` is the effective status in `{candidate, live}` (`EvaluationStep.cs:63-67`), so a promotion never changes the evaluated set. Finding 285's alpha change is therefore recomputable with *no* caveat.
+- **Retire does.** It removes a subject, which stops its rows, so the sessions after a retirement were never recorded and the *would not have retired* direction has no data to recompute from.
+
+Plants are exempt (D100) and are **500 of 503** strategies — precisely why the cohorts the curves are built from are recomputable in both directions. Exactly one non-exempt subject exists, `threshold:sma50`, and it holds **the only `retired` row in 95,769** and the only `Revert` row in `go_live_log`. It is excluded and **named in the report** — a silent exclusion would be the same defect somewhere quieter.
+
+### findings 339 and 340 — the tier table was wrong in two different ways, and building against it is what showed that
+
+- **339:** §25.2's prose lists *"the alpha definition"* as covered, but neither tier row supplied its inputs — those are the paired series from `equity_curve` plus `StrategyMetrics.JensenAlpha`. A v1 built to the two-row table would classify **the one change generation 2 most needs** as unclassifiable and refuse it. Added as `equity-derived`.
+- **340:** §25.1 records that `insideCentralBand` is recoverable from the S6 contribution token. **That holds only for rows that did not take the negative-alpha branch** — `MonitorSignals.S6` returns EARLY on `rollingAlphaT < S6NegativeAlphaT` and never evaluates band membership, so those rows record none. Move that threshold and exactly those rows fall through to a check whose input was never stored. So S6's negative-alpha threshold is **`derived-band`, not `direct-read`** — and since that is the knob finding 280 most points at, mis-tiering it is the specific way a v1 harness would look correct and be wrong on the change it was built for.
+
+Both were found by *implementing* the spec, not by re-reading it — §23.8's bet ("a specification written before its implementation can contradict it, and that contradiction is the signal") paying out a second time.
+
+### What was built
+
+`RecomputeSpec` (examinable parameter overrides → tier, refusing anything it cannot classify) · `MonitorRecompute` (re-drives S2/S3/S6 + the aggregate over stored rows; **streaks are RECOMPUTED, never read**, because under a changed rule the stored priors are themselves different) · `GateRecompute` (re-derives verdicts from `equity_curve`, point-in-time by truncation, **reproducing finding 285's raw-gap defect faithfully by default** — §25.1 requires the harness to reproduce the known defect before it is trusted to evaluate the fix) · `RecomputeHarness` (the retire-exempt guard + the three §25.3 artefact diffs) · `RecomputeOrchestrator` + the `replay-recompute` verb.
+
+**`derived-band` is classified and REFUSED out loud.** §25.2's own warning is that a harness reading only the stored columns would *appear* to cover the band case and quietly return a wrong answer, so refusing is conformance rather than a gap. `direct-read` and `equity-derived` are implemented.
+
+### The live parity run — the actual evidence
+
+`FX-RecomputeParity` was run against generation 1 in the live `sp500` store (read-only; report archived at `docs/calibration/sp500/2026-08-02-recompute-parity.md`):
+
+| Artefact | Stored | Recomputed | Differing |
+|---|---:|---:|---:|
+| `overfitting_status` | 95,600 | 95,600 | **0** |
+| `go_live_log(Promoted)` | 75 | 75 | **0** |
+| `go_live_log(WouldRevert)` | 31,327 | 31,327 | **0** |
+
+**127,002 records reproduced exactly, zero differences**, with `threshold:sma50` excluded and named as truncation-limited (finding 338) — the one subject in the generation that retired. ~15 minutes wall clock, **I/O-bound** (40 s CPU): §25.4's "minutes instead of days" holds as written, and the honest bottleneck is repeated SQLite scans rather than arithmetic.
+
+The CI fixture is necessarily synthetic (CI cannot carry a 3.9 GB store), so **this run is the evidence and the fixture is the regression guard** — the fixture builds its own generation by running the real monitor and gate, so it is not a restatement of the harness's own output.
+
+### finding 341 — 100 orphaned plant rows from a superseded cohort definition
+
+Recorded because it explains a number that otherwise reads as under-coverage: `strategies` holds **500** plant rows but the harness recomputed **401** subjects. The gap is `plant:edge:daily:4:*` and `plant:edge:daily:8:*` — 100 rows from the **pre-Change-4** cohort set, when the daily family was still swept at 4 % and 8 %. D101 retargeted the primary daily→monthly and left daily a single survival plant at `AlphaAnnualPct`, so `PlantCohorts.Build` now emits 400 plants and those 100 were never simulated in this generation: **no account, no equity curve, no `overfitting_checks` row.** Nothing computes from them — the S2 deflation counts `trials_registry` (400), not `strategies` — so this is an inert residue rather than a live defect, and the harness's coverage of the 400 simulated plants is complete. Filed, not actioned: deleting rows from `strategies` is a rule-15 admin action and buys nothing here.
+
+### Deliberately NOT in this pass
+
+No fix to finding 280 or 285; no generation-2 run; no confirmation slice; no threshold tuned; no migration. Building the instrument and using it are separate steps — bundling them would mean choosing the fix before the instrument that scores it exists.
+
+### Also folded in
+
+The v1.9.71 records were stamped `2026-08-02` (UTC) where the corpus dates by **local** date — corrected to `2026-08-01`, matching how v1.9.70 is dated despite its own PR landing after midnight UTC. And at the operator's request **`BUILD_AND_PROMPTS` gained a post-Phase-5 section** recording the v1.9.70–v1.9.72 passes: the phase table says what was supposed to happen, and these passes are what did. The Phase-6 prompt's "BUILD THE RECOMPUTE HARNESS FIRST" is struck-and-corrected to "built at v1.9.72; what remains is to use it", with the two tier amendments carried into it.

@@ -36,7 +36,16 @@ public enum WorkerCommandKind
     /// proposal exists (checkpoint 5.7). Same shape and same reason as SignalPinThresholds: a parameter
     /// chosen after the scores are visible is a parameter chosen by looking at the answer.</summary>
     PinProposalThresholds,
+
+    /// <summary>The D106/D117 recompute harness (MASTER §25): score a monitor- or gate-rule change by
+    /// re-deriving verdicts from the stored generation instead of paying a multi-day replay. REPORT-ONLY —
+    /// it writes an artefact under docs/calibration and never a row (D117 clause 1).</summary>
+    ReplayRecompute,
 }
+
+/// <summary>The `replay-recompute` request: the candidate rule change, and whether this run is the §25.3
+/// parity check (an empty spec against generation 1's own records).</summary>
+public sealed record RecomputeRequest(IReadOnlyDictionary<string, string> Overrides, bool VerifyParity, string? SpecName);
 
 /// <summary>The parsed command. <see cref="Date"/> is set only for
 /// <see cref="WorkerCommandKind.ReproduceDay"/>; <see cref="Replay"/>/<see cref="ReportOnly"/> only for
@@ -44,7 +53,8 @@ public enum WorkerCommandKind
 public sealed record WorkerCommand(
     WorkerCommandKind Kind, string? Date = null, string? ArenaId = null, ReplayRequest? Replay = null,
     bool ReportOnly = false, SignalBackfillRequest? SignalBackfill = null,
-    SignalPinRequest? SignalPin = null, ProposalPinRequest? ProposalPin = null);
+    SignalPinRequest? SignalPin = null, ProposalPinRequest? ProposalPin = null,
+    RecomputeRequest? Recompute = null);
 
 /// <summary>
 /// Pure parsing of the Worker's command line (the <see cref="WorkerModeParser"/> precedent —
@@ -70,6 +80,7 @@ public static class WorkerCommandParser
     public const string SignalBackfillVerb = "signal-backfill";
     public const string SignalPinThresholdsVerb = "signal-pin-thresholds";
     public const string PinProposalThresholdsVerb = "pin-proposal-thresholds";
+    public const string ReplayRecomputeVerb = "replay-recompute";
 
     public static WorkerCommand Parse(string[] args)
     {
@@ -95,6 +106,28 @@ public static class WorkerCommandParser
         if (string.Equals(verb, VerifyWalVerb, StringComparison.OrdinalIgnoreCase))
         {
             return new WorkerCommand(WorkerCommandKind.VerifyWal, null, arena);
+        }
+
+        if (string.Equals(verb, ReplayRecomputeVerb, StringComparison.OrdinalIgnoreCase))
+        {
+            // --set key=value, repeatable. A bare `replay-recompute` is the §25.3 PARITY run: no overrides,
+            // generation 1's own rules, compared against generation 1's own records.
+            var overrides = new Dictionary<string, string>(StringComparer.Ordinal);
+            for (var i = 1; i < args.Length - 1; i++)
+            {
+                if (!string.Equals(args[i], "--set", StringComparison.OrdinalIgnoreCase)) continue;
+                var pair = args[i + 1];
+                var eq = pair.IndexOf('=', StringComparison.Ordinal);
+                if (eq <= 0 || eq == pair.Length - 1)
+                {
+                    throw new ArgumentException(
+                        $"{ReplayRecomputeVerb}: --set expects key=value, got '{pair}'.");
+                }
+                overrides[pair[..eq]] = pair[(eq + 1)..];
+            }
+            var verifyParity = args.Contains("--verify-parity") || overrides.Count == 0;
+            return new WorkerCommand(WorkerCommandKind.ReplayRecompute, null, arena,
+                Recompute: new RecomputeRequest(overrides, verifyParity, ValueOf(args, "--name")));
         }
 
         if (string.Equals(verb, ReplayCalibrateVerb, StringComparison.OrdinalIgnoreCase))
