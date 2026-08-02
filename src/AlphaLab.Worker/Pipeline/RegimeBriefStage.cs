@@ -14,8 +14,12 @@ namespace AlphaLab.Worker.Pipeline;
 /// so this class is deliberately thin: it composes a prompt and records an outcome.
 ///
 /// **The sentiment score is NOT resurrected here.** D46's framing is superseded by D79–D82 (golden rule
-/// 28): the brief is prose for a human and, from 5.4, a pack field for the researcher — never a
-/// machine-readable number that anything scores or trades on.
+/// 28): the brief is prose for a human — never a machine-readable number that anything scores or trades
+/// on. **And NOT a pack field either (corrected v1.9.70, finding 335):** an earlier version of this
+/// comment claimed the brief becomes "a pack field for the researcher from 5.4", but §23.1 says the brief
+/// "neither depends on nor replaces the seats" and `PackWhitelist` deliberately has no such field — the
+/// pack's regime input is the MECHANICAL PIT label, not model prose. Feeding one seat's output into
+/// another seat's pack would also be the shape rule 32's corollary exists to keep suspicious.
 /// </summary>
 public sealed class RegimeBriefStage(
     IAnalysisProvider analysis,

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 880" width="800" height="880" role="img" aria-labelledby="t d">
 <title id="t">AlphaLab architecture, one page</title>
-<desc id="d">Market history feeds the field of strategies (human strategies plus the AI contestant, each trading its own 100k) and the measured-alongside group (random crowds, the twin, the rule grader). The field writes the ledger; the others write benchmarks and rule grades. Both feed a judging layer that asks whether a result beat the crowd, whether the contestant beat its twin, and what the overfitting checks say. That produces a verdict, which drives the money split, the dashboards, and the AI researcher, which proposes one strategy that a human approves back onto the field. Separately, a sealed calibration run plants fake strategies of known quality, replays twenty years on a simulated clock, checks whether the machinery caught them, and sets the pass marks the judging layer uses.</desc>
+<desc id="d">Market history feeds the field of strategies (human strategies plus the AI contestant, each trading its own 100k) and the measured-alongside group (random crowds, the twin, the rule grader). The field writes the ledger; the others write benchmarks and rule grades. The benchmarks feed a judging layer that asks whether a result beat the crowd, whether the contestant beat its twin, and what the overfitting checks say; the rule grades are descriptive only — they inform the AI researcher's evidence and the dashboards, never the judges (D91). That produces a verdict, which drives the money split, the dashboards, and the AI researcher, which proposes one strategy that a human approves back onto the field. Separately, a sealed calibration run plants fake strategies of known quality, replays twenty years on a simulated clock, checks whether the machinery caught them, and sets the pass marks the judging layer uses.</desc>
 <style>
   .bg   { fill: #ffffff; }
   text  { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
@@ -87,11 +87,19 @@
 <g class="gray">
   <rect x="310" y="340" width="250" height="56" rx="10"/>
   <text class="th" x="435" y="363" text-anchor="middle">Benchmarks + rule grades</text>
-  <text class="ts" x="435" y="381" text-anchor="middle">what everything is judged against</text>
+  <text class="ts" x="435" y="381" text-anchor="middle">benchmarks judge; rule grades only inform</text>
 </g>
 
 <line x1="165" y1="396" x2="165" y2="420" class="arr" marker-end="url(#ar)"/>
 <line x1="435" y1="396" x2="435" y2="420" class="arr" marker-end="url(#ar)"/>
+<text class="lbl" x="470" y="412">benchmarks only</text>
+<!-- v1.9.70 (finding 335): rule grades NEVER enter the judging layer (D91 — descriptive only, enforced
+     by DescriptiveOnlyGuardTests). They flow to the researcher's evidence instead: the D91/D113
+     evidence-prior seam, placebo-able for the paper control. -->
+<path d="M560 380 L572 380 L572 822 L300 822 L300 814" class="arr" stroke-dasharray="5 3" marker-end="url(#ar)"/>
+<text class="lbl" x="490" y="722" text-anchor="middle">rule grades feed the</text>
+<text class="lbl" x="490" y="736" text-anchor="middle">researcher's evidence,</text>
+<text class="lbl" x="490" y="750" text-anchor="middle">never the judges (D91)</text>
 
 <!-- judging -->
 <rect class="grp" stroke="#1F5FA6" x="40" y="424" width="520" height="86" rx="12"/>

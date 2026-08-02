@@ -20,7 +20,9 @@ public class ResearchJobExecutorTests
         new(configure: s =>
         {
             s.AddScoped(_ => provider);
-            s.AddSingleton(new AiOptions());   // the D113 pairing check reads Ai.Researcher (5.7)
+            s.AddSingleton(new AiOptions());          // the D113 pairing check reads Ai.Researcher (5.7)
+            s.AddSingleton(new ResearchOptions());     // fork_budget_remaining (pack field, v1.9.70)
+            s.AddSingleton(new SignalLibraryOptions());// the digest read-model (pack field, v1.9.70)
             foreach (var kind in ResearchJobExecutor.Kinds)
             {
                 var k = kind;
@@ -40,10 +42,23 @@ public class ResearchJobExecutorTests
         return job.JobId;
     }
 
+    /// <summary>The pack anchor (v1.9.70): the hypotheses path fails closed without a committed run.</summary>
+    private static void SeedRun(PipelineHarness h)
+    {
+        using var db = h.Open();
+        db.Runs.Add(new RunRow
+        {
+            AsOf = "2026-07-31", RunKind = "live", Watermark = "2026-07-31T22:00:00Z",
+            StartedAt = "t", Status = "ok",
+        });
+        db.SaveChanges();
+    }
+
     [Fact]
     public async Task FR23_AnAcceptedProposal_LandsUnlocked_LinkedToItsParent()
     {
         using var h = Harness(new StubProvider("## Hypothesis 1\nClaim: momentum decays faster after gaps."));
+        SeedRun(h);
         Queue(h, "analysis_hypotheses", """{"ParentEntryId":41,"Topic":"gap behaviour"}""");
 
         var outcome = await h.RunJobDrainAsync();
@@ -71,6 +86,11 @@ public class ResearchJobExecutorTests
         // And nothing else moved: no candidate, no trial. A proposal is a sentence, not an admission.
         Assert.Empty(db.Strategies.ToList());
         Assert.Empty(db.TrialsRegistry.ToList());
+
+        // v1.9.70 (finding 330): the path now runs through PERSISTED packs — one per D113 arm.
+        // PaperControlTests owns the pack-level contract; this asserts only that the wiring exists.
+        Assert.Equal(2, db.AiContextPacks.Count());
+        Assert.Equal(2, db.AiDecisions.Count());
     }
 
     [Fact]
@@ -92,6 +112,11 @@ public class ResearchJobExecutorTests
         Assert.Contains(entries, e => e.Kind == "decision_note");
         Assert.Contains(entries, e => e.Kind == "skeptic_review");
         Assert.All(entries, e => Assert.False(e.Locked));
+
+        // DELIBERATELY no packs for the advisory kinds (v1.9.70): their outputs are prose for the
+        // operator and no controlled comparison depends on their inputs. Asserted so the boundary is a
+        // tested choice rather than an accident that could silently flip either way.
+        Assert.Empty(db.AiContextPacks.ToList());
     }
 
     [Fact]
@@ -100,6 +125,7 @@ public class ResearchJobExecutorTests
         // Rule 10. The alternative — an empty journal entry — would put an unattributed blank into the
         // D110 proposal stream, which reads as the researcher having had nothing to say.
         using var h = Harness(new StubProvider("", AnalysisOutcome.BudgetExhausted, "day ceiling reached"));
+        SeedRun(h);
         Queue(h, "analysis_hypotheses", """{"ParentFinding":"f-311"}""");
 
         var outcome = await h.RunJobDrainAsync();
@@ -107,6 +133,10 @@ public class ResearchJobExecutorTests
         Assert.Equal(1, outcome.Failed);
         using var db = h.Open();
         Assert.Empty(db.JournalEntries.ToList());
+        Assert.Empty(db.AiDecisions.ToList());
+        // The PACKS persist — they were built before the call, they record what WOULD have been seen,
+        // and the store is idempotent so a retry reuses them byte-for-byte.
+        Assert.Equal(2, db.AiContextPacks.Count());
         var job = Assert.Single(db.Jobs.ToList());
         Assert.Equal("failed", job.Status);
         Assert.Contains("BudgetExhausted", job.ErrorJson!, StringComparison.Ordinal);

@@ -562,7 +562,13 @@ CREATE INDEX ix_data_quality_flags_run ON data_quality_flags(run_id);
 CREATE TABLE ai_context_packs (                    -- exactly what an AI seat was shown, hashed + watermarked (D80)
   pack_id        INTEGER PRIMARY KEY,              -- plain rowid, no AUTOINCREMENT (rule 14)
   seat           TEXT NOT NULL CHECK (seat IN ('researcher','contestant','advisor')),
-  strategy_id    TEXT,                             -- contestant only; NULL for researcher/advisor
+  strategy_id    TEXT,                             -- ~~contestant only; NULL for researcher/advisor~~
+                                                   -- CORRECTED (v1.9.70, D114): the record's SUBJECT — a
+                                                   -- strategy id for the contestant; 'job:{job_id}#arm'
+                                                   -- for the researcher's D113 arms (which also makes
+                                                   -- ux_ai_context_packs hold BY VALUE for researcher
+                                                   -- packs, not by SQLite NULL-distinctness). NULL only
+                                                   -- for the deferred advisor seat
   as_of          TEXT NOT NULL,
   watermark      TEXT NOT NULL,                    -- the D40 data watermark the pack was built at
   recipe_version TEXT NOT NULL,                    -- Ai.PackRecipeVersion at build time (a frozen param, D81)
@@ -573,9 +579,13 @@ CREATE TABLE ai_context_packs (                    -- exactly what an AI seat wa
 );
 CREATE UNIQUE INDEX ux_ai_context_packs ON ai_context_packs(seat, strategy_id, as_of, recipe_version);
 
-CREATE TABLE ai_decisions (                        -- the persisted contestant output IS the decision (D81)
+CREATE TABLE ai_decisions (                        -- ~~the persisted contestant output IS the decision (D81)~~
+                                                   -- CORRECTED (v1.9.70, D114): the persisted output IS the
+                                                   -- decision (D81) for EVERY seat — contestant AND researcher;
+                                                   -- strategy_id below is the record's SUBJECT, per-seat
   decision_id    INTEGER PRIMARY KEY,              -- plain rowid, no AUTOINCREMENT (rule 14)
-  strategy_id    TEXT NOT NULL,
+  strategy_id    TEXT NOT NULL,                    -- the SUBJECT (D114): strategy id (contestant) |
+                                                   -- 'job:{job_id}#treatment'/'#control' (researcher)
   as_of          TEXT NOT NULL,
   pack_hash      TEXT NOT NULL,                    -- ties the decision to the exact ai_context_packs row seen
   prompt_version TEXT NOT NULL,                    -- frozen param (D81); any change forks a candidate (rule 24)

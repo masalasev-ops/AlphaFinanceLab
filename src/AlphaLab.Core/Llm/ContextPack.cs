@@ -101,6 +101,14 @@ public static class PackWhitelist
     /// AI decision back into a pack, which would route AI output straight into the thing that prices AI
     /// output.
     /// </summary>
+    /// <remarks>
+    /// **These seven fields ARE recipe cp-1.0** (wired at v1.9.70, finding 330). §23.1's fuller researcher
+    /// read set — verdicts + separation states, monitor statuses with triggering signals, regime episodes,
+    /// factor attribution, trials-ledger detail — is DEFERRED to the contestant-phase recipe bump, on the
+    /// record rather than silently: factor attribution structurally cannot land earlier (French factors
+    /// are Phase 6), and a recipe change mid-series is attributable through `recipe_version` where a
+    /// quietly grown field list would not be.
+    /// </remarks>
     public static readonly IReadOnlySet<string> Allowed = new HashSet<string>(StringComparer.Ordinal)
     {
         AsOf, RegimeLabel, DetectabilityFloorAnn, TrialsCount,
