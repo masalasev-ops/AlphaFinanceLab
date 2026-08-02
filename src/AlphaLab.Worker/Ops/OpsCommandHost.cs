@@ -1,5 +1,7 @@
+using System.Globalization;
 using AlphaLab.Core.Config;
 using AlphaLab.Data;
+using AlphaLab.Evaluation.Recompute;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -46,6 +48,9 @@ public static class OpsCommandHost
                 SignalPinThresholds(command, configuration, arena, connectionString, loggerFactory),
             WorkerCommandKind.PinProposalThresholds =>
                 PinProposalThresholds(command, configuration, arena, connectionString, loggerFactory),
+
+            WorkerCommandKind.ReplayRecompute =>
+                ReplayRecompute(command, configuration, arena, connectionString, loggerFactory),
             _ => throw new ArgumentOutOfRangeException(nameof(command), command.Kind, "Not an ops verb."),
         };
     }
@@ -168,6 +173,62 @@ public static class OpsCommandHost
         catch (Exception ex)
         {
             logger.LogCritical(ex, "pin-proposal-thresholds could not run.");
+            return 1;
+        }
+    }
+
+    // The D106/D117 recompute harness. REPORT-ONLY, so unlike every other write-capable verb here it needs
+    // no writer guard and takes no transaction — it reads the stored generation and writes one markdown
+    // artefact. A parity FAILURE is a non-zero exit: §25.3 makes it a stop condition ("the harness is not
+    // used for its purpose and generation 2 stands"), and an operator who scripted this must not read a
+    // failed parity as a successful run.
+    private static int ReplayRecompute(
+        WorkerCommand command,
+        IConfiguration configuration,
+        ArenaOptions arena,
+        string connectionString,
+        ILoggerFactory loggerFactory)
+    {
+        var logger = loggerFactory.CreateLogger("AlphaLab.Worker.ReplayRecompute");
+        try
+        {
+            var request = command.Recompute!;
+            var spec = new RecomputeSpec(request.SpecName ?? (request.Overrides.Count == 0 ? "parity" : "candidate"),
+                request.Overrides);
+            var gate = configuration.GetSection(GateOptions.SectionName).Get<GateOptions>() ?? new GateOptions();
+
+            // The configured string is a TEMPLATE carrying the FR-37 `{Arena.Id}` token — resolve it the
+            // same way every other ops verb does, or the harness opens a path that does not exist and the
+            // failure reads like a missing store rather than a missing substitution.
+            var resolved = DbPathResolver.ResolvePath(connectionString, arena.Id);
+            DbPathResolver.RequireAbsoluteStorePath(resolved);
+
+            using var db = new AlphaLabDbContext(
+                new DbContextOptionsBuilder<AlphaLabDbContext>().UseSqlite(resolved).Options);
+
+            var run = new RecomputeOrchestrator(db, gate, arena, loggerFactory.CreateLogger<RecomputeOrchestrator>())
+                .Run(spec, DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+
+            if (request.VerifyParity && !run.Report.ParityHolds)
+            {
+                logger.LogError(
+                    "replay-recompute: FX-RecomputeParity FAILED. Per MASTER §25.3 the harness is not used " +
+                    "for its purpose and generation 2 stands — the equality is never relaxed to a tolerance. " +
+                    "Investigate which input is impure. Report: {Path}", run.ReportPath);
+                return 1;
+            }
+            return 0;
+        }
+        catch (RecomputeRefusedException ex)
+        {
+            // A refusal is the SPECIFIED behaviour for a specification the harness cannot honestly answer
+            // (§25.2), not a crash — logged as such so it is not mistaken for one.
+            logger.LogError("replay-recompute refused: {Message}", ex.Message);
+            return 2;
+        }
+        catch (Exception ex)
+        {
+            logger.LogCritical(ex, "replay-recompute could not run.");
             return 1;
         }
     }

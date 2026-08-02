@@ -52,4 +52,42 @@ public class WorkerCommandParserTests
         var ex = Assert.Throws<ArgumentException>(() => WorkerCommandParser.Parse(["reproduce-dya", "--date", "2026-07-22"]));
         Assert.Contains("Unknown command", ex.Message, StringComparison.Ordinal);
     }
+
+    // ---- replay-recompute (D106/D117) -----------------------------------------------------------------
+
+    /// <summary>A BARE `replay-recompute` is the §25.3 parity run: no overrides means recompute generation
+    /// 1 under its own rules and compare against its own records. Making that the default matters — the
+    /// parity check is the one run that must happen before any other is trusted, so it should not need a
+    /// flag to remember.</summary>
+    [Fact]
+    public void ReplayRecompute_WithNoOverrides_IsTheParityRun()
+    {
+        var c = WorkerCommandParser.Parse(["replay-recompute", "--arena", "sp500"]);
+        Assert.Equal(WorkerCommandKind.ReplayRecompute, c.Kind);
+        Assert.Equal("sp500", c.ArenaId);
+        Assert.Empty(c.Recompute!.Overrides);
+        Assert.True(c.Recompute.VerifyParity);
+    }
+
+    [Fact]
+    public void ReplayRecompute_ParsesRepeatedSetPairs()
+    {
+        var c = WorkerCommandParser.Parse(
+            ["replay-recompute", "--set", "monitor.s6.sustain_evals=4", "--set", "gate.alpha_definition=jensen", "--name", "gen2"]);
+        Assert.Equal("gen2", c.Recompute!.SpecName);
+        Assert.Equal(2, c.Recompute.Overrides.Count);
+        Assert.Equal("4", c.Recompute.Overrides["monitor.s6.sustain_evals"]);
+        Assert.Equal("jensen", c.Recompute.Overrides["gate.alpha_definition"]);
+        Assert.False(c.Recompute.VerifyParity);   // a spec with overrides is not a parity run
+    }
+
+    [Fact]
+    public void ReplayRecompute_MalformedSet_Fails_RatherThanBeingIgnored()
+    {
+        // A silently dropped override would score the WRONG rule change and report it as the right one.
+        Assert.Throws<ArgumentException>(() =>
+            WorkerCommandParser.Parse(["replay-recompute", "--set", "monitor.s6.sustain_evals"]));
+        Assert.Throws<ArgumentException>(() =>
+            WorkerCommandParser.Parse(["replay-recompute", "--set", "=4"]));
+    }
 }
