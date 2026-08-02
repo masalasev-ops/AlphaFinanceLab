@@ -184,7 +184,15 @@ $pins = @(
        CodeFile = 'src/AlphaLab.Core/Config/SignalLibraryOptions.cs';
        CodePattern = 'DefaultRollingWindowsYears\s*=\s*\[(\d+,\s*\d+)\]';
        DocFile = 'docs/CONFIG_REFERENCE_v1.9.md';
-       DocTemplate = '[ {0} ]' }
+       DocTemplate = '[ {0} ]' },
+    # v1.9.71 (D116): the pack recipe id exists ONLY to make a recipe change attributable. A recipe id that
+    # has drifted from its documentation attributes a decision series to a recipe nobody can look up, which
+    # is the one failure this identifier cannot be allowed to have.
+    @{ Name = 'pack recipe version';
+       CodeFile = 'src/AlphaLab.Core/Config/AiOptions.cs';
+       CodePattern = 'PackRecipeVersion\s*\{\s*get;\s*set;\s*\}\s*=\s*"([a-z0-9.\-]+)"';
+       DocFile = 'docs/CONFIG_REFERENCE_v1.9.md';
+       DocTemplate = '"PackRecipeVersion": "{0}"' }
 )
 foreach ($pin in $pins) {
     $codePath = Join-Path $repoRoot $pin.CodeFile

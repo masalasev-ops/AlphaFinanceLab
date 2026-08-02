@@ -384,7 +384,13 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
 }
 
   "Ai": {                                          // D79-D82 (v1.9.21) — the AI seats; budgets are per-seat hard caps (D24)
-    "PackRecipeVersion": "cp-1.0",                 // context-pack recipe id; a frozen param (D80) — a change forks candidates
+    "PackRecipeVersion": "cp-1.1",                 // context-pack recipe id; a frozen param (D80) — a change forks candidates
+                                                   //   cp-1.0 (v1.9.70) = the seven wired fields; cp-1.1 (v1.9.71, D116) adds
+                                                   //   detectability_ceiling_ann beside the floor, so the seat sees BOTH ends of
+                                                   //   the admissible band rather than one anchor pointing up (finding 337).
+                                                   //   PINNED against code by tools/check-register.ps1 (3d): an id that has
+                                                   //   drifted from its documentation attributes a series to a recipe nobody
+                                                   //   can look up, which is the one failure this identifier cannot have.
     "Contestant": {                                // the LLM decision layer as a first-class IModel (D81)
       "Model": "llm-a",                            // vendor-neutral model id (Anthropic, local LM Studio, etc.) — set per frozen param, never hardcoded in code
       "ShortlistSize": 25,                         // the deterministic local pre-filter hands the LLM at most this many names (Level-3 whole-universe scoring stays unreachable, D24)

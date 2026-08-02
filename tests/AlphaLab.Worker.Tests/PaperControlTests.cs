@@ -202,6 +202,18 @@ public class PaperControlTests
             Assert.Equal(tFields[name], cFields[name]);
         }
 
+        // D116 (cp-1.1): BOTH ends of the detectability band are present and COMMON. Named explicitly
+        // rather than left to the loop above, which would pass just as happily if the fields vanished from
+        // both packs — and a pack carrying only the floor is exactly the one-anchor state finding 337
+        // found. The recipe id is asserted with them: an eighth field under the old id would make the
+        // series unattributable, which is the one job `recipe_version` has.
+        Assert.Contains(PackWhitelist.DetectabilityFloorAnn, tFields.Keys);
+        Assert.Contains(PackWhitelist.DetectabilityCeilingAnn, tFields.Keys);
+        Assert.Equal(
+            tFields[PackWhitelist.DetectabilityCeilingAnn], cFields[PackWhitelist.DetectabilityCeilingAnn]);
+        Assert.Equal("cp-1.1", tPack.RecipeVersion);
+        Assert.Equal("cp-1.1", cPack.RecipeVersion);
+
         // …and with a non-empty library the digest DOES differ (this seed's permutation is non-identity;
         // everything is deterministic, so this is a stable assertion, not a probabilistic one).
         Assert.NotEqual(tFields[PackWhitelist.SignalDigest], cFields[PackWhitelist.SignalDigest]);

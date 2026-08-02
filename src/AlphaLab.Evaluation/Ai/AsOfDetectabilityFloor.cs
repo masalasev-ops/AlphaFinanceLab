@@ -1,4 +1,3 @@
-using System.Text.Json;
 using AlphaLab.Core.Config;
 using AlphaLab.Data;
 using AlphaLab.Data.Services;
@@ -10,8 +9,11 @@ using AlphaLab.Evaluation.Numerics;
 namespace AlphaLab.Evaluation.Ai;
 
 /// <summary>The as-of floor and the trials count it was computed at. Both, because the floor RISES with
-/// the trials tax and is uninterpretable without the count that set it.</summary>
-public sealed record AsOfFloor(double? FloorAnn, int TrialsCount, string? Reason);
+/// the trials tax and is uninterpretable without the count that set it. <c>CeilingAnn</c> is D116's
+/// plausibility ceiling at the same as-of — the pack carries BOTH ends, because a pack showing only the
+/// floor gives the seat one scale cue and it points up (finding 337).</summary>
+public sealed record AsOfFloor(
+    double? FloorAnn, int TrialsCount, string? Reason, double? CeilingAnn = null, string? CeilingState = null);
 
 /// <summary>
 /// The arena's detectability floor, resolved **as-of** — for the D104 context-pack field.
@@ -40,20 +42,31 @@ public sealed class AsOfDetectabilityFloor(AlphaLabDbContext db, GateOptions gat
         var trialsAfter = db.TrialsRegistry
             .Count(t => t.RunKind == "live" && string.Compare(t.RegisteredOn, asOf) <= 0) + 1;
 
+        // α*(H) and the D116 ceiling from ONE as-of read of the detection-power row (D96 ResolveAsOf, so a
+        // pack cannot see a threshold version that did not exist on its day). Shared arithmetic with the
+        // gate deliberately: the two READ paths differ, what they compute from the row must not.
+        var bounds = DetectionCurves.Resolve(
+            new ConfigReadService(db).ResolveAsOf(CalibratedKeys.DetectionPower, asOf), horizonSessions, gate.Power);
+
         var sigma = ResolveSigmaAsOf(asOf);
         if (sigma is null)
         {
             // No σ estimable at that as-of ⇒ no honest floor. Reported as a REASON rather than a zero:
             // a zero floor would say "anything is detectable", which is the opposite of what is known.
-            return new AsOfFloor(null, trialsAfter, "unassessed_no_sigma");
+            return new AsOfFloor(null, trialsAfter, "unassessed_no_sigma", bounds.CeilingAnn, bounds.CeilingState);
         }
 
         var analytic = BonferroniZSum(trialsAfter) * sigma.Value
                        * MetricsConstants.TradingDaysPerYear / Math.Sqrt(horizonSessions);
-        var empirical = EmpiricalAlphaStarAsOf(asOf, horizonSessions);
-        var floor = Math.Max(analytic, empirical ?? 0.0);
+        var floor = Math.Max(analytic, bounds.AlphaStarAnn ?? 0.0);
 
-        return new AsOfFloor(floor, trialsAfter, null);
+        // D116's third valve, same rule as the gate: a ceiling at or below the floor is reported, not applied.
+        var ceilingState = bounds.CeilingState == DetectionCurves.CeilingApplied
+                           && bounds.CeilingAnn is { } c && c <= floor
+            ? DetectionCurves.CeilingInert
+            : bounds.CeilingState;
+
+        return new AsOfFloor(floor, trialsAfter, null, bounds.CeilingAnn, ceilingState);
     }
 
     private double BonferroniZSum(int trialsAfter) =>
@@ -77,53 +90,4 @@ public sealed class AsOfDetectabilityFloor(AlphaLabDbContext db, GateOptions gat
         return Median("live") ?? Median("replay");
     }
 
-    /// <summary>α*(H) from the frozen detection-power row, resolved through <c>ResolveAsOf</c> (D96) so a
-    /// pack cannot see a threshold version that did not exist on its day.</summary>
-    private double? EmpiricalAlphaStarAsOf(string asOf, int horizonSessions)
-    {
-        var json = new ConfigReadService(db).ResolveAsOf(CalibratedKeys.DetectionPower, asOf);
-        if (json is null) return null;
-
-        using var doc = JsonDocument.Parse(json);
-        if (!doc.RootElement.TryGetProperty("curves", out var curves)) return null;
-
-        var levels = new List<(double AlphaPct, double PromotedAtH)>();
-        foreach (var property in curves.EnumerateObject())
-        {
-            if (!double.TryParse(property.Name, System.Globalization.NumberStyles.Float,
-                    System.Globalization.CultureInfo.InvariantCulture, out var alphaPct)) continue;
-            levels.Add((alphaPct, InterpolatePromoted(property.Value, horizonSessions)));
-        }
-        if (levels.Count == 0) return null;
-        levels.Sort((a, b) => a.AlphaPct.CompareTo(b.AlphaPct));
-
-        for (var i = 0; i < levels.Count; i++)
-        {
-            if (levels[i].PromotedAtH < gate.Power) continue;
-            if (i == 0) return levels[0].AlphaPct / 100.0;
-            var (lo, hi) = (levels[i - 1], levels[i]);
-            var w = (gate.Power - lo.PromotedAtH) / (hi.PromotedAtH - lo.PromotedAtH);
-            return (lo.AlphaPct + w * (hi.AlphaPct - lo.AlphaPct)) / 100.0;
-        }
-        return double.PositiveInfinity;
-    }
-
-    private static double InterpolatePromoted(JsonElement curve, int t)
-    {
-        if (!curve.TryGetProperty("knots", out var knots)) return 0;
-        (int T, double P)? prev = null;
-        foreach (var k in knots.EnumerateArray())
-        {
-            var kt = k.GetProperty("t").GetInt32();
-            var kp = k.GetProperty("p_promoted").GetDouble();
-            if (t <= kt)
-            {
-                if (prev is not { } pr || kt == pr.T) return kp;
-                var w = (t - pr.T) / (double)(kt - pr.T);
-                return pr.P + w * (kp - pr.P);
-            }
-            prev = (kt, kp);
-        }
-        return prev?.P ?? 0;
-    }
 }

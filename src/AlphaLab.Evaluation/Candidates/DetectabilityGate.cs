@@ -1,4 +1,3 @@
-using System.Text.Json;
 using AlphaLab.Core.Config;
 using AlphaLab.Data;
 using AlphaLab.Data.Services;
@@ -9,7 +8,11 @@ using AlphaLab.Evaluation.Numerics;
 namespace AlphaLab.Evaluation.Candidates;
 
 /// <summary>The refusal's structured payload (rendered into the D60 error envelope's details). All
-/// effects are annualized FRACTIONS (the power_reports convention — 0.02 = 2%/yr).</summary>
+/// effects are annualized FRACTIONS (the power_reports convention — 0.02 = 2%/yr).
+/// <para><paramref name="CeilingAnn"/>/<paramref name="CeilingState"/> are D116's plausibility ceiling and
+/// whether it could bind; <paramref name="Reason"/> is the machine-readable outcome the API maps to an
+/// error code — <c>below_floor</c> | <c>above_ceiling</c> | <c>floor_unreachable</c> on refusal,
+/// <c>admitted</c> | <c>analytic_only</c> on admission.</para></summary>
 public sealed record DetectabilityDetails(
     double ExpectedEffectAnn,
     double FloorAnn,
@@ -17,7 +20,10 @@ public sealed record DetectabilityDetails(
     double? EmpiricalAlphaStarAnn,
     int HorizonYears,
     int TrialsAfterAdmission,
-    string SigmaSource);
+    string SigmaSource,
+    double? CeilingAnn,
+    string CeilingState,
+    string Reason);
 
 /// <summary>Thrown by the FR-40 gate on refusal. Subclasses InvalidOperationException so any host that
 /// only knows the generic validation shape still treats it as a 422 — the API catches THIS type first
@@ -36,6 +42,16 @@ public sealed record DetectabilityVerdict(bool Admitted, string Reason, Detectab
 /// The D89/FR-40 detectability-at-admission gate (MASTER §20.3): before a candidate enters the arena,
 /// refuse it if its pre-registered expected effect — NET of the incremental trials-budget cost its own
 /// admission adds — could not clear the NW-corrected MDE within <c>Gate.DetectabilityHorizonYears</c>.
+///
+/// **D116 (v1.9.71) added the OTHER end.** Until then this gate compared in one direction only
+/// (<c>expected &lt; floor</c>), so a claim of 400%/yr sailed through while a claim of 0.5%/yr was
+/// refused — and the researcher's context pack showed it the floor and no upper bound, leaving the seat's
+/// only scale cue pointing up (finding 337). The ceiling is <c>top swept rung × the ladder's own
+/// geometric step</c>, read from the same frozen <c>Calibration.DetectionPower</c> row as the floor
+/// (<see cref="DetectionCurves"/>): no new constant and no new config key, which is the whole defence —
+/// an authored ceiling would be `ForkBudgetPerYear = 6` again (finding 309). It is deliberately LOOSE: it
+/// bounds absurdity, not optimism, because the instrument for ordinary over-claiming is D110 calibration
+/// skill and a tight ceiling would need a number nobody can derive.
 ///
 /// The floor is max(analytic, empirical):
 ///  • ANALYTIC — MDE_H = (z_{1−α/(2N′)} + z_power)·σ_LR·252/√H, where N′ = the forward trials count + 1
@@ -69,15 +85,47 @@ public sealed class DetectabilityGate(AlphaLabDbContext db, GateOptions gate)
 
     public DetectabilityVerdict Assess(double expectedEffectAnn)
     {
-        var (floorOrNull, analytic, empirical, trialsAfter, sigmaSource) = Floor();
+        var (floorOrNull, analytic, bounds, trialsAfter, sigmaSource) = Floor();
         if (floorOrNull is not { } floor)
         {
             return new DetectabilityVerdict(true, "unassessed_no_sigma", null);
         }
 
-        var details = new DetectabilityDetails(
+        var empirical = bounds.AlphaStarAnn;
+        // D116's third valve: a ceiling at or below the floor cannot bind without producing an EMPTY
+        // admissible band, so it is reported and not applied. Reported rather than dropped because the
+        // operator still needs to see both ends to understand why nothing is admissible.
+        var ceilingState = bounds.CeilingState == DetectionCurves.CeilingApplied
+                           && bounds.CeilingAnn is { } cd && cd <= floor
+            ? DetectionCurves.CeilingInert
+            : bounds.CeilingState;
+        var ceilingBinds = ceilingState == DetectionCurves.CeilingApplied;
+
+        DetectabilityDetails Details(string reason) => new(
             expectedEffectAnn, floor, analytic, empirical,
-            gate.DetectabilityHorizonYears, trialsAfter, sigmaSource);
+            gate.DetectabilityHorizonYears, trialsAfter, sigmaSource,
+            bounds.CeilingAnn, ceilingState, reason);
+
+        // The floor is unreachable AT ALL: no swept rung reaches Gate.Power within the horizon, so α* is
+        // +∞ and EVERY registered candidate refuses. The refusal is unchanged (D89 fails closed — admitting
+        // on hope would be fail-open); what changes at v1.9.71 is that it says so instead of printing a
+        // formatted infinity and blaming the operator's claim (finding 336). The resolution is
+        // RECALIBRATION, not a smaller claim, and nothing about the claim would have helped.
+        if (double.IsPositiveInfinity(floor))
+        {
+            throw new DetectabilityRefusedException(
+                $"Detectability refused (FR-40/D89, reason `floor_unreachable`): this arena cannot detect " +
+                $"ANY effect within {gate.DetectabilityHorizonYears} year(s) — no swept C-1 rung reaches " +
+                $"power {gate.Power:P0}" +
+                (bounds.TopRungAnn is { } tr && bounds.TopRungPromotedAtH is { } tp
+                    ? $" (the largest simulated edge, {tr:P0}/yr, reaches only P={tp:0.00})"
+                    : "") +
+                $". The expected effect {expectedEffectAnn:P2}/yr is not what refused this candidate and a " +
+                "different claim would not help: the detection floor itself is unreachable. Resolve by " +
+                "recalibrating the detection-power curves (or by deciding, under its own decision, that " +
+                "the horizon should be longer) — never by lowering the bar to admit something.",
+                Details("floor_unreachable"));
+        }
 
         if (expectedEffectAnn < floor)
         {
@@ -87,25 +135,49 @@ public sealed class DetectabilityGate(AlphaLabDbContext db, GateOptions gate)
                 $"{gate.DetectabilityHorizonYears} year(s) (analytic NW-MDE {analytic!.Value:P2} at N'={trialsAfter} trials" +
                 (empirical is { } e ? $"; empirical C-1 floor {(double.IsPositiveInfinity(e) ? "unreachable" : e.ToString("P2"))}" : "; no C-1 curves — analytic only") +
                 "). Running it would spend the trials budget on a claim the arena cannot adjudicate.",
-                details);
+                Details("below_floor"));
         }
-        return new DetectabilityVerdict(true, empirical is null ? "analytic_only" : "admitted", details);
+
+        // D116: the plausibility ceiling. Inclusive at the boundary — a claim EQUAL to one step beyond the
+        // largest simulated edge is the last admissible one, not the first refused.
+        if (ceilingBinds && bounds.CeilingAnn is { } ceiling && expectedEffectAnn > ceiling)
+        {
+            throw new DetectabilityRefusedException(
+                $"Implausible effect refused (D116): the pre-registered expected effect " +
+                $"{expectedEffectAnn:P2}/yr exceeds the plausibility ceiling {ceiling:P2}/yr — one geometric " +
+                $"step beyond {bounds.TopRungAnn:P0}/yr, the largest edge this arena has ever simulated. " +
+                "A claim above it is outside the world the C-1 calibration models, so the arena has no " +
+                "evidence about what its machinery does there. Add a calibration rung at that strength " +
+                "before pre-registering the claim.",
+                Details("above_ceiling"));
+        }
+
+        return new DetectabilityVerdict(
+            true,
+            empirical is null ? "analytic_only" : "admitted",
+            Details(empirical is null ? "analytic_only" : "admitted"));
     }
 
     /// <summary>The floor and everything it was computed from. ONE arithmetic, two callers — a second
-    /// copy is how the stamped floor and the gated floor would silently stop being the same number.</summary>
-    private (double? Floor, double? Analytic, double? Empirical, int TrialsAfter, string SigmaSource) Floor()
+    /// copy is how the stamped floor and the gated floor would silently stop being the same number.
+    /// The D116 ceiling rides in <c>Bounds</c> because it comes off the SAME curve read (a separate read
+    /// could see a different config version and disagree with its own floor).</summary>
+    private (double? Floor, double? Analytic, DetectionCurves.Bounds Bounds, int TrialsAfter, string SigmaSource) Floor()
     {
         var horizonSessions = (int)(Math.Max(1, gate.DetectabilityHorizonYears) * MetricsConstants.TradingDaysPerYear);
         var trialsAfter = db.TrialsRegistry.Count(t => t.RunKind == "live") + 1;
 
+        // α*(H) and the D116 ceiling from the frozen Calibration.DetectionPower row (ResolveCurrent —
+        // admission is an operational act, not a run-scoped read).
+        var bounds = DetectionCurves.Resolve(
+            new ConfigReadService(db).ResolveCurrent(CalibratedKeys.DetectionPower), horizonSessions, gate.Power);
+
         var (sigma, sigmaSource) = ResolveSigma();
-        if (sigma is null) return (null, null, null, trialsAfter, sigmaSource);
+        if (sigma is null) return (null, null, bounds, trialsAfter, sigmaSource);
 
         var analytic = BonferroniZSum(trialsAfter) * sigma.Value
                        * MetricsConstants.TradingDaysPerYear / Math.Sqrt(horizonSessions);
-        var empirical = EmpiricalAlphaStar(horizonSessions);
-        return (Math.Max(analytic, empirical ?? 0.0), analytic, empirical, trialsAfter, sigmaSource);
+        return (Math.Max(analytic, bounds.AlphaStarAnn ?? 0.0), analytic, bounds, trialsAfter, sigmaSource);
     }
 
     // z_{1−α/(2N′)} + z_power — the Bonferroni-haircut z-sum (N′=1 reduces to MdeCalculator.ZSum).
@@ -132,54 +204,4 @@ public sealed class DetectabilityGate(AlphaLabDbContext db, GateOptions gate)
         return (null, "none");
     }
 
-    // α*(H) from the frozen Calibration.DetectionPower row (ResolveCurrent — admission is an
-    // operational act, not a run-scoped read). Returns an annualized FRACTION; null = no row frozen.
-    private double? EmpiricalAlphaStar(int horizonSessions)
-    {
-        var json = new ConfigReadService(db).ResolveCurrent(CalibratedKeys.DetectionPower);
-        if (json is null) return null;
-
-        using var doc = JsonDocument.Parse(json);
-        if (!doc.RootElement.TryGetProperty("curves", out var curves)) return null;
-
-        var levels = new List<(double AlphaPct, double PromotedAtH)>();
-        foreach (var property in curves.EnumerateObject())
-        {
-            if (!double.TryParse(property.Name, System.Globalization.NumberStyles.Float,
-                    System.Globalization.CultureInfo.InvariantCulture, out var alphaPct)) continue;
-            var p = InterpolatePromoted(property.Value, horizonSessions);
-            levels.Add((alphaPct, p));
-        }
-        if (levels.Count == 0) return null;
-        levels.Sort((a, b) => a.AlphaPct.CompareTo(b.AlphaPct));
-
-        for (var i = 0; i < levels.Count; i++)
-        {
-            if (levels[i].PromotedAtH < gate.Power) continue;
-            if (i == 0) return levels[0].AlphaPct / 100.0;   // the lowest swept level already clears
-            var (lo, hi) = (levels[i - 1], levels[i]);
-            var w = (gate.Power - lo.PromotedAtH) / (hi.PromotedAtH - lo.PromotedAtH);
-            return (lo.AlphaPct + w * (hi.AlphaPct - lo.AlphaPct)) / 100.0;
-        }
-        return double.PositiveInfinity;   // no swept level reaches the power at H — nothing is detectable
-    }
-
-    private static double InterpolatePromoted(JsonElement curve, int t)
-    {
-        if (!curve.TryGetProperty("knots", out var knots)) return 0;
-        (int T, double P)? prev = null;
-        foreach (var k in knots.EnumerateArray())
-        {
-            var kt = k.GetProperty("t").GetInt32();
-            var kp = k.GetProperty("p_promoted").GetDouble();
-            if (t <= kt)
-            {
-                if (prev is not { } pr || kt == pr.T) return kp;
-                var w = (t - pr.T) / (double)(kt - pr.T);
-                return pr.P + w * (kp - pr.P);
-            }
-            prev = (kt, kp);
-        }
-        return prev?.P ?? 0;   // beyond the last knot: flat
-    }
 }

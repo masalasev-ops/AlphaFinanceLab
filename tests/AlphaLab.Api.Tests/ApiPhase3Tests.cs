@@ -108,6 +108,53 @@ public class ApiPhase3Tests
         Assert.Single(db.TrialsRegistry.ToList());   // a trial was registered
     }
 
+    /// <summary>D116 (v1.9.71): the create path's refusal codes are SPLIT by reason, because the three
+    /// refusals ask the operator for three different things. `implausible_effect` says the claim is too
+    /// big; `detectability_refused` (D99's code, unchanged) says it is too small; `floor_unreachable` says
+    /// no claim would have helped. One code for all three would have made the arena's closed gate read as
+    /// a complaint about the operator's number (finding 336).</summary>
+    [Fact]
+    public async Task CreateCandidate_D116_AboveThePlausibilityCeiling_Returns422_ImplausibleEffect()
+    {
+        using var f = new ApiArenaFactory();
+        SeedRun(f);
+        using (var db = f.Open())
+        {
+            // A tiny analytic floor plus a three-rung ladder ⇒ floor 3.5%/yr, ceiling 8 × (8/4) = 16%/yr.
+            db.PowerReports.Add(new PowerReportRow
+            {
+                AsOf = "2026-02-01", StrategyA = "x", StrategyB = "buyhold:cw",
+                TDays = 100, SigmaLr = 0.0001, NwLag = 21, MdeAnn = 0.05, RunKind = "live",
+            });
+            db.Config.Add(new ConfigRow
+            {
+                Key = "Calibration.DetectionPower", Version = 1, ChangedOn = "2026-02-01",
+                ValueJson = """
+                    { "curves": {
+                        "2": { "knots": [ { "t": 756, "p_promoted": 0.5 } ] },
+                        "4": { "knots": [ { "t": 756, "p_promoted": 0.9 } ] },
+                        "8": { "knots": [ { "t": 756, "p_promoted": 0.95 } ] } } }
+                    """,
+            });
+            db.SaveChanges();
+        }
+
+        var body = "{\"strategy_id\":\"cand:moon\",\"hypothesis\":{\"title\":\"t\",\"body_md\":\"b\"," +
+                   "\"metric\":\"beta_adjusted_alpha\",\"evidence_window_days\":252,\"expected_effect_ann\":4.0}}";
+        var response = await f.CreateClient().PostAsync("/api/v1/candidates", Body(body));
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        var json = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"code\":\"implausible_effect\"", json);
+        Assert.Contains("\"reason\":\"above_ceiling\"", json);
+        Assert.Contains("\"ceiling_ann\":0.16", json);
+
+        using var check = f.Open();
+        Assert.Empty(check.Strategies.ToList());        // nothing admitted
+        Assert.Empty(check.TrialsRegistry.ToList());    // no trial spent on a claim the arena cannot host
+        Assert.Empty(check.JournalEntries.ToList());    // and no orphaned hypothesis (atomic command)
+    }
+
     [Fact]
     public async Task CreateCandidate_InlineHypothesis_ButDuplicateStrategyId_Returns422_AndLeavesNoOrphanHypothesis()
     {

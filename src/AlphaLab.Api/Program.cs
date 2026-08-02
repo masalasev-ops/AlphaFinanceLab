@@ -139,10 +139,28 @@ v1.MapPost("/candidates", async (
             // FR-40/D89: the THIRD create-path outcome, beside the 422 (no hypothesis) and 409 (run in
             // progress) — same status family, its own machine-readable code + structured details (D60).
             // The transaction is disposed without commit: no strategy, no trials row, no orphaned hypothesis.
-            return ApiResults.Error(422, "detectability_refused", dex.Message, new
+            //
+            // D116 (v1.9.71) splits the code by REASON, additively — `detectability_refused` keeps its exact
+            // meaning (the claim is too small; D99 cites it) and two siblings join it, because the three
+            // refusals ask the operator for three different things: a bigger claim, a smaller one, or a
+            // recalibration that no claim can substitute for. One code for all three would have made the
+            // arena's closed gate (finding 336) read as a complaint about the operator's number.
+            var code = dex.Details.Reason switch
             {
+                "above_ceiling" => "implausible_effect",
+                "floor_unreachable" => "floor_unreachable",
+                _ => "detectability_refused",
+            };
+            return ApiResults.Error(422, code, dex.Message, new
+            {
+                reason = dex.Details.Reason,
                 expected_effect_ann = dex.Details.ExpectedEffectAnn,
-                floor_ann = dex.Details.FloorAnn,
+                // An unreachable floor serializes as null, not as a JSON-illegal Infinity: `reason` and
+                // `floor_unreachable` already carry the fact, and a client parsing `floor_ann` deserves a
+                // number or nothing.
+                floor_ann = double.IsPositiveInfinity(dex.Details.FloorAnn) ? (double?)null : dex.Details.FloorAnn,
+                ceiling_ann = dex.Details.CeilingAnn,
+                ceiling_state = dex.Details.CeilingState,
                 analytic_mde_ann = dex.Details.AnalyticMdeAnn,
                 empirical_alpha_star_ann = dex.Details.EmpiricalAlphaStarAnn is { } e && double.IsPositiveInfinity(e) ? null : dex.Details.EmpiricalAlphaStarAnn,
                 horizon_years = dex.Details.HorizonYears,
@@ -161,7 +179,10 @@ v1.MapPost("/candidates", async (
     })
     .WithName("CreateCandidate")
     .WithSummary("Create / pre-register a candidate (D52). Outcomes: 422 unprocessable_entity (no hypothesis-or-'unregistered' flag), " +
-                 "422 detectability_refused (FR-40/D89: the expected effect cannot clear the detection floor), 409 conflict (run in progress).");
+                 "422 detectability_refused (FR-40/D89: the expected effect cannot clear the detection floor), " +
+                 "422 implausible_effect (D116: it exceeds the plausibility ceiling — one geometric step beyond the largest simulated edge), " +
+                 "422 floor_unreachable (D116/finding 336: no swept C-1 rung reaches Gate.Power within the horizon, so NO claim is admissible — recalibrate), " +
+                 "409 conflict (run in progress).");
 
 // Unknown routes get the D60 envelope ({ error: { code:"not_found", … } }), not a framework 404 page.
 app.MapFallback(() => ApiResults.NotFound()).ExcludeFromDescription();

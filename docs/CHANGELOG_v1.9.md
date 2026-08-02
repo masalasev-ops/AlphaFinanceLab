@@ -2369,3 +2369,58 @@ v1.9.67 recorded "the Worker reads `Ai.*`, never `Research.*`" — true for exac
 ### What is deliberately NOT in this pass
 
 No scorer, no new pack fields beyond cp-1.0 (§23.1's fuller read set is deferred to the contestant-phase recipe bump, on the record in `PackWhitelist`'s remarks — factor attribution structurally cannot land before Phase 6), no brief/skeptic pack-ification (advisory prose; no controlled comparison depends on their inputs), no schema migration (D114 changes documented meaning, not shape), and no live smoke re-run (it exercises `regime_brief`, untouched here).
+
+---
+
+## v1.9.71 — the plausibility ceiling: the gate stops refusing in one direction only, and the closed gate becomes visible (D116; findings 336–337)
+
+*Recorded 2026-08-02, from the operator's question about how the researcher seat is prevented from escalating its claims indefinitely without becoming too conservative to find anything. Tests **1,074 → 1,080**; no migration; `ci.ps1` green; `check-register` green at 116 rows.*
+
+### finding 336 — the arena's gate is CLOSED, and no document said so
+
+`DetectabilityGate` returns `+∞` for the empirical floor when no swept plant rung reaches `Gate.Power` within `Gate.DetectabilityHorizonYears`, and refuses everything against it. Replaying that arithmetic against the live arena's own frozen `Calibration.DetectionPower` row (generation-1, 2026-07-31 vintage) at the configured `Power = 0.80` / `Horizon = 3y`:
+
+| rung | @1y | @3y | @5y | @10y | @15y |
+|---|---|---|---|---|---|
+| 2 %/yr | 0.02 | 0.02 | 0.02 | 0.02 | 0.02 |
+| 4 %/yr | 0.10 | 0.10 | 0.10 | 0.10 | 0.10 |
+| 8 %/yr | 0.24 | 0.30 | 0.36 | 0.40 | 0.44 |
+| 16 %/yr | 0.38 | **0.42** | 0.56 | 0.68 | **0.80** |
+
+**No rung reaches 0.80 until ~15 years.** So α* is unreachable, the floor is `+∞`, and **every pre-registered candidate is refused today** — the state the arena has been in since the curves were frozen.
+
+**This is D89 behaving correctly and is NOT changed here.** "Admitting on hope would be fail-open" is the gate's own recorded reasoning, and the `+∞` branch has been tested since checkpoint 4.9. What was missing is that the branch was only ever tested against a **synthetic** curve set (`SeedDetectionPower(pAt2: 0.1, pAt4: 0.3)`), so nothing asserted — or noticed — that the arena's REAL curves land on it. A relational gap of the rule-25 class: finding 288 published the per-rung numbers as the checkpoint's headline, D89 published the fail-closed rule, and no document multiplied the two. `FX_DetectabilityGate_LiveCurveShape_FloorUnreachable_AtConfiguredHorizon` now pins the real shape, including that the same curves DO clear at a 15-year horizon — which makes this a statement about **patience**, not about broken machinery.
+
+**Resolution pointer: generation-2 recalibration**, already the Phase-6 prerequisite (finding 285(d): the generation-1 curves are contingent on the raw-gap-alpha defect and get re-measured regardless). **Explicitly NOT resolved by raising `Gate.DetectabilityHorizonYears`** — that is changing the measurement because its answer is unwelcome (rule 8, D110 R3). It was offered to the operator during planning and declined. If a longer horizon is right, it is right for reasons about patience and takes its own decision.
+
+### finding 337 — the gate refused in one direction only, and the pack anchored the seat upward
+
+`Assess` compared `expectedEffectAnn < floor` and nothing else: 400 %/yr sailed through while 0.5 %/yr was refused. Compounding it, `HypothesesInstructions` instructs the seat to state "the expected annualized effect size, as a number" while its context pack carried `detectability_floor_ann` and **no upper bound** — a single scale cue, pointing up. That is an escalation channel built into the recipe rather than an emergent risk: the cheapest way to satisfy a floor is always a larger claim.
+
+### D116 — the ceiling, and why its NUMBER is the decision
+
+`ceiling_ann = top swept rung × (top rung ÷ second-from-top rung)`, read from the same frozen row as the floor. Live arena: `16 × (16÷8) = **32 %/yr**`.
+
+**The derivation is the substantive content** — a ceiling is trivial to add and worthless if its number cannot be defended. The plant ladder is a statement this arena already committed to about the range of edges worth simulating, chosen from offline clean-MDE arithmetic and frozen at Phase 4; α* is **already** selected from it. So the ceiling is the other end of a measurement the gate already opens: **no new constant, no new config key**, per-arena by construction (D71), self-re-deriving when generation 2 re-freezes. An authored "50 %/yr, that feels high" would be `ForkBudgetPerYear = 6` again (finding 309).
+
+**One step above the top rung, not the top rung**, because the floor is selected from the *same* ladder and collides with it: this arena's rule-selected primary IS the 16 % rung (offline monthly floor ~15.9 %), so `ceiling = max(rung)` yields `floor == ceiling` and an admissible band of a single point.
+
+**Deliberately loose, on the record.** 32 %/yr will not catch a merely optimistic 12 %/yr claim. The ceiling bounds **absurdity**; the instrument for ordinary over-claiming is D110 calibration skill — slower, but a proper score rather than a threshold. A tighter ceiling needs a number nobody can derive, and a tight-but-wrong ceiling refuses real finds, which is the failure the operator named in the same breath as the escalation one.
+
+**Three fail-open valves**, matching the gate's existing "nothing honest to say ⇒ admit" posture: no curves ⇒ no ceiling; fewer than two distinct positive rungs ⇒ no *step* ⇒ no ceiling; `ceiling ≤ floor` ⇒ **reported but inert**, never an empty band. Boundary inclusive.
+
+**Rejected, with reasons:** an implied information-ratio bound ("IR above 2 is implausible") — true in the literature, but 2 is a fresh undefended constant; `ceiling = max(rung)` — the collision above; a soft flag instead of a refusal — it records escalation without bounding it, while the floor's own shape is a refusal.
+
+### The pack carries both ends (cp-1.0 → cp-1.1, rs-1.0 → rs-1.1)
+
+`detectability_ceiling_ann` joins the whitelist beside the floor as a **COMMON** field — both D113 arms, never differenced, since only `signal_digest` is the arm difference. Refusing at admission punishes escalation weeks after the number was stated; publishing both ends bounds it at the moment of stating. Not a D110 R1 breach: the band is a property of the **arena**, not a grade on the researcher — the same distinction already recorded for the floor.
+
+**Both version bumps were free exactly then and would not be later.** The live store held **zero** researcher proposals (verified read-only), so no D110 margin series lost comparability. Once the first proposal is scored, an eighth field costs a discontinuity in the one measurement the lab is graded on — recorded in `PackWhitelist`'s remarks so the bar for cp-1.2 is visibly higher. `PackRecipeVersion` is now **pinned** by `check-register` 3d: a recipe id that has drifted from its documentation attributes a series to a recipe nobody can look up, which is the one failure this identifier cannot have.
+
+### The refusal splits by reason
+
+`detectability_refused` keeps D99's cited code and its exact meaning (**too small**); `implausible_effect` is **too big**; `floor_unreachable` is **no claim would have helped**. Additive codes, not a `/v2` break. One code for all three would have made finding 336's closed gate read as a complaint about the operator's number — the message now says so explicitly and points at recalibration rather than at the claim.
+
+### What is deliberately NOT in this pass
+
+No threshold tuned (`Gate.Power`, `Gate.DetectabilityHorizonYears` untouched); no migration; no new config key; no change to the floor's arithmetic or its existing refusal message; no scorer; no brief/skeptic changes; no live-smoke re-run (it exercises `regime_brief`, untouched here).
