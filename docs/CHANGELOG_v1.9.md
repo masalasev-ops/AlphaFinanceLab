@@ -1992,6 +1992,24 @@ A `try/catch` around the Stage-3 call is the structural guarantee that a vendor 
 
 ---
 
+## v1.9.64 — Phase 5 checkpoint 5.4: the context-pack contract and the evidence-prior seam (D80/D104; M8) — *section written RETROACTIVELY at v1.9.70*
+
+*This section did not exist until v1.9.70 (finding 332). Commit `7eb2861` landed the checkpoint on 2026-08-01 and PROGRESS cited "(v1.9.64)" from that day, but the CHANGELOG jumped v1.9.63 → v1.9.65 — the only version in the corpus with a commit and no section. Written retroactively on the v1.9.22 precedent, from the commit and the code, and labeled as such. Tests 986 → 1,010; migration **M8** (`ai_context_packs`, `ai_decisions`).*
+
+### What 5.4 delivered
+
+- **`ContextPackBuilder`** (`Evaluation/Ai/` — the reference graph forbids `AlphaLab.Llm` from reaching the versioned read services in Data): validation at CONSTRUCTION (whitelist closure + per-field `observed_at` admissibility), whitelist-ordered serialization for byte identity, SHA-256 `pack_hash`, token estimate.
+- **`EvidencePriorSeam`** with its three first-class modes — `On` / `Disabled` / `Placebo` — the D91 signal digest from the FR-46 read-model through `ResolveAsOf`, consuming the DTO and never `ISignal`. The placebo shuffles grades across rows at identical shape and token count, seeded for determinism.
+- **`AsOfDetectabilityFloor`** — the second read path for the floor, as-of-bounded where `DetectabilityGate.Assess` is deliberately current-state.
+- **`ContextPackStore`** — append-only, idempotent by hash, throwing on a differing rebuild (a recipe that stopped being deterministic must fail loudly).
+- **M8** with the rule-14 hand-edits; `signal_ic` moved `Untouched` → `RewoundTables` in `ScratchStore` (arrival (b) of its recorded two-arrival trigger); `FX-PackWatermark` + `FX-PackNoLeak` green as unit tests.
+
+### What 5.4 did NOT deliver, recorded here because this section is written in hindsight
+
+**None of it was wired.** The builder, seam, floor and store were constructed, tested and then referenced by nothing in `src/` — the 5.4 prompt's own instruction ("produces the pack … **then persists it**", §23.2) was satisfied by components, not by a path. The gap shipped through 5.5–5.8 unremarked, the 5.8 reconciliation recorded the digest as wired (false — finding 333), and the drift was found only by the v1.9.70 architecture review. See the v1.9.70 section for the reconciliation, findings 330/331/333, and D114.
+
+---
+
 ## v1.9.65 — Phase 5 checkpoint 5.5: the persist-before-use seam and rule 32 made structural (D81/D104/D105)
 
 *Recorded 2026-08-01. Tests **1,010 → 1,020**; no migration (M8 created both tables); `ci.ps1` green.*
@@ -2207,7 +2225,7 @@ This is finding 315's shape for the third time — a fixture list and the fixtur
 
 ### What was re-read and found to still hold
 
-- **The five `ScratchStore` classifications** added across 5.1/5.4/5.5, each against the code as built. All hold. `journal_entries` staying **Untouched** was the one worth re-checking, since 5.6 made the Worker write it — but the researcher seat writes from the **job drain**, which runs after catch-up and outside any daily write transaction, so it remains state outside the run.
+- ~~**The five `ScratchStore` classifications** added across 5.1/5.4/5.5, each against the code as built. All hold.~~ **CORRECTED (v1.9.70, finding 330): the classifications hold, but this re-read missed that `signal_ic`'s stated move trigger — "the day the Phase-5 digest wires signal IC into a CONTEXT PACK" — had not actually fired: no pack was being built anywhere, which is the same unwired-path fact the P15 closure above got wrong. The classification is RETAINED (rewinding a table no session reads is harmless, and the contestant will read grades in-session at Phase 6), but "all hold" overstated what was checked.** `journal_entries` staying **Untouched** was the one worth re-checking, since 5.6 made the Worker write it — but the researcher seat writes from the **job drain**, which runs after catch-up and outside any daily write transaction, so it remains state outside the run.
 - **Rule 32's structural guard** — still fails on the deliberate violation kept in the test assembly.
 - **The doc diet** (README §3) — refreshed at 5.0 and matched what the build actually needed.
 
@@ -2292,3 +2310,62 @@ So the first live run verified the wire contract on **the only tier no code path
 ### The re-run
 
 Green on **both tiers** — create → poll to `ended` → stream results → usage → cost. **INTEGRATIONS §5 is now live-confirmed rather than reference-checked**, and the last red Phase-5 DoD item is closed.
+
+---
+
+## v1.9.70 — the drift reconciliation: the researcher pack wired, the placebo blinded, the false records crossed out (D114, D115; findings 330–335)
+
+*Recorded 2026-08-01, from the architecture review against `docs/diagrams/alphalab-architecture.svg`. Tests **1,070 → 1,074**; no migration; `ci.ps1` green; `check-register` green at 115 rows.*
+
+### finding 330 — the pack path was built, tested, green, and wired to nothing
+
+Seven types — `ContextPackBuilder`, `EvidencePriorSeam`, `AsOfDetectabilityFloor`, `ContextPackStore`/`IContextPackStore`, `AiDecisionStore`/`IAiDecisionStore` — had **zero references outside their own files** in `src/`. Against the spec that is not a scheduling choice: §23.2 says the builder "produces the pack … **then persists it**"; §23.6 puts the builder, the tables and the researcher seat all in Phase 5; and D113's arm difference **is** the digest in the pack.
+
+**The consequence was that D113's control controlled for nothing.** The two arms differed only by the literal string `Evidence-prior seam: on` vs `…: placebo` in the prompt — two otherwise identical researchers whose margin difference is zero by construction, the exact failure D113's own text warns against. And no `ai_context_packs` or `ai_decisions` row could ever be written, so D104's four artefacts were unrecordable for the one seat that was live.
+
+**Why the Phase-5 DoD missed it:** every fixture tested a component in isolation — the builder, the store, the endpoint — and not one asserted that a proposal through the real path produces a pack row. The gap sat precisely where no fixture looked. The new `D113_OneJobRun_WritesBothArms_WithTheFullArtefactChain` is that fixture: one drained job ⇒ 2 packs + 2 decisions + 2 unlocked drafts, hashes linked end-to-end.
+
+**Nothing live was corrupted:** the live store holds zero researcher proposals (verified read-only), so the margin series starts clean.
+
+### finding 331 — the placebo announced itself
+
+The prompt literally told the model which arm it was. A control that is TOLD its evidence is fake is not a control — the placebo's entire value is holding everything constant *except the information*. Worse, the old `D113_TheArmsDifferOnlyInTheSeam` test **asserted the defect**: it required exactly one differing prompt line, the seam declaration.
+
+### The wiring (checkpoint R.1)
+
+`ResearchJobExecutor`'s hypotheses path now:
+
+1. **Anchors to arena evidence** — the latest committed forward run's `(as_of, watermark)`, never the wall clock; fail-closed when no run has ever committed (a wall-clock pack over no data would claim knowledge that was never there). The journal's `created_on` and the budget month stay wall-clock — operator records are calendar-time.
+2. **Builds the seven cp-1.0 fields** (the whitelist *was* the recipe, built for this wiring): as-of, PIT regime label, the **as-of** floor + its trials count (`AsOfDetectabilityFloor` — the journal rows keep stamping the **current** floor per D113; both floors, deliberately), closed outcomes (bounded by the outcome **entry's** `created_on` — the recorded closure act, not the mutable column), fork budget remaining (`ForkBudgetPerYear` − live trials in the trailing 365 days), and the digest through the seam — `On` for treatment, `Placebo` for control, **seeded from (asOf, jobId)** because an irreproducible control is not a control.
+3. **Persists both packs, then one batch with two requests, then both subject-keyed decision rows, then both unlocked drafts** — with artefact (c) recorded against each decision once its draft has an id. A one-armed response fails the whole job: the unpaired observation guarded against on the budget side can arrive from the response side too, and now cannot.
+4. The operator's ask (parent evidence, topic) rides **outside** the pack: the pack is arena-derived evidence under a whitelist closure; the ask is already persisted verbatim in `jobs.request_json`; together the full input is reconstructable without the whitelist admitting free text.
+
+### D114 — subject-keyed records, and the blind placebo (amends D113)
+
+`ai_decisions` was contestant-shaped (`strategy_id` NOT NULL; SCHEMA: "the persisted **contestant** output IS the decision") while D104 demands the four artefacts for **every** AI decision. Zero-migration resolution: `strategy_id` in both AI-seat tables is the record's **SUBJECT** — a strategy id for the contestant, **`job:{id}#treatment` / `job:{id}#control`** for the researcher's arms. `sampling_json` carries `{seam, seed}`; `applied_json` carries `{journal_entry_id, arm, locked:false}`. And the blindness rule is now explicit: **the prompt never declares the seam mode** — arm identity lives only in the records. SCHEMA's contestant-scoped wording struck-and-replaced in the same commit.
+
+### D115 — superseded rows are tombstoned, and D87/D102 no longer carry quotable dead text
+
+The operator's directive: void decisions must not linger. Hard-deleting register rows was considered and rejected — `check-register` 3a resolves every cited D-number to a §2 row, and dozens of historical citations would dangle; that would re-create the D87 failure from the opposite direction. Instead: **the row stays as an anchor; the ~1,750 characters of quotable dead text go.** Each of D87 and D102 is now a one-line gravestone naming its successor, where its live content was rescued (D87: the Quality prohibition → D111, the breadth decision → D109, the Grinold caveat → the v1.9.23 trace; D102: → D107 in full), and the attestation that nothing live remains — **verified by reading before compressing**, because D111 exists precisely because a live constraint once sat stranded in D87's dead text. Going forward the tombstone lands **in the same commit** as any supersession, which makes stranding structurally impossible: content in a superseded row is by definition dead, so anything live must be rescued explicitly at supersession time.
+
+### finding 332 — the recording drift
+
+The CHANGELOG had **no v1.9.64 section** — commit `7eb2861` landed checkpoint 5.4 and PROGRESS cited the version, but the sequence jumped 63 → 65. Written retroactively above, labeled as such, including what 5.4 failed to deliver. MANIFEST's revision trail stopped at v1.9.60; back-filled through v1.9.70.
+
+### finding 333 — the 5.8 reconciliation recorded a wiring that a grep would have refuted
+
+"P15 … the digest is wired" was written at a reconciliation checkpoint — the pass whose whole job is corpus-vs-code — and was false on the day it was written. Finding 327's shape for the fourth time, and the sharpest instance: the others were name drift; this was a **capability** claim with no mechanical caller check. Both PROGRESS texts struck-and-replaced; the caller-exists fixture now exists.
+
+### finding 334 — the Research config home inverted
+
+v1.9.67 recorded "the Worker reads `Ai.*`, never `Research.*`" — true for exactly three days. The pack's `fork_budget_remaining` field is computed Worker-side from `ForkBudgetPerYear`, so `Research` is now committed in **both** appsettings files, held equal by `Config_Research_AgreesAcrossProcesses` (the `Llm.DailyBudget` precedent). The claim is struck-and-replaced in CONFIG_REFERENCE.
+
+### finding 335 — three documents asserted relationships the spec denies
+
+- **`RegimeBriefStage`'s comment** said the brief becomes "a pack field for the researcher from 5.4" — §23.1 says the brief "neither depends on nor replaces the seats", and `PackWhitelist` deliberately has no such field. Corrected: the brief serves the human; the pack's regime input is the mechanical PIT label.
+- **The architecture SVG** routed rule grades into the judging layer — the one edge D91 forbids structurally (`DescriptiveOnlyGuardTests` + the ci.ps1 path grep). Re-drawn: the benchmarks feed the judges; the rule grades flow (dashed) to the researcher's evidence — the D91/D113 evidence-prior edge — and the `<desc>` says so.
+- **CLAUDE.md's doc map** described the SVG as "projects, the sole-writer path, the Api/UI boundary" — none of which the SVG contains. Struck-and-replaced with what it actually is (the one-page research-flow picture); a technical diagram is a recorded non-goal until wanted.
+
+### What is deliberately NOT in this pass
+
+No scorer, no new pack fields beyond cp-1.0 (§23.1's fuller read set is deferred to the contestant-phase recipe bump, on the record in `PackWhitelist`'s remarks — factor attribution structurally cannot land before Phase 6), no brief/skeptic pack-ification (advisory prose; no controlled comparison depends on their inputs), no schema migration (D114 changes documented meaning, not shape), and no live smoke re-run (it exercises `regime_brief`, untouched here).

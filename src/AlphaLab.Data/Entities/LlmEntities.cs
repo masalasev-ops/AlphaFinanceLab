@@ -100,7 +100,10 @@ public sealed class AiContextPackRow
     /// <summary>Plain rowid alias — no AUTOINCREMENT (rule 14 hand-edit).</summary>
     public long PackId { get; set; }
     public string Seat { get; set; } = default!;
-    /// <summary>Contestant only; NULL for researcher/advisor.</summary>
+    /// <summary>The record's SUBJECT (D114, v1.9.70): a strategy id for the contestant;
+    /// <c>job:{job_id}#treatment</c> / <c>job:{job_id}#control</c> for the researcher's D113 arms — which
+    /// also makes <c>ux_ai_context_packs</c> hold BY VALUE for researcher packs rather than by SQLite's
+    /// accidental NULL-distinctness. NULL only for the deferred advisor seat.</summary>
     public string? StrategyId { get; set; }
     public string AsOf { get; set; } = default!;
     /// <summary>The D40 data watermark the pack was built at.</summary>
@@ -130,6 +133,8 @@ public sealed class AiDecisionRow
 {
     /// <summary>Plain rowid alias — no AUTOINCREMENT (rule 14 hand-edit).</summary>
     public long DecisionId { get; set; }
+    /// <summary>The record's SUBJECT (D114): a strategy id for the contestant; the researcher's
+    /// <c>job:{job_id}#arm</c> grammar. NOT NULL — every decision has a subject.</summary>
     public string StrategyId { get; set; } = default!;
     public string AsOf { get; set; } = default!;
     /// <summary>Ties the decision to the exact ai_context_packs row seen (D104 artefact (a)).</summary>

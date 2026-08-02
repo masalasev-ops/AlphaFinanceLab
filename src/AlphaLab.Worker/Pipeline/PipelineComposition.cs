@@ -109,6 +109,14 @@ public static class PipelineComposition
         // structural one.
         services.AddSingleton(Bind<AiOptions>(configuration, AiOptions.SectionName));
 
+        // The researcher pack's field inputs (v1.9.70, finding 330): Research.ForkBudgetPerYear feeds the
+        // fork_budget_remaining field and SignalLibraryOptions feeds the digest read-model. Bound HERE for
+        // the same seat-free-core reason as AiOptions — and note the CONSEQUENCE, recorded as finding 334:
+        // Research is now committed in BOTH appsettings files (the Api gates on it, the Worker packs it),
+        // held equal by Config_Research_AgreesAcrossProcesses.
+        services.AddSingleton(Bind<ResearchOptions>(configuration, ResearchOptions.SectionName));
+        services.AddSingleton(Bind<SignalLibraryOptions>(configuration, SignalLibraryOptions.SectionName));
+
         var anthropic = new AnthropicTransportOptions
         {
             // D67: the ONLY source. No env vars, no user secrets.

@@ -172,6 +172,36 @@ public sealed class ConfigConsistencyTests
             b.TryGetProperty("MaxTokens", out var t) ? t.GetInt32() : 0);
     }
 
+    /// <summary>
+    /// The D82/D112 Research numbers must read the same in BOTH processes (v1.9.70, finding 334).
+    ///
+    /// The Api gates proposals on MaxConcurrentCandidates (D112) and surfaces ForkBudgetPerYear with
+    /// every 202; the Worker packs fork_budget_remaining from the same numbers (the cp-1.0 field). A
+    /// divergence would have the seat told one budget and packed another — the same
+    /// accepted-then-refused class as the Llm.DailyBudget agreement above.
+    /// </summary>
+    [Fact]
+    public void Config_Research_AgreesAcrossProcesses()
+    {
+        var repoRoot = FindRepoRoot();
+        var api = ReadResearch(Path.Combine(repoRoot, "src", "AlphaLab.Api", "appsettings.json"));
+        var worker = ReadResearch(Path.Combine(repoRoot, "src", "AlphaLab.Worker", "appsettings.json"));
+
+        Assert.Equal(worker, api);
+    }
+
+    /// <summary>(ForkBudgetPerYear, MaxConcurrentCandidates); an absent section returns the bound
+    /// defaults, so "neither file configures it" agrees rather than failing on a technicality.</summary>
+    private static (int, int) ReadResearch(string appsettingsPath)
+    {
+        Assert.True(File.Exists(appsettingsPath), $"missing {appsettingsPath}");
+        using var doc = JsonDocument.Parse(File.ReadAllText(appsettingsPath));
+        if (!doc.RootElement.TryGetProperty("Research", out var r)) return (6, 3);
+        return (
+            r.TryGetProperty("ForkBudgetPerYear", out var f) ? f.GetInt32() : 6,
+            r.TryGetProperty("MaxConcurrentCandidates", out var m) ? m.GetInt32() : 3);
+    }
+
     private static IReadOnlyList<string> ReadUniverseExclusions(string appsettingsPath)
     {
         Assert.True(File.Exists(appsettingsPath), $"missing {appsettingsPath}");

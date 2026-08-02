@@ -316,6 +316,28 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   rest were defined nowhere; the DoD fixture list repaired (4 → 9 + 2, finding 315); the Phase-5 doc diet
   refreshed to lead with §23 (316); the INTEGRATIONS §5 Batches ⚠VERIFY closed against the published
   reference, the **live** smoke test still owed at 5.1 (318).
+- **v1.9.61–v1.9.68 — Phase 5 built, checkpoint by checkpoint** (all 2026-08-01; the per-checkpoint
+  record is CHANGELOG v1.9.61 onward; back-filled here at v1.9.70, finding 332 — this trail had stopped at
+  v1.9.60). 5.1 the Batches/caching provider seam + M7 (`IResilientHttpSender`/`IModelTransport` resolve
+  finding 323; 317/319/320 closed by building); 5.2 the D46 news budget as an unbypassable decorator; 5.3
+  the LLM as pipeline Stage 3, forward-composition-only; **5.4 the pack contract + seam + M8 — its
+  CHANGELOG section was never written at the time and exists RETROACTIVELY (finding 332), and its
+  components shipped UNWIRED (finding 330, reconciled v1.9.70)**; 5.5 `ai_decisions` persist-before-use +
+  rule 32 made structural; 5.6 the researcher seat + the D112 evidence diet + M9 (the corpus's first table
+  REBUILD, finding 324); 5.7 the D110 proposal inputs + the D113 paper control + M10; 5.8 the
+  reconciliation (findings 325–327; the mocked-month figure $0.98 modelled; the live smoke red — later
+  green at v1.9.69).
+- **v1.9.69 — the live smoke test, run for the first time** (2026-08-01): green on BOTH pinned tiers after
+  two live-only defects — the alias/snapshot pricing collision (finding 328, fixed by
+  longest-prefix `PricingFor`) and the smoke test having exercised the one tier the lab never calls
+  (finding 329). INTEGRATIONS §5 is live-confirmed.
+- **v1.9.70 — the drift reconciliation** (2026-08-01; D114, D115; findings 330–335): the researcher pack
+  path WIRED (it had been built and referenced by nothing — D113's arms were an undifferenced, unblinded
+  pair); D114 subject-keys the AI-seat records and makes the placebo blind; D115 tombstones superseded
+  register rows (D87 (superseded by D109) and D102 (superseded by D107) compressed to gravestones, live content verified rescued); the false v1.9.68
+  "digest is wired" closure struck (finding 333); `Research` config in both processes (finding 334); the
+  architecture SVG's rule-grades edge re-drawn off the judging layer and CLAUDE.md's diagram description
+  corrected (finding 335); this MANIFEST trail back-filled (finding 332).
 - The mockups were consolidated into the single `alphalab_ux_mockups.html` in the v1.9.21/v1.9.22 passes
   (the earlier per-topic and v2 files are gone; the consolidated file gained the UX-14 paired-comparison block
   and the slate-grey replay tokens in v1.9.22). SCHEMA received its first post-v1.9.1 edit in v1.9.7
