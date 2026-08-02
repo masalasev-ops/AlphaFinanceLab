@@ -43,7 +43,7 @@ public sealed class AiOptions
 
     /// <summary>The context-pack recipe id, a frozen param (D80): a change forks candidates rather than
     /// quietly re-shaping what an existing one sees.</summary>
-    public string PackRecipeVersion { get; set; } = "cp-1.0";
+    public string PackRecipeVersion { get; set; } = "cp-1.1";
 
     public ContestantSeatOptions Contestant { get; set; } = new();
 

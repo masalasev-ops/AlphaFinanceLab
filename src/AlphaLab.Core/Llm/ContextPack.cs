@@ -73,6 +73,22 @@ public static class PackWhitelist
     /// since it RISES with the trials tax.</summary>
     public const string TrialsCount = "trials_count";
 
+    /// <summary>
+    /// D116's plausibility ceiling, as-of — the OTHER end of the admissible band (added at v1.9.71,
+    /// recipe cp-1.1; a **COMMON** field, both D113 arms, exactly like the floor it accompanies).
+    ///
+    /// **Why the pack needs it and the gate alone was not enough (finding 337).** The seat is instructed
+    /// to state an expected annualized effect as a number, and until v1.9.71 the only scale cue in its
+    /// pack was the FLOOR — one anchor, pointing up. That is an escalation channel built into the recipe:
+    /// nothing in the seat's evidence said what "too big" looks like, so the cheapest way to satisfy the
+    /// floor is always a larger claim. Publishing both ends turns an unbounded ask into a bounded one, at
+    /// the moment the number is stated rather than at a refusal weeks later.
+    ///
+    /// **Also not a D110 R1 breach**, for the same reason as the floor: it is a property of the ARENA (the
+    /// range its own calibration has modelled), not a grade on the researcher.
+    /// </summary>
+    public const string DetectabilityCeilingAnn = "detectability_ceiling_ann";
+
     // ---- Researcher fields. ----
 
     /// <summary>Closed journal outcomes with their lesson lines (D79/D82) — the measured facts the loop
@@ -102,16 +118,23 @@ public static class PackWhitelist
     /// output.
     /// </summary>
     /// <remarks>
-    /// **These seven fields ARE recipe cp-1.0** (wired at v1.9.70, finding 330). §23.1's fuller researcher
+    /// **These EIGHT fields ARE recipe cp-1.1** (~~seven fields ARE recipe cp-1.0~~, wired at v1.9.70,
+    /// finding 330; the ceiling joined at v1.9.71 under D116, finding 337). §23.1's fuller researcher
     /// read set — verdicts + separation states, monitor statuses with triggering signals, regime episodes,
     /// factor attribution, trials-ledger detail — is DEFERRED to the contestant-phase recipe bump, on the
     /// record rather than silently: factor attribution structurally cannot land earlier (French factors
     /// are Phase 6), and a recipe change mid-series is attributable through `recipe_version` where a
     /// quietly grown field list would not be.
+    ///
+    /// **Why cp-1.1 was free to take and would not have been later.** A recipe change mid-series breaks
+    /// the comparability of the D110 margin chain. At v1.9.71 the live store held ZERO researcher
+    /// proposals (verified read-only), so there was no series to break — the same window that made
+    /// `rs-1.1` free. Once the first real proposal is scored, an eighth field costs a discontinuity in
+    /// the one measurement the lab is graded on, so the bar for cp-1.2 is correspondingly higher.
     /// </remarks>
     public static readonly IReadOnlySet<string> Allowed = new HashSet<string>(StringComparer.Ordinal)
     {
-        AsOf, RegimeLabel, DetectabilityFloorAnn, TrialsCount,
+        AsOf, RegimeLabel, DetectabilityFloorAnn, DetectabilityCeilingAnn, TrialsCount,
         ClosedOutcomes, ForkBudgetRemaining, SignalDigest,
     };
 }

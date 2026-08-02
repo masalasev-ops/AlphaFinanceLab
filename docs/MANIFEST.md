@@ -338,6 +338,13 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   "digest is wired" closure struck (finding 333); `Research` config in both processes (finding 334); the
   architecture SVG's rule-grades edge re-drawn off the judging layer and CLAUDE.md's diagram description
   corrected (finding 335); this MANIFEST trail back-filled (finding 332).
+- **v1.9.71 — the plausibility ceiling** (2026-08-02; D116; findings 336–337): the detectability gate stops
+  refusing in one direction only — a ceiling of `top swept rung × the ladder's own geometric step` (32 %/yr
+  here), derived from the frozen C-1 row rather than authored, with three fail-open valves; the researcher's
+  pack carries BOTH ends of the band (cp-1.0 → cp-1.1, prompt rs-1.0 → rs-1.1, taken while the store held zero
+  proposals so no margin series lost comparability); and **finding 336** records that the arena's own frozen
+  curves put the gate on its `+∞` branch at the configured 3-year horizon — every registered candidate refuses
+  until generation-2 recalibration, a fact no document had multiplied out. No threshold tuned, no migration.
 - The mockups were consolidated into the single `alphalab_ux_mockups.html` in the v1.9.21/v1.9.22 passes
   (the earlier per-topic and v2 files are gone; the consolidated file gained the UX-14 paired-comparison block
   and the slate-grey replay tokens in v1.9.22). SCHEMA received its first post-v1.9.1 edit in v1.9.7

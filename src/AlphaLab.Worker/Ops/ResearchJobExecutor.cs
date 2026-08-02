@@ -53,7 +53,7 @@ public sealed class ResearchJobExecutor(
 
     /// <summary>The researcher seat's frozen prompt-policy version (D81 rule 2's discipline applied to a
     /// seat with no fork lifecycle): any edit to the instruction blocks below bumps this.</summary>
-    public const string PromptVersion = "rs-1.0";
+    public const string PromptVersion = "rs-1.1";
 
     /// <summary>A conservative per-arm estimate for the pairing check. Conservative deliberately: an
     /// UNDER-estimate here produces exactly the unpaired observation the check exists to prevent.</summary>
@@ -299,6 +299,10 @@ public sealed class ResearchJobExecutor(
             // beside it, because the floor RISES with the trials tax and is uninterpretable without the
             // count that set it. A null floor is the honest unassessed answer, never a zero.
             new PackField(PackWhitelist.DetectabilityFloorAnn, floor.FloorAnn, asOf),
+            // D116 (cp-1.1): the OTHER end of the band, from the same as-of read. Both ends or neither —
+            // a pack carrying only the floor gives the seat one scale cue and it points up (finding 337).
+            // COMMON to both D113 arms, exactly like the floor; only `signal_digest` is differenced.
+            new PackField(PackWhitelist.DetectabilityCeilingAnn, floor.CeilingAnn, asOf),
             new PackField(PackWhitelist.TrialsCount, floor.TrialsCount, asOf),
             new PackField(PackWhitelist.ClosedOutcomes, closedOutcomes, asOf),
             new PackField(PackWhitelist.ForkBudgetRemaining, forkBudgetRemaining, asOf),
@@ -404,6 +408,11 @@ public sealed class ResearchJobExecutor(
         - the expected annualized effect size, as a number.
 
         Rules:
+        - The expected effect must fall between `detectability_floor_ann` and `detectability_ceiling_ann`
+          in the supplied context. Below the floor the arena cannot adjudicate the claim within its
+          patience horizon; above the ceiling the claim is larger than any edge this arena has ever
+          calibrated against, so there is no evidence about what the machinery does there. A proposal
+          outside that band is refused. A bigger number is not a better proposal.
         - Propose at most three hypotheses. Fewer is better than padded.
         - Do not propose a variation of a live strategy: any change to a live strategy forks a new one and
           spends a trial, so a variation is a costly proposal, not a free one.

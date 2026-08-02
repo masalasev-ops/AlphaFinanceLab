@@ -166,4 +166,121 @@ public class DetectabilityGateTests
         Assert.Equal("replay_calibration_median", analyticOnly.Details!.SigmaSource);
         Assert.Null(analyticOnly.Details.EmpiricalAlphaStarAnn);
     }
+
+    /// <summary>The sp500 arena's ACTUAL frozen C-1 shape as of the 2026-07-31 calibration: the four
+    /// monthly ladder rungs with their measured P(promoted) at 3y/15y/20y. Knots are the real
+    /// interpolation anchors, so this fixture reproduces the live numbers exactly rather than a
+    /// convenient caricature of them.</summary>
+    private static void SeedLiveCurveShape(AlphaLab.Data.AlphaLabDbContext db)
+    {
+        const string json = """
+            { "alphas_ann_pct": [2, 4, 8, 16],
+              "curves": {
+                "2":  { "knots": [ { "t": 21, "p_promoted": 0.0 }, { "t": 756, "p_promoted": 0.02 }, { "t": 3780, "p_promoted": 0.02 }, { "t": 5019, "p_promoted": 0.02 } ] },
+                "4":  { "knots": [ { "t": 21, "p_promoted": 0.0 }, { "t": 756, "p_promoted": 0.10 }, { "t": 3780, "p_promoted": 0.10 }, { "t": 5019, "p_promoted": 0.10 } ] },
+                "8":  { "knots": [ { "t": 21, "p_promoted": 0.0 }, { "t": 756, "p_promoted": 0.30 }, { "t": 3780, "p_promoted": 0.44 }, { "t": 5019, "p_promoted": 0.52 } ] },
+                "16": { "knots": [ { "t": 21, "p_promoted": 0.0 }, { "t": 756, "p_promoted": 0.42 }, { "t": 3780, "p_promoted": 0.80 }, { "t": 5019, "p_promoted": 0.86 } ] }
+              } }
+            """;
+        db.Config.Add(new ConfigRow
+        {
+            Key = CalibratedKeys.DetectionPower, ValueJson = json, Version = 1, ChangedOn = "2026-07-31",
+        });
+        db.SaveChanges();
+    }
+
+    /// <summary>
+    /// **Finding 336, pinned.** The `+∞` branch was tested from 4.9 — but only against a SYNTHETIC curve
+    /// set, so nothing ever asserted what the arena's OWN frozen curves do at its OWN configured horizon.
+    /// They land on that branch: at `Power = 0.80` / `Horizon = 3y` the best simulated edge (16%/yr)
+    /// reaches only P=0.42, so α* is unreachable, the floor is +∞, and EVERY pre-registered candidate is
+    /// refused. That is D89 behaving correctly and is not changed here; what this fixture prevents is the
+    /// fact being invisible to the suite again. The same curves DO clear at a 15-year horizon — which is
+    /// what makes it a statement about patience rather than about the machinery being broken.
+    /// </summary>
+    [Fact]
+    public void FX_DetectabilityGate_LiveCurveShape_FloorUnreachable_AtConfiguredHorizon()
+    {
+        using var arena = new EvalArena();
+        using var db = arena.Open();
+        SeedSigma(db, sigma: 0.0001);   // a tiny analytic floor, so the EMPIRICAL end is what binds
+        SeedLiveCurveShape(db);
+
+        // ---- At the configured 3-year horizon: nothing is admissible, for a reason that is NOT the claim.
+        var refused = Assert.Throws<DetectabilityRefusedException>(
+            () => new DetectabilityGate(db, Gate).Assess(0.20));
+        Assert.Equal("floor_unreachable", refused.Details.Reason);
+        Assert.True(double.IsPositiveInfinity(refused.Details.FloorAnn));
+        Assert.Contains("no swept C-1 rung reaches power", refused.Message, StringComparison.Ordinal);
+        // The ceiling is still REPORTED (the operator needs both ends to read the situation) but cannot
+        // bind against an infinite floor — D116's third valve, never an empty band.
+        Assert.Equal(0.32, refused.Details.CeilingAnn!.Value, 6);
+        Assert.Equal(DetectionCurves.CeilingInert, refused.Details.CeilingState);
+
+        // ---- The same curves at a 15-year horizon: the 16% rung reaches the power, so the floor exists.
+        var patient = new DetectabilityGate(db, new GateOptions { DetectabilityHorizonYears = 15 });
+        var admitted = patient.Assess(0.20);
+        Assert.True(admitted.Admitted);
+        Assert.Equal(0.16, admitted.Details!.EmpiricalAlphaStarAnn!.Value, 6);
+        Assert.Equal(0.32, admitted.Details.CeilingAnn!.Value, 6);
+        Assert.Equal(DetectionCurves.CeilingApplied, admitted.Details.CeilingState);
+    }
+
+    /// <summary>D116: the ceiling is `top rung × the ladder's own step` — 16 × (16/8) = 32%/yr here — and
+    /// the boundary is INCLUSIVE: a claim equal to it is the last admissible one, not the first refused.</summary>
+    [Fact]
+    public void FX_DetectabilityGate_D116_CeilingRefusesImplausible_AndAdmitsAtTheBoundary()
+    {
+        using var arena = new EvalArena();
+        using var db = arena.Open();
+        SeedSigma(db, sigma: 0.0001);
+        SeedLiveCurveShape(db);
+        var gate = new DetectabilityGate(db, new GateOptions { DetectabilityHorizonYears = 15 });
+
+        Assert.True(gate.Assess(0.32).Admitted);   // exactly the ceiling — admitted
+
+        var ex = Assert.Throws<DetectabilityRefusedException>(() => gate.Assess(0.3201));
+        Assert.Equal("above_ceiling", ex.Details.Reason);
+        Assert.Equal(0.32, ex.Details.CeilingAnn!.Value, 6);
+        Assert.Contains("plausibility ceiling", ex.Message, StringComparison.Ordinal);
+
+        // The escalation case this decision exists for: a claim nothing in the arena could support.
+        var absurd = Assert.Throws<DetectabilityRefusedException>(() => gate.Assess(4.0));
+        Assert.Equal("above_ceiling", absurd.Details.Reason);
+    }
+
+    /// <summary>D116's valves: a ceiling at or below the floor goes INERT rather than producing an empty
+    /// admissible band, and a ladder with no derivable step yields no ceiling at all rather than an
+    /// invented one (the finding-309 standard). In both cases the gate admits on the ceiling's account.</summary>
+    [Fact]
+    public void FX_DetectabilityGate_D116_CeilingInertBelowFloor_AndAbsentWithoutAStep()
+    {
+        using var arena = new EvalArena();
+        using var db = arena.Open();
+        // A large analytic floor (~12.8%/yr) above the [2,4] ladder's ceiling of 4 × (4/2) = 8%/yr.
+        SeedSigma(db, sigma: 0.005);
+        SeedDetectionPower(db);
+
+        var inert = new DetectabilityGate(db, Gate).Assess(0.20);
+        Assert.True(inert.Admitted);   // above the ceiling, but the ceiling cannot bind — never an empty band
+        Assert.Equal(0.08, inert.Details!.CeilingAnn!.Value, 6);
+        Assert.Equal(DetectionCurves.CeilingInert, inert.Details.CeilingState);
+
+        // One rung ⇒ no ratio ⇒ no step ⇒ no ceiling. Refusing to invent one IS the decision.
+        using var single = new EvalArena();
+        using var db2 = single.Open();
+        SeedSigma(db2, sigma: 0.0001);
+        db2.Config.Add(new ConfigRow
+        {
+            Key = CalibratedKeys.DetectionPower,
+            ValueJson = """{ "curves": { "4": { "knots": [ { "t": 756, "p_promoted": 0.9 } ] } } }""",
+            Version = 1, ChangedOn = "2026-06-30",
+        });
+        db2.SaveChanges();
+
+        var noStep = new DetectabilityGate(db2, Gate).Assess(5.0);
+        Assert.True(noStep.Admitted);
+        Assert.Null(noStep.Details!.CeilingAnn);
+        Assert.Equal(DetectionCurves.CeilingNoStep, noStep.Details.CeilingState);
+    }
 }
