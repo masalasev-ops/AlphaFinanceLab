@@ -4,10 +4,10 @@
 - Frozen replay watermark (D95): `2026-07-24T22:00:00Z`
 - Replay run span: run 1..5033
 - Seeds per plant: 50 · population M: 200
-- Generated: 2026-08-03T18:02:07Z
+- Generated: 2026-08-03T19:22:58Z
 - Build configuration: **Release** (finding 278: the sign-off artifact records which build produced these numbers)
 - Generation provenance (D107): 5031 session(s) pre-existing from earlier invocation(s)/build(s) · 0 committed by THIS invocation; the curves, verification and any freeze below are computed by THIS build (**Release**). The generation's sessions and its verification therefore come from two builds — legitimate for a verification-stage change (zero session residue), and recorded here rather than inferred.
-- Config rows frozen this run: (none — report-only, or a verification failure blocked the freeze)
+- Config rows frozen this run: Monitor.S3.PNoiseCurve.daily, Monitor.S3.PEdgeCurve.daily, Calibration.DetectionPower, Calibration.ReportRef
 
 ## D56 trajectory curves (S3)
 
