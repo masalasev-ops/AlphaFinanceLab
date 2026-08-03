@@ -200,8 +200,13 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
                                                    // track; a floor failure recalibrates S6's patience, never the plant (the lab must not kill its own honest winners)
     "JointFalseAlarmMaxFrac": 0.10,                // v1.9.7 finding 114: bound on the fraction of no-edge plants ever reaching Suspect via ANY signal over the
                                                    // replay window; per-signal contribution is a permanent calibration-report section
-    "NoEdgeCurveBreachMaxFrac": 0.10,             // Change 2 (two-pass calibration): bound on the fraction of no-edge plants that SUSTAIN-breach the built P_noise
-                                                   // on the HELD-OUT validate segment — the curves' own out-of-sample false-alarm rate. Its OWN key, NOT shared with
+    "NoEdgeCurveBreachMaxFrac": 0.10,             // Change 2 (two-pass calibration): bound on the RATE of sustained P_noise breaches PER EVALUATION OPPORTUNITY across
+                                                   // the no-edge plants on the HELD-OUT validate segment — the curves' own out-of-sample false-alarm rate. An opportunity is a
+                                                   // start position for a run of SustainEvals consecutive evals, so a path of n points offers n-SustainEvals+1 of them.
+                                                   // **D103 (v1.9.82) made the implementation match this wording**: it previously counted the fraction of PLANTS that EVER
+                                                   // breached — a lifetime probability, monotone non-decreasing in window length against a fixed bound, so the same behaviour
+                                                   // observed for longer failed by construction. A rate divides by the chances it had, so the bound means the same thing
+                                                   // across arenas, --learn-through choices and run lengths. Its OWN key, NOT shared with
                                                    // JointFalseAlarmMaxFrac (which measures the monitor's flat-anchor flagging, altered by Change 3) — the independent validation
     "CurveBasedEdgeSurvivalFloor": 0.90           // Change 2: floor on the fraction of floor-edge plants that do NOT sustain-breach P_noise on validate; its OWN key,
                                                    // distinct from EdgePlantSurvivalFloor5y (the would-be-retire survival read from the monitor's log)

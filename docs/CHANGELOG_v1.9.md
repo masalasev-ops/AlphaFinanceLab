@@ -2866,3 +2866,53 @@ Bucketing the live run's per-session duration by wall clock separates the two cl
 **What survives the correction is the part that never depended on timing.** The growth is real and independently visible (6.88 → 9.92 across ~230 clean sessions). The *profile* is unaffected — contention changes how long work takes, not which stacks are executing. And finding 359's cost is a fact about the code readable from the query plan: 242,400 rows scanned per population per session, growing by 650 every session, whatever a stopwatch says. The fixes were justified by the plan and the profile; the ETA was not justified by anything.
 
 **The rule this leaves behind:** a wall-clock rate taken from a machine you are also profiling, testing, or copying 3.9 GB on is not a measurement of the system. Either quiesce the machine or attribute by wall-clock bucket before quoting a number — and never derive a multi-day projection from a window you were standing in.
+
+## v1.9.82 — generation 2 lands, and D103 is taken at its own trigger (D103 active; findings 361–362)
+
+*Recorded 2026-08-03. Branch `fix/v1.9.82-d103-breach-rate`. **D103 reserved → active** (no new number: it was allocated for exactly this). No migration, no config-value change. `check-register` green at 121 rows, 107 active, **0 reserved**. Tests 1,132 → **1,137**. **The freeze has NOT happened yet** — it is the operator's next action, recorded separately, as in the v1.9.49 → v1.9.50 pattern.*
+
+### Generation 2 completed
+
+5,031/5,031 sessions at frozen watermark `2026-07-24T22:00:00Z`, one vintage, contiguous, zero duplicates. Run spans two builds (D107 provenance): 1,345 sessions from the pre-v1.9.80 binary, 3,686 from the findings-358/359 binary — the two proved byte-identical on 5,521,912 rows before the swap.
+
+**The headline: finding 348's strong form is REFUTED.** α\*(H) re-derived from generation 2's own C-1 curves at `Gate.Power = 0.80`:
+
+| horizon | gen 1 α\* | **gen 2 α\*** |
+|---|---|---|
+| 3 y | unreachable | unreachable |
+| 5 y | unreachable | 14.77 %/yr |
+| **10 y** *(D121)* | **unreachable** | **6.95 %/yr** |
+| 15 y | 15.47 %/yr | 6.00 %/yr |
+| 20 y | 13.71 %/yr | 5.33 %/yr |
+
+**The gate reopens to [6.95 %, 32 %]/yr** — floor from the sweep, ceiling from D116. Detection power by rung, gen 1 → gen 2: daily@2 % `0/50 → 0/50`; monthly@2 % `1/50 → 9/50`; monthly@4 % `5/50 → 35/50`; monthly@8 % `26/50 → 50/50`; monthly@16 % `43/50 → 50/50`; PRIMARY `43/50 → 50/50`. The allocator's MDE fell `11.78 % → 1.76 %/yr`.
+
+**D121 was right, and it was right in advance.** The horizon was pre-registered at ten years the night before, from theory alone (`z·TE/√H` = 2.8 × 8 % / √10 ≈ **7.08 %/yr**), while the run was ~10 % complete and no curve existed. The empirical sweep came in at **6.95 %/yr** — 0.13 points apart. A parameter chosen from the closed form, before the measurement, matching the measurement.
+
+**What does NOT survive the good news, stated because a reader will want the whole picture:** 2 %/yr is still 0.14 at ten years and 0.18 at twenty. Published cross-sectional anomalies live at 2–5 %/yr, so the lower half of that range remains out of reach and finding 348's DIRECTION partly stands even as its strong form falls. And **finding 280 is not fixed by clean noise** — `joint_false_alarm` is still 50/50 and `would_be_edge_survival_5y` moved only 28 % → 27 %. That defect is real and independent of the data contamination, which was worth learning.
+
+### finding 361 — D103's trigger fired exactly as written, and the form was chosen on the rule text
+
+The reserved row named two triggers and said *"the form is chosen THEN, on the rule text, per amendment C1."* Trigger (b) was *"a reading at or above 8 %, or 4 or more of 50 plants breaching."* Generation 2 read **6 of 50 = 12 %** — both halves. **The pre-registered condition for forcing this decision occurred, and was recognised as such rather than treated as a surprise.**
+
+**The form taken is option (i): a RATE PER EVALUATION OPPORTUNITY.** A validate path of n evaluation points offers `n − SustainEvals + 1` start positions; a breach is a start position whose whole run sits below P_noise; the statistic is breaches ÷ opportunities, pooled across plants.
+
+The reading that selected it was done in v1.9.46 **while this check was passing at 3/50** — `CONFIG_REFERENCE` declares the key as *"the curves' own out-of-sample false-alarm RATE"*, and `CurveBuilder` builds P_noise AS the `falseAlarmRate` quantile, so the declared quantity is per-point by construction. That collapses the option set: (i) restores the contract, (ii) and (iii) would amend it.
+
+**Scope is ONE metric.** `curve_based_edge_survival` keeps its per-plant form — its key is declared as *"the fraction of floor-edge plants"*, with no rate gloss, so declaration and implementation already agree there. Repairing a contradiction is not licence to change the metric next to it.
+
+**Before and after, on the same paths:**
+
+| | pre-D103 (lifetime) | post-D103 (rate) |
+|---|---|---|
+| `noedge_curve_breach_validate` | **6/50 plants = 12 %** → Fail | **91/3550 opportunities = 2.6 %** → Pass |
+
+**The corroboration is the reason to believe the repair, not the pass.** `noedge_pnoise_breach_validate` — a separately-implemented point-level rate, already passing, untouched by this change — reads **104/3600 = 2.9 %** on the same paths. After the repair the two instruments agree to **0.3 points**; before it they read 12 % and 2.9 %. A fix that merely made a number smaller would not have done that.
+
+**The hazard, named because it was pre-registered as the thing to watch:** this fix is `ReplayVerification`-only, re-derives from persisted `overfitting_checks.value`, invalidates no session, and cost **one resume — 0 sessions recomputed, about a minute**. It is simultaneously cheap AND unblocking, which is precisely the combination amendment C1 exists to make suspicious. The defence is the timing of the *reading*, not of the taking: Q1 was resolved and the options collapsed when the check was green, and Q3 named the three-orders-of-magnitude cost gradient specifically so it could not decide. Verification after the change: **AllGreen=True** over the gating set.
+
+### finding 362 — the failing report was regenerated in place and is gone
+
+The pre-D103 calibration report (sha256 `1b7197df578f`, generated 17:24:53Z) recorded the FAILING state. It was **untracked**, and re-running verification overwrote it at the same path. It exists nowhere on disk or in git.
+
+This is the *"an archive that is rewritten stops being evidence"* rule from v1.9.79, violated by the person who quoted it. The correct order was: commit the artefact, then regenerate. What survives is transcription — the pre-D103 row is recorded in the table above, and the run's other check values were identical across both reports (only the one repaired metric moved). The generation-2 report is now **tracked**, so the next regeneration is a diff rather than a deletion.

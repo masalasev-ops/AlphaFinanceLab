@@ -215,16 +215,30 @@ public sealed class ReplayVerification(
         }
         else
         {
-            // no-edge: fraction of plants that SUSTAIN-breach P_noise on validate (a mid-band no-edge plant
-            // should not — it hovers at its median, breaching only at the false-alarm rate, D63).
-            var breaching = ids.noEdge.Count(id => SustainsAcross(id, learnThrough, builtPNoise, belowCurve: true));
-            noEdgeCurveBreach = ids.noEdge.Count == 0 ? 0.0 : breaching / (double)ids.noEdge.Count;
+            // no-edge: the RATE of sustained breaches PER EVALUATION OPPORTUNITY (D103), not the fraction of
+            // plants that ever breach. CONFIG_REFERENCE declares this key as "the curves' own out-of-sample
+            // false-alarm RATE", and P_noise is BUILT as the falseAlarmRate quantile (CurveBuilder), so the
+            // declared quantity is per-point by construction. The former per-plant EVER predicate was a
+            // LIFETIME probability: monotone non-decreasing in validate-window length against a fixed bound,
+            // so the same healthy curves fail merely by being measured over a longer run. A rate divides by
+            // the opportunities it had, so it is window-length invariant — which is what makes the bound
+            // mean the same thing across arenas, `--learn-through` choices and run lengths.
+            var (breachOpportunities, totalOpportunities) =
+                SustainRateAcross(ids.noEdge, learnThrough, builtPNoise, belowCurve: true);
+            noEdgeCurveBreach = totalOpportunities == 0 ? 0.0 : breachOpportunities / (double)totalOpportunities;
             checks.Add(new VerificationCheck("noedge_curve_breach_validate",
                 noEdgeCurveBreach <= replay.NoEdgeCurveBreachMaxFrac ? CheckOutcome.Pass : CheckOutcome.Fail,
-                Invariant($"{breaching}/{ids.noEdge.Count} no-edge plants sustain-breach P_noise on validate (bound {replay.NoEdgeCurveBreachMaxFrac:P0})"),
+                totalOpportunities == 0
+                    ? Invariant($"no validate-segment sustain opportunities (bound {replay.NoEdgeCurveBreachMaxFrac:P0})")
+                    : Invariant($"{breachOpportunities}/{totalOpportunities} sustained-breach opportunities across {ids.noEdge.Count} no-edge plants = {noEdgeCurveBreach:P1} (bound {replay.NoEdgeCurveBreachMaxFrac:P0}; D103 rate-per-opportunity)"),
                 noEdgeCurveBreach));
 
             // floor-edge: fraction that do NOT sustain-breach P_noise on validate (a real edge stays above it).
+            // DELIBERATELY still the per-PLANT form, and not converted to D103's rate: CONFIG_REFERENCE
+            // declares this key as a "floor on the fraction of floor-edge plants", with no rate gloss, so
+            // here the declaration and the implementation already agree. D103 repaired a metric whose code
+            // contradicted its contract; changing this one would be an AMENDMENT to a documented semantic,
+            // which needs its own justification and its own CONFIG_REFERENCE edit — not a side effect.
             // When P_edge is supplied, ALSO report how many sustain-CLEAR P_edge (the distinguishable count) —
             // informational context on the same paths, so the report shows survival and separation together.
             if (ids.floorEdge.Count == 0)
@@ -434,27 +448,62 @@ public sealed class ReplayVerification(
         return contributions;
     }
 
-    /// <summary>True when the plant's HELD-OUT (validate-segment) S3 percentile path stays on the far side of
-    /// <paramref name="curve"/> for <c>curve.SustainEvals</c> CONSECUTIVE evals — below it when
-    /// <paramref name="belowCurve"/> (the P_noise-breach / suspect signature), else above it (the P_edge-clear
-    /// / distinguishable signature). Mirrors <see cref="MonitorSignals.S3Trajectory"/>'s sustain logic, applied
-    /// OUT OF SAMPLE — the streak counts within validate only; track-days are the point's age since inception.</summary>
-    private bool SustainsAcross(string id, string learnThrough, S3Curve curve, bool belowCurve)
+    /// <summary>
+    /// The plant's HELD-OUT (validate-segment) S3 percentile points, each reduced to "is it on the far side
+    /// of <paramref name="curve"/>" — below it when <paramref name="belowCurve"/> (the P_noise-breach /
+    /// suspect signature), else above it (the P_edge-clear / distinguishable signature).
+    ///
+    /// ONE definition of "far side", shared by <see cref="SustainsAcross"/> and
+    /// <see cref="SustainRateAcross"/> (the D118 discipline): a second copy is how the lifetime form and the
+    /// rate form would silently stop measuring the same event. Note the index: the curve is read at
+    /// <c>(i + 1) * cadence</c> over the FULL path, because track-days are the point's age since INCEPTION —
+    /// the learn-segment points are skipped as outputs but still advance the age.
+    /// </summary>
+    private List<bool> FarSideFlags(string id, string learnThrough, S3Curve curve, bool belowCurve)
     {
         var path = db.OverfittingChecks
             .Where(c => c.RunKind == Replay && c.Signal == "S3" && c.StrategyId == id && c.Value != null)
             .OrderBy(c => c.AsOf)
             .Select(c => new { c.AsOf, c.Value })
             .ToList();
-        var consecutive = 0;
+
+        var flags = new List<bool>();
         for (var i = 0; i < path.Count; i++)
         {
             if (string.CompareOrdinal(path[i].AsOf, learnThrough) <= 0) continue;   // validate segment only
             var threshold = curve.At((i + 1) * gate.EvaluationCadenceDays);
-            var onFarSide = belowCurve ? path[i].Value!.Value < threshold : path[i].Value!.Value >= threshold;
+            flags.Add(belowCurve ? path[i].Value!.Value < threshold : path[i].Value!.Value >= threshold);
+        }
+        return flags;
+    }
+
+    /// <summary>True when the plant's validate-segment path stays on the far side of <paramref name="curve"/>
+    /// for <c>curve.SustainEvals</c> CONSECUTIVE evals ANYWHERE in validate. Mirrors
+    /// <see cref="MonitorSignals.S3Trajectory"/>'s sustain logic, applied OUT OF SAMPLE.
+    ///
+    /// This is a LIFETIME predicate and is monotone non-decreasing in validate-window length — which is a
+    /// defect only where the bound it feeds is declared as a rate (D103 fixed that one). It is retained
+    /// unchanged for <c>curve_based_edge_survival</c>, whose key IS declared as a fraction of PLANTS
+    /// ("floor on the fraction of floor-edge plants that do NOT sustain-breach"), so there declaration and
+    /// implementation agree and changing it would be an amendment, not a repair.</summary>
+    private bool SustainsAcross(string id, string learnThrough, S3Curve curve, bool belowCurve) =>
+        SustainsEver(FarSideFlags(id, learnThrough, curve, belowCurve), curve.SustainEvals);
+
+    /// <summary>
+    /// The LIFETIME counting rule: did a run of <paramref name="sustainEvals"/> consecutive far-side points
+    /// occur ANYWHERE. Pure and public so the contrast with <see cref="SustainRate"/> can be pinned by a
+    /// test rather than argued — this predicate can only go UP as the window lengthens, which is the whole
+    /// content of D103.
+    /// </summary>
+    public static bool SustainsEver(IReadOnlyList<bool> farSide, int sustainEvals)
+    {
+        ArgumentNullException.ThrowIfNull(farSide);
+        var consecutive = 0;
+        foreach (var onFarSide in farSide)
+        {
             if (onFarSide)
             {
-                if (++consecutive >= curve.SustainEvals) return true;
+                if (++consecutive >= sustainEvals) return true;
             }
             else
             {
@@ -462,6 +511,58 @@ public sealed class ReplayVerification(
             }
         }
         return false;
+    }
+
+    /// <summary>
+    /// D103's counting rule: how many sustained-breach OPPORTUNITIES a path offered, and how many of them
+    /// were breaches. A path of n points offers <c>n - sustainEvals + 1</c> start positions; a breach is a
+    /// start position whose whole run sits on the far side.
+    ///
+    /// Pure and public because this is the substance of D103 and it must be pinnable directly: dividing by
+    /// the opportunities the window offered is what makes the statistic window-length invariant, where
+    /// <see cref="SustainsEver"/> is monotone non-decreasing in window length against a fixed bound.
+    /// </summary>
+    public static (int Breaches, int Opportunities) SustainRate(IReadOnlyList<bool> farSide, int sustainEvals)
+    {
+        ArgumentNullException.ThrowIfNull(farSide);
+        var k = Math.Max(1, sustainEvals);
+        if (farSide.Count < k) return (0, 0);                 // no opportunity at all — contributes nothing
+
+        var breaches = 0;
+        for (var start = 0; start + k <= farSide.Count; start++)
+        {
+            var whole = true;
+            for (var j = 0; j < k && whole; j++) whole = farSide[start + j];
+            if (whole) breaches++;
+        }
+        return (breaches, farSide.Count - k + 1);
+    }
+
+    /// <summary>
+    /// The D103 rate form: sustained-breach OPPORTUNITIES and how many of them were breaches, pooled across
+    /// <paramref name="ids"/>.
+    ///
+    /// An opportunity is a start position for a run of <c>SustainEvals</c> consecutive validate evals, so a
+    /// path of n points offers <c>n - SustainEvals + 1</c> of them; a breach is an opportunity whose whole
+    /// run sits on the far side. Dividing by the opportunities the window actually offered is what makes the
+    /// statistic window-length invariant: a longer validate segment adds breaches and opportunities in the
+    /// same proportion, where the lifetime predicate could only ever go up.
+    ///
+    /// Overlapping windows are counted, deliberately: they are the opportunities the SAME rule had to fire,
+    /// and de-duplicating them would re-introduce a dependence on where a streak happened to start.
+    /// </summary>
+    private (int Breaches, int Opportunities) SustainRateAcross(
+        IReadOnlyCollection<string> ids, string learnThrough, S3Curve curve, bool belowCurve)
+    {
+        var breaches = 0;
+        var opportunities = 0;
+        foreach (var id in ids)
+        {
+            var (b, o) = SustainRate(FarSideFlags(id, learnThrough, curve, belowCurve), curve.SustainEvals);
+            breaches += b;
+            opportunities += o;
+        }
+        return (breaches, opportunities);
     }
 
     private List<(double Pct, int TrackDays)> ValidatePercentilePoints(IReadOnlyCollection<string> ids, string learnThrough)
