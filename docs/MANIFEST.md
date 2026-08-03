@@ -401,6 +401,14 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   Built the report-only `store-sweep` verb (D120): 1,208 audited, 39 recommended, 28 excluded after a
   name-by-name price review (11 kept — a detector hit is a claim, not a verdict), `Universe:Exclusions`
   1 → 29. Generation 2 on the cleaned roster is the gate to re-deriving finding 348.
+- **v1.9.78 — the replay is 9.3x faster and byte-identical** (2026-08-02; findings 354–355; no new
+  decision, no behaviour change): generation 2 was about to cost another ~4.5 days. Profiling (not
+  guessing) found the run single-threaded and CPU-bound at 89 % of ONE core on a 16-core box — and then
+  found the cost was not arithmetic at all but EF write patterns: `SaveChanges` per plant (400 a
+  session), tracked existence reads (~20 k rows a session), and ~1,500 no-op `SaveChanges` a session in
+  ingestion, each re-running `DetectChanges` over the whole tracker. 63.5 s -> 6.86 s a session;
+  **~4.5 days -> 9.6 hours**. Proved to be speed only: 13 tables, 37,182 rows, identical SHA-256 before
+  and after. Parallelism deliberately NOT taken — the run stopped being the constraint.
 - The mockups were consolidated into the single `alphalab_ux_mockups.html` in the v1.9.21/v1.9.22 passes
   (the earlier per-topic and v2 files are gone; the consolidated file gained the UX-14 paired-comparison block
   and the slate-grey replay tokens in v1.9.22). SCHEMA received its first post-v1.9.1 edit in v1.9.7

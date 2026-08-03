@@ -72,6 +72,13 @@ public sealed class PlantEquityStep(
         var bears = db.RegimeLabels.Count(l => l.RunKind == Replay && l.Trend == "bear" && string.Compare(l.AsOf, context.AsOf) <= 0);
         var runningMean = PlantOverlay.RunningMultiplierMean(bulls, bears, plant.MultiplierFor("bull"), plant.MultiplierFor("bear"));
 
+        // Collected and written ONCE (finding 354). The per-plant RecordEquityPoint this replaced ran a
+        // SaveChanges per plant — 400 a session — and each one re-ran EF's DetectChanges over the whole
+        // day's change tracker, so the step cost O(plants x tracked entities). Three independent stack
+        // samples of the live run landed on that exact frame. The points are appended in `specs` order
+        // and written in that order, so the rows and their values are unchanged.
+        var points = new List<(long AccountId, string AsOf, decimal Equity, decimal Cash)>(specs.Count);
+
         foreach (var spec in specs)
         {
             if (!accounts.TryGetValue(spec.StrategyId, out var accountId)) continue;
@@ -88,7 +95,9 @@ public sealed class PlantEquityStep(
                 multiplier, runningMean);
 
             var equity = priorEquity * (decimal)(1.0 + memberReturn + overlay);
-            ledger.RecordEquityPoint(accountId, context.AsOf, equity, 0m, RunKind.Replay);
+            points.Add((accountId, context.AsOf, equity, 0m));
         }
+
+        ledger.RecordEquityPoints(points, RunKind.Replay);
     }
 }

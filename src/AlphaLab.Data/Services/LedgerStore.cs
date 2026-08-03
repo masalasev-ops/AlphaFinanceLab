@@ -54,6 +54,20 @@ public interface ILedgerStore
     /// re-run of a recovered day overwrites rather than duplicating (FR-7 idempotency).</summary>
     void RecordEquityPoint(long accountId, string asOf, decimal equity, decimal cash, RunKind runKind);
 
+    /// <summary>
+    /// Batch form of <see cref="RecordEquityPoint"/> for a caller writing MANY points in one step —
+    /// the D64 plant cohort, which is 400 accounts on every replay session (finding 354).
+    ///
+    /// Identical semantics to calling <see cref="RecordEquityPoint"/> once per point (same rows, same
+    /// values, same idempotency), but ONE existence query and ONE <c>SaveChanges</c> for the whole batch
+    /// instead of one of each per point. That is not a micro-optimisation: <c>SaveChanges</c> runs EF's
+    /// <c>DetectChanges</c> over EVERY tracked entity, and by the time the plants are written the day's
+    /// tracker already holds its ingested bars, positions, snapshots and control-equity rows — so N calls
+    /// cost O(N x tracked), quadratic within the session.
+    /// </summary>
+    void RecordEquityPoints(
+        IReadOnlyList<(long AccountId, string AsOf, decimal Equity, decimal Cash)> points, RunKind runKind);
+
     IReadOnlyList<(string AsOf, decimal Equity, decimal Cash)> GetEquityCurve(long accountId, RunKind runKind);
 
     /// <summary>Persist the funnel's stage-1..6 snapshot (the "Why this trade" provenance, and the
@@ -281,6 +295,45 @@ public sealed class LedgerStore(AlphaLabDbContext db) : ILedgerStore
             existing.Equity = equity;
             existing.Cash = cash;
         }
+        db.SaveChanges();
+    }
+
+    public void RecordEquityPoints(
+        IReadOnlyList<(long AccountId, string AsOf, decimal Equity, decimal Cash)> points, RunKind runKind)
+    {
+        ArgumentNullException.ThrowIfNull(points);
+        if (points.Count == 0) return;
+        var token = LedgerMapping.RunKindToken(runKind);
+
+        // ONE existence read for every (account, as_of) the batch touches — the per-point FirstOrDefault
+        // was the second half of the cost the single-point path pays (finding 354).
+        var accountIds = points.Select(p => p.AccountId).Distinct().ToList();
+        var dates = points.Select(p => p.AsOf).Distinct().ToList();
+        var existing = db.EquityCurve
+            .Where(e => e.RunKind == token && accountIds.Contains(e.AccountId) && dates.Contains(e.AsOf))
+            .ToDictionary(e => (e.AccountId, e.AsOf));
+
+        foreach (var p in points)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(p.AsOf);
+            if (existing.TryGetValue((p.AccountId, p.AsOf), out var row))
+            {
+                // Re-running a recovered day lands on the same point (FR-7) — and a duplicate key WITHIN
+                // the batch resolves to this branch too, because each Add is registered below, so a
+                // repeated (account, as_of) overwrites rather than inserting a second row.
+                row.Equity = p.Equity;
+                row.Cash = p.Cash;
+                continue;
+            }
+
+            var added = new EquityCurveRow
+            {
+                AccountId = p.AccountId, AsOf = p.AsOf, Equity = p.Equity, Cash = p.Cash, RunKind = token,
+            };
+            db.EquityCurve.Add(added);
+            existing[(p.AccountId, p.AsOf)] = added;
+        }
+
         db.SaveChanges();
     }
 
