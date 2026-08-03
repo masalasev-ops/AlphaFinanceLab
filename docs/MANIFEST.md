@@ -409,6 +409,18 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   ingestion, each re-running `DetectChanges` over the whole tracker. 63.5 s -> 6.86 s a session;
   **~4.5 days -> 9.6 hours**. Proved to be speed only: 13 tables, 37,182 rows, identical SHA-256 before
   and after. Parallelism deliberately NOT taken — the run stopped being the constraint.
+- **v1.9.80 — the replay's two real hot spots, found by measuring and not by reading** (2026-08-03;
+  findings 358–360; no decision, no migration, no config key): generation 2's rate climbed again, and the
+  compelling answer from READING the code — `ComputeCash`, already named "genuinely O(N²)" by v1.9.78 —
+  appeared in **0 of 40** live stack samples. The real 65 % was `LatestEquity` scanning every historical
+  row per population per session (242,400 and growing 650 a session) and `DataQualityFlagStore.Save`
+  issuing one `SaveChanges` per security across ~2,100 flags a day — the THIRD instance of the defect
+  findings 354 and 357 removed elsewhere. Proved unchanged against the live run rather than a fixture:
+  a snapshot at session 1,281 continued by both binaries over the same 20 sessions, **5,521,912 rows
+  across 11 tables at matching SHA-256**, the only difference a cadence re-drive that the snapshot
+  boundary caused and `DailyPipeline`'s documented recovery path explains. **finding 360** retracts this
+  pass's own 24.30 s/session and 4.4-day figures: `dotnet-stack` suspends its target, and forty samples
+  plus a test suite plus a 3.9 GB copy were charged to the thing being timed — clean baseline 7–10 s.
 - The mockups were consolidated into the single `alphalab_ux_mockups.html` in the v1.9.21/v1.9.22 passes
   (the earlier per-topic and v2 files are gone; the consolidated file gained the UX-14 paired-comparison block
   and the slate-grey replay tokens in v1.9.22). SCHEMA received its first post-v1.9.1 edit in v1.9.7
