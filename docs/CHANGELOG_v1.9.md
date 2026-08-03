@@ -2932,3 +2932,29 @@ The generation-2 freeze ran from a Release build of **merged main** (`0e19809`),
 **The report was regenerated in place**, the v1.9.50 pattern: the diff is precisely two lines — the `Generated:` timestamp and `Config rows frozen this run:` moving from *"(none — report-only…)"* to the four key names. This time **the pre-freeze version IS in git history** (at `0e19809`), which is the correction finding 362 asked for one pass earlier: the on-disk sha256 matches the `Calibration.ReportRef` row byte for byte, and the superseded version is a diff rather than a deletion.
 
 **What this changes.** The detectability gate now resolves generation 2's curves instead of generation 1's contaminated ones. The admissible band is live at **[6.95 %, 32 %]/yr**, and every subsequent admission decision is made against noise the v1.9.77 data fixes cut by roughly two-thirds — rather than against the numbers finding 336 found the gate closed on.
+
+## v1.9.84 — the post-generation-2 staleness sweep: rectified in place, not annotated (finding 364)
+
+*Recorded 2026-08-03. Branch `docs/v1.9.84-post-gen2-staleness`. No decision, no config value, no migration. `check-register` green at 121 rows. Tests 1,137 → **1,138** (one added).*
+
+Generation 2 did not just produce numbers; it **falsified statements that were live in the corpus**. The operator's instruction was explicit: rectify them, do not layer amendments on top. This pass is that sweep, and the boundary it draws is the substantive part.
+
+### What was rectified
+
+**MASTER §20.3 — an instruction with no answer.** It said the arena's `floor_unreachable` state *"must be re-read, not assumed"*. It has now been re-read: α\*(10 y) = **6.947 %/yr** on the version-2 curves, so the gate ADMITS against a live band of [6.95 %, 32 %]/yr. The replacement text also says to read the `Calibration.DetectionPower` row rather than the sentence, because the band is a property of whichever generation is frozen — which stops this same sentence going stale again at generation 3.
+
+**The Phase-6 PROMPT — the most dangerous of the lot, and the reason "prompts" were called out separately.** It still instructed a builder that *"the detectability gate is CLOSED at the configured horizon, so no candidate is admissible until generation 2"*, and it **contradicted itself** on the harness: one sentence said three input tiers, a later one said *"Two tiers inside 'covered'"*. It also carried *"Two questions stay open for the build"* that D117 settled, and told the reader to *"bundle them into one fresh calibration generation"* — a generation that has since run. A stale reference doc misleads; a stale PROMPT gets executed. Rewritten to state the discharged ordering, the open gate, the three tiers with `derived-band` correctly classified (finding 340), and D117's settlement of how a recomputed answer counts.
+
+**The Phase-6 PREREQUISITES.** Finding 285 is FIXED (D118, v1.9.74) and generation 2 is the confirmation that was pre-registered for it — the whole run was computed under the corrected alpha, discharging the caveat attached to generation 1's freeze. Finding 280 is **still open** and generation 2 settled what it is NOT: on noise cut by two thirds, `joint_false_alarm` is still 50/50 and survival moved 28 % → 27 %, so the misfire is a monitor defect independent of the contamination. Both candidate knobs were measured out (v1.9.73/75); the remedy is behavioural and is not chosen here.
+
+**PROGRESS** — the `gate is CLOSED` operational fact, the finding-348 plateau table, the CONTAMINATED warning, the OWED bullet's *"generation 2 … the caveat stands"*, and the D106 harness's *"queued, not built"*. Corrected in the ledger's own house style: struck through with the correction beside it, because PROGRESS **is** the historical record and silently deleting what it once said would defeat its purpose.
+
+**A test that documented a false operational fact.** `FX-DetectabilityGate-LiveCurveShape` claimed to pin *"the arena's OWN frozen curves"*. It seeds a FIXTURE copy of generation 1's shape, so it passed and would have gone on passing — while asserting in prose something no longer true. Renamed to `…Generation1Shape…`, re-documented as history, and **retained with its numbers unchanged**, because the `floor_unreachable` BRANCH is permanent machinery that another arena or a future generation can land on. Its live counterpart is new: `FX-DetectabilityGate-Generation2Shape-FloorReachable`, which pins α\* = 6.947 %/yr at the D121 horizon **and** that the same curves are still unreachable at three years — D121's entire content in one assertion.
+
+**MANIFEST** gained the v1.9.79–v1.9.84 revision entries it was missing, and a duplicate v1.9.80 entry was removed.
+
+### finding 364 — what was deliberately NOT rewritten, and why
+
+**Archives are evidence and were left alone**: the CHANGELOG's history, and the dated calibration reports under `docs/calibration/`. Rewriting them would make the corpus internally tidy and externally worthless — the same principle v1.9.79 stated and v1.9.82's finding 362 broke. A record of what the lab believed on 2026-08-02 is not stale; it is the reason anyone can check whether the lab's beliefs improved.
+
+The distinction this pass applies: **a document that TELLS you what to do must be current; a document that RECORDS what happened must not be edited to look current.** MASTER's prose, the build prompts, TEST_PLAN and the test suite are the first kind. The CHANGELOG, the calibration reports, and PROGRESS's struck-through entries are the second.
