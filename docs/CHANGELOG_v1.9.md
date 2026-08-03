@@ -2916,3 +2916,19 @@ The reading that selected it was done in v1.9.46 **while this check was passing 
 The pre-D103 calibration report (sha256 `1b7197df578f`, generated 17:24:53Z) recorded the FAILING state. It was **untracked**, and re-running verification overwrote it at the same path. It exists nowhere on disk or in git.
 
 This is the *"an archive that is rewritten stops being evidence"* rule from v1.9.79, violated by the person who quoted it. The correct order was: commit the artefact, then regenerate. What survives is transcription — the pre-D103 row is recorded in the table above, and the run's other check values were identical across both reports (only the one repaired metric moved). The generation-2 report is now **tracked**, so the next regeneration is a diff rather than a deletion.
+
+## v1.9.82 (cont.) — the freeze landed
+
+*Recorded 2026-08-03T19:22:58Z. Branch `docs/v1.9.82-freeze-landed`. No code, no decision, no migration.*
+
+The generation-2 freeze ran from a Release build of **merged main** (`0e19809`), deliberately: a sign-off artefact produced by unreviewed code would rest on logic that could still change in review. **0 sessions recomputed** — 5,031 already-committed skipped — so the freeze cost about a minute, exactly as the D103 framing predicted a post-replay-stage change would.
+
+**Four config rows frozen, append-only at version 2** (`2026-08-03T19:22:58Z`): `Monitor.S3.PNoiseCurve.daily` · `Monitor.S3.PEdgeCurve.daily` · `Calibration.DetectionPower` · `Calibration.ReportRef` (report sha256 `15048946be22…`).
+
+**`Monitor.S6.AutoRetireEvals` was NOT re-seeded — checked, not assumed.** It holds exactly ONE version, still v1 from the generation-1 freeze. D98 seeds the S6 patience knob from the FIRST freeze only; a second seeding would have silently re-tuned the monitor against a fresh generation, which is the rule-8 hazard wearing a maintenance disguise. The DB was queried for the version count rather than the log being trusted.
+
+**`AllGreen=True` over the D107 gating set.** The two reported-only failures — `joint_false_alarm` at 50/50 and `would_be_edge_survival_5y` at 27 % — are archived evidence and did not gate, exactly as D107 specifies. They remain open as finding 280's substance.
+
+**The report was regenerated in place**, the v1.9.50 pattern: the diff is precisely two lines — the `Generated:` timestamp and `Config rows frozen this run:` moving from *"(none — report-only…)"* to the four key names. This time **the pre-freeze version IS in git history** (at `0e19809`), which is the correction finding 362 asked for one pass earlier: the on-disk sha256 matches the `Calibration.ReportRef` row byte for byte, and the superseded version is a diff rather than a deletion.
+
+**What this changes.** The detectability gate now resolves generation 2's curves instead of generation 1's contaminated ones. The admissible band is live at **[6.95 %, 32 %]/yr**, and every subsequent admission decision is made against noise the v1.9.77 data fixes cut by roughly two-thirds — rather than against the numbers finding 336 found the gate closed on.
