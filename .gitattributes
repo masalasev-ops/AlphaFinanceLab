@@ -1,1 +1,6 @@
 * text=auto eol=lf
+
+# Calibration reports are SIGN-OFF ARTEFACTS whose sha256 is frozen into Calibration.ReportRef
+# (D56/D98). Line-ending normalisation rewrites those bytes, so the frozen hash stops matching the
+# committed file and the binding becomes decorative (finding 363). Store them byte-for-byte.
+docs/calibration/** -text
