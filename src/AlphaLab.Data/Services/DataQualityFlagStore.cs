@@ -2,6 +2,9 @@ using AlphaLab.Data.Entities;
 
 namespace AlphaLab.Data.Services;
 
+/// <summary>One security's gate findings — the unit of the batch save (finding 358).</summary>
+public readonly record struct SecurityFlags(long? SecurityId, IReadOnlyList<QualityFlag> Flags);
+
 /// <summary>
 /// Persists FR-6 gate findings into <c>data_quality_flags</c> (D77) and reads them back per run. The
 /// gate (<see cref="DataQualityGate"/>) is PURE and produces symbol-keyed <see cref="QualityFlag"/>s;
@@ -16,31 +19,56 @@ public interface IDataQualityFlagStore
     /// warn and reject flags (the audit trail). Returns the number of rows written.</summary>
     int Save(long runId, long? securityId, IReadOnlyList<QualityFlag> flags, string observedAt);
 
+    /// <summary>
+    /// Append MANY securities' flags under one run in a SINGLE round-trip (finding 358). The per-security
+    /// overload saves once per call, so a pipeline day that flags hundreds of securities issued hundreds
+    /// of SaveChanges, and EVERY one of them re-ran DetectChanges over everything already tracked that
+    /// day — the same defect finding 354 removed from equity points and finding 357 from the ledger
+    /// reads, a third time. Rows are appended in the order given, so <see cref="GetForRun"/>'s
+    /// insertion-order contract is unchanged. Returns the total number of rows written.
+    /// </summary>
+    int Save(long runId, IReadOnlyList<SecurityFlags> batch, string observedAt);
+
     /// <summary>All flags recorded under a run, in insertion order.</summary>
     IReadOnlyList<DataQualityFlagRow> GetForRun(long runId);
 }
 
 public sealed class DataQualityFlagStore(AlphaLabDbContext db) : IDataQualityFlagStore
 {
-    public int Save(long runId, long? securityId, IReadOnlyList<QualityFlag> flags, string observedAt)
+    // The single-security call is the batch of one: ONE definition of the flag→row mapping, so the two
+    // entry points can never drift into writing different rows for the same flag.
+    public int Save(long runId, long? securityId, IReadOnlyList<QualityFlag> flags, string observedAt) =>
+        Save(runId, [new SecurityFlags(securityId, flags)], observedAt);
+
+    public int Save(long runId, IReadOnlyList<SecurityFlags> batch, string observedAt)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(observedAt);
-        foreach (var f in flags)
+        ArgumentNullException.ThrowIfNull(batch);
+
+        var written = 0;
+        foreach (var (securityId, flags) in batch)
         {
-            db.DataQualityFlags.Add(new DataQualityFlagRow
+            foreach (var f in flags)
             {
-                RunId = runId,
-                SecurityId = securityId,
-                Symbol = f.Symbol,
-                Date = f.Date,
-                Issue = IssueToken(f.Issue),
-                Severity = SeverityToken(f.Severity),
-                Detail = f.Detail,
-                ObservedAt = observedAt
-            });
+                db.DataQualityFlags.Add(new DataQualityFlagRow
+                {
+                    RunId = runId,
+                    SecurityId = securityId,
+                    Symbol = f.Symbol,
+                    Date = f.Date,
+                    Issue = IssueToken(f.Issue),
+                    Severity = SeverityToken(f.Severity),
+                    Detail = f.Detail,
+                    ObservedAt = observedAt
+                });
+                written++;
+            }
         }
-        db.SaveChanges();
-        return flags.Count;
+
+        // ONE SaveChanges for the whole day (finding 358) — and only when there is something to write, so
+        // an all-clean day does not pay a DetectChanges pass for zero rows (the finding 354 precedent).
+        if (written > 0) db.SaveChanges();
+        return written;
     }
 
     public IReadOnlyList<DataQualityFlagRow> GetForRun(long runId) =>

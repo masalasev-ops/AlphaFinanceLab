@@ -1,5 +1,6 @@
 using AlphaLab.Data;
 using AlphaLab.Data.Entities;
+using Microsoft.EntityFrameworkCore;
 
 namespace AlphaLab.Evaluation.Populations;
 
@@ -51,6 +52,33 @@ public sealed class ControlEquityWriter(AlphaLabDbContext db)
 
         if (toAdd.Count > 0) db.ControlEquity.AddRange(toAdd);
         db.SaveChanges();
+    }
+
+    /// <summary>
+    /// Every member's equity AS AT one specific prior session — the fast path for the prior-equity seed
+    /// (finding 359).
+    ///
+    /// <see cref="LatestEquity"/> asks for every row older than the target day and groups it down to the
+    /// newest per member, so its cost grows with the entire run behind it: by session 1,178 that was
+    /// ~242k rows scanned per population per session, and the table gains ~650 rows every session — the
+    /// dominant term in a replay day (42.5% of sampled stacks). A day's rows are written by ONE AddRange
+    /// inside that day's write transaction, so they are all-or-nothing: if the prior session has any row
+    /// it has all of them, and one seek answers the question that a full scan was being used for.
+    ///
+    /// An empty result must NOT be read as inception — that is the caller's job to handle by falling back
+    /// to the full scan, so a genuine gap in history still carries equity forward instead of silently
+    /// resetting members to starting cash (rule 10, fail closed).
+    ///
+    /// AsNoTracking: these rows are read to seed a computation and are never mutated — only TODAY's rows
+    /// are updated, by <see cref="Write"/>, and those are a different key range (finding 357's reasoning).
+    /// </summary>
+    public IReadOnlyDictionary<int, decimal> EquityAt(long populationId, string priorSession, string runKind = RunKindLive)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(priorSession);
+        return db.ControlEquity
+            .AsNoTracking()
+            .Where(e => e.PopulationId == populationId && e.RunKind == runKind && e.AsOf == priorSession)
+            .ToDictionary(e => e.MemberIndex, e => e.Equity);
     }
 
     /// <summary>The latest persisted equity per member for a population at or before <paramref name="asOf"/>
