@@ -172,11 +172,13 @@ public class DetectabilityGateTests
         Assert.Null(analyticOnly.Details.EmpiricalAlphaStarAnn);
     }
 
-    /// <summary>The sp500 arena's ACTUAL frozen C-1 shape as of the 2026-07-31 calibration: the four
-    /// monthly ladder rungs with their measured P(promoted) at 3y/15y/20y. Knots are the real
-    /// interpolation anchors, so this fixture reproduces the live numbers exactly rather than a
-    /// convenient caricature of them.</summary>
-    private static void SeedLiveCurveShape(AlphaLab.Data.AlphaLabDbContext db)
+    /// <summary>The sp500 arena's frozen C-1 shape as of the **2026-07-31 (generation 1)** calibration:
+    /// the four monthly ladder rungs with their measured P(promoted) at 3y/15y/20y. Knots are the real
+    /// interpolation anchors, so this fixture reproduces those numbers exactly rather than a convenient
+    /// caricature of them. **Superseded as the arena's live shape by generation 2** (config version 2,
+    /// 2026-08-03) — see <see cref="SeedGeneration2CurveShape"/>. Kept because the branch it exercises
+    /// (`floor_unreachable`) is permanent machinery, not a property of this arena.</summary>
+    private static void SeedGeneration1CurveShape(AlphaLab.Data.AlphaLabDbContext db)
     {
         const string json = """
             { "alphas_ann_pct": [2, 4, 8, 16],
@@ -195,21 +197,26 @@ public class DetectabilityGateTests
     }
 
     /// <summary>
-    /// **Finding 336, pinned.** The `+∞` branch was tested from 4.9 — but only against a SYNTHETIC curve
-    /// set, so nothing ever asserted what the arena's OWN frozen curves do at its OWN configured horizon.
-    /// They land on that branch: at `Power = 0.80` / `Horizon = 3y` the best simulated edge (16%/yr)
-    /// reaches only P=0.42, so α* is unreachable, the floor is +∞, and EVERY pre-registered candidate is
-    /// refused. That is D89 behaving correctly and is not changed here; what this fixture prevents is the
-    /// fact being invisible to the suite again. The same curves DO clear at a 15-year horizon — which is
-    /// what makes it a statement about patience rather than about the machinery being broken.
+    /// **Finding 336, pinned — on the GENERATION-1 curve shape, which is now HISTORY.**
+    ///
+    /// When written this fixture reproduced the arena's live frozen curves. It no longer does: generation 2
+    /// froze at config version 2 on 2026-08-03 and its shape is pinned by
+    /// <see cref="FX_DetectabilityGate_Generation2Shape_FloorReachable_AtTheD121Horizon"/>. This test is
+    /// RETAINED and its numbers are deliberately unchanged, because what it pins is the `floor_unreachable`
+    /// BRANCH — that at `Power = 0.80` with no rung reaching it, α* is `+∞` and every pre-registered
+    /// candidate is refused rather than admitted on hope. That branch must keep working whether or not this
+    /// arena is currently on it; a future arena, or a future generation, can land there again.
+    ///
+    /// Read it as: "these are the numbers finding 336 measured, and this is what the gate does with them."
+    /// Not as a statement about what the sp500 arena admits today.
     /// </summary>
     [Fact]
-    public void FX_DetectabilityGate_LiveCurveShape_FloorUnreachable_AtConfiguredHorizon()
+    public void FX_DetectabilityGate_Generation1Shape_FloorUnreachable_AtTheThenConfiguredHorizon()
     {
         using var arena = new EvalArena();
         using var db = arena.Open();
         SeedSigma(db, sigma: 0.0001);   // a tiny analytic floor, so the EMPIRICAL end is what binds
-        SeedLiveCurveShape(db);
+        SeedGeneration1CurveShape(db);
 
         // ---- At the configured 3-year horizon: nothing is admissible, for a reason that is NOT the claim.
         var refused = Assert.Throws<DetectabilityRefusedException>(
@@ -231,6 +238,67 @@ public class DetectabilityGateTests
         Assert.Equal(DetectionCurves.CeilingApplied, admitted.Details.CeilingState);
     }
 
+    /// <summary>The sp500 arena's LIVE frozen C-1 shape: **generation 2**, config version 2, frozen
+    /// 2026-08-03T19:22:58Z. Same four rungs, measured on noise the v1.9.77 data fixes cut from 22.04 %/yr
+    /// tracking error to ~8 %/yr. Knots at 3y (756), 10y (2520) and the 20y terminal (5019).</summary>
+    private static void SeedGeneration2CurveShape(AlphaLab.Data.AlphaLabDbContext db)
+    {
+        const string json = """
+            { "alphas_ann_pct": [2, 4, 8, 16],
+              "curves": {
+                "2":  { "knots": [ { "t": 21, "p_promoted": 0.0 }, { "t": 756, "p_promoted": 0.04 }, { "t": 2520, "p_promoted": 0.14 }, { "t": 5019, "p_promoted": 0.18 } ] },
+                "4":  { "knots": [ { "t": 21, "p_promoted": 0.0 }, { "t": 756, "p_promoted": 0.14 }, { "t": 2520, "p_promoted": 0.52 }, { "t": 5019, "p_promoted": 0.70 } ] },
+                "8":  { "knots": [ { "t": 21, "p_promoted": 0.0 }, { "t": 756, "p_promoted": 0.40 }, { "t": 2520, "p_promoted": 0.90 }, { "t": 5019, "p_promoted": 1.00 } ] },
+                "16": { "knots": [ { "t": 21, "p_promoted": 0.0 }, { "t": 756, "p_promoted": 0.50 }, { "t": 2520, "p_promoted": 0.98 }, { "t": 5019, "p_promoted": 1.00 } ] }
+              } }
+            """;
+        db.Config.Add(new ConfigRow
+        {
+            Key = CalibratedKeys.DetectionPower, ValueJson = json, Version = 1, ChangedOn = "2026-08-03",
+        });
+        db.SaveChanges();
+    }
+
+    /// <summary>
+    /// **The arena's CURRENT operational state, pinned (v1.9.82).** Generation 2 reopened the gate that
+    /// finding 336 found closed, and this is the fixture that keeps that fact visible to the suite — the
+    /// same job its generation-1 sibling did for the closed state.
+    ///
+    /// At the D121 horizon of TEN years the 8 %/yr rung reaches P = 0.90, so α* interpolates to **≈ 6.95 %/yr**
+    /// against D116's 32 %/yr ceiling: a live admissible band of roughly [6.95 %, 32 %]. The same curves are
+    /// still `floor_unreachable` at THREE years, which is the whole content of D121 — the horizon, not the
+    /// data, is what decides whether a real effect can be adjudicated at all.
+    ///
+    /// The 6.95 % figure is also the check on D121 itself: the horizon was pre-registered from the closed
+    /// form (`z·TE/√H` ≈ 7.08 %/yr) before any of these curves existed.
+    /// </summary>
+    [Fact]
+    public void FX_DetectabilityGate_Generation2Shape_FloorReachable_AtTheD121Horizon()
+    {
+        using var arena = new EvalArena();
+        using var db = arena.Open();
+        SeedSigma(db, sigma: 0.0001);   // a tiny analytic floor, so the EMPIRICAL end is what binds
+        SeedGeneration2CurveShape(db);
+
+        // ---- At D121's ten-year horizon the gate ADMITS, and the floor is a real number.
+        var tenYears = new DetectabilityGate(db, new GateOptions { DetectabilityHorizonYears = 10 });
+        var admitted = tenYears.Assess(0.10);
+        Assert.True(admitted.Admitted);
+        Assert.Equal(0.06947, admitted.Details!.EmpiricalAlphaStarAnn!.Value, 4);
+        Assert.Equal(0.32, admitted.Details.CeilingAnn!.Value, 6);
+        Assert.Equal(DetectionCurves.CeilingApplied, admitted.Details.CeilingState);
+
+        // A claim BELOW the floor is still refused — reopening the gate did not remove its lower end.
+        var tooSmall = Assert.Throws<DetectabilityRefusedException>(() => tenYears.Assess(0.02));
+        Assert.Equal(0.06947, tooSmall.Details.EmpiricalAlphaStarAnn!.Value, 4);
+
+        // ---- The SAME curves at three years: still unreachable. D121's content in one assertion.
+        var impatient = Assert.Throws<DetectabilityRefusedException>(
+            () => new DetectabilityGate(db, Gate).Assess(0.20));
+        Assert.Equal("floor_unreachable", impatient.Details.Reason);
+        Assert.True(double.IsPositiveInfinity(impatient.Details.FloorAnn));
+    }
+
     /// <summary>D116: the ceiling is `top rung × the ladder's own step` — 16 × (16/8) = 32%/yr here — and
     /// the boundary is INCLUSIVE: a claim equal to it is the last admissible one, not the first refused.</summary>
     [Fact]
@@ -239,7 +307,7 @@ public class DetectabilityGateTests
         using var arena = new EvalArena();
         using var db = arena.Open();
         SeedSigma(db, sigma: 0.0001);
-        SeedLiveCurveShape(db);
+        SeedGeneration1CurveShape(db);
         var gate = new DetectabilityGate(db, new GateOptions { DetectabilityHorizonYears = 15 });
 
         Assert.True(gate.Assess(0.32).Admitted);   // exactly the ceiling — admitted

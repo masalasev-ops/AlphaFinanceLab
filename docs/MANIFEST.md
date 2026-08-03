@@ -392,7 +392,9 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   this row back-filled at v1.9.77 — the pass itself omitted it): the C-1 curves measured at 1y/3y/5y/10y/15y/20y
   PLATEAU (2 %/yr is 0.10 at one year AND twenty), so patience is not the lever. **Marked CONTAMINATED the
   same day:** the noise the curves rest on carries a data defect, so the table stands as a direction only
-  until generation 2 re-derives it (the v1.9.77 diagnosis is the follow-through).
+  until generation 2 re-derives it (the v1.9.77 diagnosis is the follow-through). **RE-DERIVED at v1.9.82
+  and the caveat LIFTED:** on clean curves α\*(10 y) = 6.947 %/yr, so the strong claim ("cannot adjudicate
+  at any patience") is REFUTED; the direction partly survives, since 2 %/yr is still 0.14 at ten years.
 - **v1.9.77 — the contamination's root cause: three defects, none of them the ones guessed** (2026-08-02;
   **D119** amends D86, **D120** new; findings 349–353): the store predates its own R2 guard (55 securities,
   1,763 >×10 jump-days — ACS flaps $0.15↔$25 and moved the EW basket ±33 %/day); the missing-bar freeze
@@ -409,18 +411,44 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   ingestion, each re-running `DetectChanges` over the whole tracker. 63.5 s -> 6.86 s a session;
   **~4.5 days -> 9.6 hours**. Proved to be speed only: 13 tables, 37,182 rows, identical SHA-256 before
   and after. Parallelism deliberately NOT taken — the run stopped being the constraint.
+- **v1.9.79 — the detectability horizon is TEN years, pre-registered before the curves existed**
+  (2026-08-02; **D121** amends D89; findings 356–357): the admission floor is `z·TE/√H`, so the horizon
+  decides what may be PROPOSED. At generation 1's contaminated noise the 3-year floor sat ABOVE D116's
+  32 %/yr ceiling — finding 336's closed gate, restated analytically. Ten years puts it near 7 %/yr.
+  **Chosen while the run was ~10 % through and no curve existed to tune against.** Also finding 357: the
+  ledger's reads were tracked, a third instance of the EF quadratic; and the contamination confirmed GONE
+  on live data (tracking error 38.80 → 9.49 %/yr, 17 impossible days → 0).
 - **v1.9.80 — the replay's two real hot spots, found by measuring and not by reading** (2026-08-03;
-  findings 358–360; no decision, no migration, no config key): generation 2's rate climbed again, and the
-  compelling answer from READING the code — `ComputeCash`, already named "genuinely O(N²)" by v1.9.78 —
-  appeared in **0 of 40** live stack samples. The real 65 % was `LatestEquity` scanning every historical
-  row per population per session (242,400 and growing 650 a session) and `DataQualityFlagStore.Save`
-  issuing one `SaveChanges` per security across ~2,100 flags a day — the THIRD instance of the defect
-  findings 354 and 357 removed elsewhere. Proved unchanged against the live run rather than a fixture:
-  a snapshot at session 1,281 continued by both binaries over the same 20 sessions, **5,521,912 rows
-  across 11 tables at matching SHA-256**, the only difference a cadence re-drive that the snapshot
-  boundary caused and `DailyPipeline`'s documented recovery path explains. **finding 360** retracts this
-  pass's own 24.30 s/session and 4.4-day figures: `dotnet-stack` suspends its target, and forty samples
-  plus a test suite plus a 3.9 GB copy were charged to the thing being timed — clean baseline 7–10 s.
+  findings 358–360; no decision): the compelling suspect from READING the code, `ComputeCash`, appeared in
+  **0 of 40** live stack samples. The real 65 % was `LatestEquity` scanning every historical row per
+  population per session and `DataQualityFlagStore` saving once per security. Proved unchanged against the
+  live run rather than a fixture: **5,521,912 rows across 11 tables at matching SHA-256**. **finding 360**
+  retracts this pass's own 24.30 s/session and 4.4-day figures — `dotnet-stack` suspends its target, so
+  forty samples plus a test suite plus a 3.9 GB copy were charged to the thing being timed.
+- **v1.9.81 — the post-generation-2 sequence, in one place instead of four** (2026-08-03; no decision):
+  the obligations that fire when generation 2 stops were already recorded, across four documents, with no
+  single reading of "what happens when the run finishes". Consolidated into PROGRESS's `NEXT` block.
+- **v1.9.82 — generation 2 lands, and D103 is taken at its own trigger** (2026-08-03; **D103** reserved
+  → active; findings 361–362): 5,031/5,031 sessions frozen. **The gate REOPENS — α\*(10 y) = 6.947 %/yr**
+  against generation 1's *unreachable*, giving a live band of **[6.95 %, 32 %]/yr**; detection at 4 %/yr
+  went 5/50 → 35/50. D121's theory-only prediction of ~7.08 % was met by measurement at 6.947 %. **D103's
+  trigger (b) fired exactly as written** (6/50 = 12 % against "8 %, or 4 or more of 50"), and the form taken
+  restores `CONFIG_REFERENCE`'s declared RATE: 12 % Fail → 2.6 % Pass, corroborated by the independently
+  implemented point-level metric reading 2.9 % on the same paths. Four config rows frozen at version 2;
+  `Monitor.S6.AutoRetireEvals` verified NOT re-seeded (D98, first freeze only). **finding 362:** the failing
+  report was regenerated in place before being committed, breaking the archive rule this corpus states.
+- **v1.9.83 — `Calibration.ReportRef` never verified against the repo** (2026-08-03; finding 363; no
+  decision): the Worker writes reports with CRLF and hashes those bytes, while `.gitattributes` normalises
+  them to LF — so the committed artefact has never hashed to the frozen value, **including generation 1's,
+  frozen 2026-07-31**. The row whose job is to make a freeze auditable was auditing nothing. Fixed with a
+  scoped `-text` rule and proved by round-trip: both reports deleted, restored via `git checkout`, both
+  hashes now reproduce.
+- **v1.9.84 — the post-generation-2 staleness sweep** (2026-08-03; no decision): every live statement the
+  run falsified, rectified in place rather than annotated — MASTER §20.3's "must be re-read" instruction
+  (now read), the Phase-6 PROMPT (which still said the gate was CLOSED and self-contradicted on the tier
+  count), PROGRESS's gate-CLOSED and finding-348 bullets, and the test whose documentation claimed to pin
+  "the arena's OWN frozen curves" while seeding generation 1's. Archives — the CHANGELOG's history, the
+  dated calibration reports — were deliberately NOT rewritten: they are evidence.
 - The mockups were consolidated into the single `alphalab_ux_mockups.html` in the v1.9.21/v1.9.22 passes
   (the earlier per-topic and v2 files are gone; the consolidated file gained the UX-14 paired-comparison block
   and the slate-grey replay tokens in v1.9.22). SCHEMA received its first post-v1.9.1 edit in v1.9.7
