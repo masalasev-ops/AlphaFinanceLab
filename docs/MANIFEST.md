@@ -343,7 +343,7 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   here), derived from the frozen C-1 row rather than authored, with three fail-open valves; the researcher's
   pack carries BOTH ends of the band (cp-1.0 → cp-1.1, prompt rs-1.0 → rs-1.1, taken while the store held zero
   proposals so no margin series lost comparability); and **finding 336** records that the arena's own frozen
-  curves put the gate on its `+∞` branch at the configured 3-year horizon — every registered candidate refuses
+  curves put the gate on its `+∞` branch at the then-configured 3-year horizon (D121 later set 10) — every registered candidate refuses
   until generation-2 recalibration, a fact no document had multiplied out. No threshold tuned, no migration.
 - **v1.9.72 — the recompute harness, built** (2026-08-02; D117 amends D106; findings 338–340): MASTER §25's
   D106 harness exists — score a monitor- or gate-rule change by re-deriving verdicts from the stored

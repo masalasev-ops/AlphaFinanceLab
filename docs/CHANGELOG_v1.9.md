@@ -2763,3 +2763,33 @@ Five regression tests pin the parts a future edit could silently break: the batc
 **Not done, deliberately:** no parallelism. It is available (15 idle cores) and the population/plant RNG is a pure hash of `(family seed, member index, security)` so it would stay deterministic — but the shared `BarFeatureView` memoises into plain `Dictionary` caches over an EF `DbContext`, neither of which is thread-safe, so it needs a pre-warm or an immutable day snapshot. At 9.6 hours the run is no longer the constraint, and that work would be optimising something that has stopped hurting. Recorded as available, not owed.
 
 **Also known and NOT fixed here:** `ComputeCash` re-reads an account's entire trade and cash-event history on every account-day (458 M row materialisations across a run vs 182 k accumulated incrementally — 2,515x). It is genuinely O(N²) and is what dragged generation 1 from 56 s to 180 s per session late in the run. It is left alone because the profiler never pointed at it: the three heavy accounts are 3 of 403, and after the fixes above the whole session is 6.86 s. Fixing what a measurement did not implicate is how the previous 1.2x disappointment gets repeated.
+
+## v1.9.79 — the horizon is ten years, pre-registered before the curves existed (D121; finding 356)
+
+*Recorded 2026-08-02. Branch `feat/v1.9.79-detectability-horizon`. **D121 amends D89** (which D116 also amends). No migration; one config default. `check-register` green at 121 rows.*
+
+### finding 356 — the reopened gate would have admitted only implausible claims
+Generation 2 exists to reopen the D89 gate that finding 336 found CLOSED. Before its curves landed, the band it would reopen TO was computable from theory alone, because the admission floor is `z x TE / sqrt(H)`:
+
+| horizon | floor at TE 6% | at TE 8% | at TE 10% |
+|---|---:|---:|---:|
+| 1 y | 15.4% | 22.4% | 28.0% |
+| 3 y | 8.9% | **12.9%** | 16.2% |
+| 5 y | 6.9% | 10.0% | 12.5% |
+| 10 y | 4.9% | **7.1%** | 8.9% |
+| 20 y | 3.4% | 5.0% | 6.3% |
+
+**This reproduces finding 336 independently.** At generation 1's contaminated noise (TE 22.04 %/yr) the 3-year floor is ~36 %/yr — above D116's 32 %/yr plausibility ceiling. A floor above the ceiling IS the closed gate: no claim can be simultaneously detectable and plausible. Finding 336 reached that empirically from the swept rungs; the same answer falls out of the closed form, which is a useful cross-check on both.
+
+**The defect it exposes is in the reopening, not the closure.** Generation 2's clean noise (~8 %/yr, v1.9.77) puts the 3-year floor at ~12.9 %/yr, so the gate opens — to the band **12.9–32 %/yr**. For a real equity strategy that band is entirely too-good-to-be-true. And its shape is perverse: the FLOOR pushes the researcher's claims UP by exactly the mechanism D116's ceiling was built to hold them DOWN. D116 closed the escalation channel from above; a high floor re-opens it from below, and the seat is squeezed into claiming implausibly to be admitted at all.
+
+### D121 — ten years
+The horizon encodes **how long the lab is willing to wait for a verdict**. That is a preference, not a fitted quantity, which is why it can be set deliberately rather than measured. Ten years puts the floor at ~7 %/yr, which admits realistic edges. D110 grades the researcher PER PROPOSAL at registration, so a longer horizon does not slow the learning loop — it only widens what may honestly be proposed.
+
+**Chosen BEFORE generation 2's curves were computed, deliberately.** The operator was shown the trade-off and the floors tabulated from theory, and pre-registered 10 years while the run was ~10 % complete and no curve existed to tune against. Choosing the horizon after seeing which value opens the gate would be picking a parameter by looking at the answer — amendment C1's prohibition, and the spirit of rule 8's *"never tune a live strategy against the monitor"*.
+
+**Costs no re-run.** The frozen `Calibration.DetectionPower` row stores the full `P(promoted by t)` knot curve, not a horizon-collapsed number, so the gate applies the horizon at decision time. Generation 2 was mid-flight and is unaffected — the gate does not run during a replay.
+
+**Test fallout, and what it says.** Three `DetectabilityGateTests` fixtures failed on the new default: they exercise REFUSAL, and a longer horizon lowers the floor until the candidates they refuse become admissible. The fix is not to weaken them but to pin their horizon explicitly at 3 — a refusal fixture must not drift every time the operator changes how long the lab will wait. The production default has its own pin (`D121_DetectabilityHorizon_DefaultsToTenYears`), which also asserts the `sqrt(H)` relationship the decision turns on.
+
+Swept for relational drift (rule 25): MASTER §20.3, BUILD_AND_PROMPTS FR-40, POST_PHASE8_PLAN and CONFIG_REFERENCE now state 10; the archived horizon study and the MANIFEST's v1.9.71 narrative keep their original text with same-line successor pointers, because an archive that is rewritten stops being evidence. MASTER §20.3's `floor_unreachable` sentence was also corrected: it asserted the arena IS on the `+infinity` branch, which was true of generation-1 curves at a 3-year horizon and is now two changes stale — it says WAS, and that the state must be re-read rather than assumed.

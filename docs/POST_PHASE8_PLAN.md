@@ -8,7 +8,7 @@ The existential risk for the lab is crowning a paper winner that is not a real w
 
 ## 2. Hooks that already exist when post-8 begins
 
-- Phase 4 detectability-at-admission gate (D89, FR-40, Gate.DetectabilityHorizonYears=3), refusing underpowered candidates at admission.
+- Phase 4 detectability-at-admission gate (D89, FR-40, Gate.DetectabilityHorizonYears=10 since D121, was 3), refusing underpowered candidates at admission.
 - Phase 4 seams: per-regime replay persistence (FX-ReplayPerRegime, FR-41, replay_regime_outcomes keyed to regime_episodes) feeding idea 3, and learn/validate partitioning (FX-ReplayPartition-NoLeak) feeding idea 6.
 - Phase 4.5 Signal Library (D91, FR-43..46): per-signal rank-IC record with trend flags, and the per-signal digest lines. The scheduled input to idea 6's evidence prior.
 - Phase 5 evidence-prior seam: swappable, disableable, placebo-able. The digest wires in here.

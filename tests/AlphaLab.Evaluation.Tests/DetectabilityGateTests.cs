@@ -13,7 +13,12 @@ namespace AlphaLab.Evaluation.Tests;
 /// </summary>
 public class DetectabilityGateTests
 {
-    private static readonly GateOptions Gate = new();   // Confidence .95, Power .80, horizon 3y
+    // Confidence .95, Power .80, and the horizon PINNED at 3y rather than inherited from the
+    // production default. These fixtures exercise REFUSAL, which needs a floor high enough to refuse
+    // with, so they must not move whenever the operator changes how long the lab is willing to wait
+    // (D121 made that a policy choice, not a constant). The production default has its own pin:
+    // D121_DetectabilityHorizon_DefaultsToTenYears.
+    private static readonly GateOptions Gate = new() { DetectabilityHorizonYears = 3 };
 
     private static CandidateSpec Spec(string id) => new(id, "momentum", "{}", "{}", 21);
 
@@ -282,5 +287,27 @@ public class DetectabilityGateTests
         Assert.True(noStep.Admitted);
         Assert.Null(noStep.Details!.CeilingAnn);
         Assert.Equal(DetectionCurves.CeilingNoStep, noStep.Details.CeilingState);
+    }
+
+    /// <summary>
+    /// D121 (v1.9.79): the horizon is 10 years, and it is load-bearing rather than incidental. The
+    /// admission floor is z*TE/sqrt(H), so the horizon decides what may be PROPOSED at all: at 3 years
+    /// and generation 2's clean noise the floor is ~13 %/yr against D116's 32 %/yr ceiling, an
+    /// admissible band that is entirely too-good-to-be-true for a real equity strategy — the floor
+    /// pushing claims UP exactly as the ceiling holds them down. Pinned here because a silent revert
+    /// would re-open that escalation channel from below without anything failing.
+    /// </summary>
+    [Fact]
+    public void D121_DetectabilityHorizon_DefaultsToTenYears()
+    {
+        Assert.Equal(10, new GateOptions().DetectabilityHorizonYears);
+
+        // And the floor really does move with it: halving-ish the horizon raises the minimum
+        // detectable effect by sqrt(H) — the relationship the decision turns on.
+        static double Floor(double te, int h) =>
+            (1.959963985 + 0.8416212336) * te / Math.Sqrt(h);
+        Assert.True(Floor(0.08, 10) < Floor(0.08, 3));
+        Assert.Equal(0.071, Floor(0.08, 10), 3);   // ~7 %/yr at the chosen horizon
+        Assert.Equal(0.129, Floor(0.08, 3), 3);    // ~13 %/yr at the old one
     }
 }

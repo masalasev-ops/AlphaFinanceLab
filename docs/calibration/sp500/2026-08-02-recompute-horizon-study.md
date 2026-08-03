@@ -104,7 +104,7 @@ Unchanged: this rule change does not alter how much sooner anti-predictive plant
 
 ### What each candidate PATIENCE HORIZON would buy
 
-*`Gate.DetectabilityHorizonYears` is what puts the floor out of reach (finding 336), and it is an appsettings value rather than a spec parameter — so without this table the only way to ask "what would 5 years buy?" is to EDIT the threshold and re-run, which is the shape of change rule 8 exists to make deliberate. Reading it off a table keeps the question separate from the act. Current setting: **3 years**.*
+*`Gate.DetectabilityHorizonYears` is what puts the floor out of reach (finding 336), and it is an appsettings value rather than a spec parameter — so without this table the only way to ask "what would 5 years buy?" is to EDIT the threshold and re-run, which is the shape of change rule 8 exists to make deliberate. Reading it off a table keeps the question separate from the act. Current setting: **3 years**.* *(SUPERSEDED 2026-08-02 by D121: the horizon is now **10 years**. This report is the archived study that informed it and is deliberately left as written.)*
 
 | horizon | P(promoted) per rung, recomputed | α\*(H) frozen | α\*(H) recomputed |
 |---|---|---|---|
