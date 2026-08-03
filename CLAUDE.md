@@ -91,6 +91,11 @@ money as strings/minor-units (never floats).
     client. UX tests are read-model unit tests (framework-agnostic), not browser tests.
     A forward-screen read-model can never contain a replay row.
 19. The daily pipeline and catch-up run ONLY in AlphaLab.Worker, the sole DB writer (D59).
+    "Sole writer" is about SCHEDULED and LONG work, which is D59's actual scope: the Api's command
+    endpoints DO perform small, bounded writes (create candidate, journal outcome, admin action),
+    taking the write lock briefly and never overlapping a daily run — they check the Worker's
+    run_in_progress flag and 409 rather than race it. Stated because the shorthand is stronger than
+    the decision, and a reader who trusts the shorthand would "fix" conformant code.
     Default Worker.Mode=OnDemand (D61): a launch runs catch-up through the last completed
     session and exits; Scheduled mode (Quartz, resident) is an optional config flip. Both
     modes do identical work via catch-up (D47) — the trigger is the only difference.
