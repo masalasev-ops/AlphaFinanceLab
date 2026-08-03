@@ -2793,3 +2793,18 @@ The horizon encodes **how long the lab is willing to wait for a verdict**. That 
 **Test fallout, and what it says.** Three `DetectabilityGateTests` fixtures failed on the new default: they exercise REFUSAL, and a longer horizon lowers the floor until the candidates they refuse become admissible. The fix is not to weaken them but to pin their horizon explicitly at 3 — a refusal fixture must not drift every time the operator changes how long the lab will wait. The production default has its own pin (`D121_DetectabilityHorizon_DefaultsToTenYears`), which also asserts the `sqrt(H)` relationship the decision turns on.
 
 Swept for relational drift (rule 25): MASTER §20.3, BUILD_AND_PROMPTS FR-40, POST_PHASE8_PLAN and CONFIG_REFERENCE now state 10; the archived horizon study and the MANIFEST's v1.9.71 narrative keep their original text with same-line successor pointers, because an archive that is rewritten stops being evidence. MASTER §20.3's `floor_unreachable` sentence was also corrected: it asserted the arena IS on the `+infinity` branch, which was true of generation-1 curves at a 3-year horizon and is now two changes stale — it says WAS, and that the state must be re-read rather than assumed.
+
+### finding 357 — the same EF tracking defect, one layer down in the ledger (fixed in this pass)
+v1.9.78 removed `SaveChanges`/`DetectChanges` quadratics from the plant step and from ingestion, and measured the result on a 22-session window where the accounts have almost no history. That window could not see this one. `LedgerStore` had **zero** `AsNoTracking` calls, so `GetTrades` and `GetCashEvents` — which `ComputeCash` calls once per account PER DAY, and which read the account's ENTIRE accumulated history — put every trade row into the change tracker on every session. Each later `SaveChanges` in that day then re-scanned all of it.
+
+Measured live on generation 2, which is the only place with enough history to show it: **11.53 s/session at 450 → 13.41 s at 600 → 15.65 s at 780 → 20.30 s at 880**, projecting 23 h and still climbing. v1.9.78's note said the `ComputeCash` O(N²) was left alone because "the profiler never pointed at it" — correct at the time and wrong by session 880, which is the honest reading: a profile taken on a short window measures a short window. `AsNoTracking` on both reads (provably safe — the ledger is append-only and nothing mutates a trade or cash-event row after reading it) took the rate to **10.30 s/session, a 1.6x recovery**, and the run resumed from its 889 committed sessions rather than restarting.
+
+### The contamination is confirmed GONE on live data
+The generation-2 run passed the window that mattered. Over the identical span and the identical session count:
+
+| | tracking error | days with \|EW−CW\| > 5% |
+|---|---:|---:|
+| generation 1 (contaminated) | **38.80 %/yr** | **17** — incl. +33.11 %, +31.84 %, −24.68 % |
+| generation 2 (fixed) | **9.49 %/yr** | **0** |
+
+That is the v1.9.77 exclusions and D119 marking fix validated against a live re-run rather than an offline reconstruction: a 4x noise reduction and every impossible day gone. 9.49 %/yr is plausible for this span, which contains the 2008 crisis and so genuinely carries elevated equal-weight dispersion.

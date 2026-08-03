@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using AlphaLab.Core.Domain;
 using AlphaLab.Core.Ledger;
 using AlphaLab.Data.Entities;
@@ -217,10 +218,22 @@ public sealed class LedgerStore(AlphaLabDbContext db) : ILedgerStore
         return LedgerMapping.ToDomain(row);
     }
 
+    /// <summary>
+    /// The account's whole trade history, as immutable domain records.
+    ///
+    /// AsNoTracking (finding 357): these rows are read to COMPUTE with and are never mutated — the
+    /// ledger is append-only and every correction is a new row, so no write is lost by not tracking
+    /// them. `ComputeCash` calls this once per account PER DAY, so tracking put the account's entire
+    /// accumulated history into the change tracker on every session, and every later SaveChanges in
+    /// that day then re-scanned all of it in DetectChanges. That is what made a replay session's cost
+    /// grow with the history behind it (11.5s at session 450 -> 20.3s at session 880), which is the
+    /// same defect v1.9.78 removed from ingestion, one layer down.
+    /// </summary>
     public IReadOnlyList<Trade> GetTrades(long accountId, RunKind runKind)
     {
         var token = LedgerMapping.RunKindToken(runKind);
-        return db.Trades.Where(t => t.AccountId == accountId && t.RunKind == token)
+        return db.Trades.AsNoTracking()
+            .Where(t => t.AccountId == accountId && t.RunKind == token)
             .OrderBy(t => t.TradeId)
             .AsEnumerable()
             .Select(LedgerMapping.ToDomain)
@@ -237,10 +250,14 @@ public sealed class LedgerStore(AlphaLabDbContext db) : ILedgerStore
         return LedgerMapping.ToDomain(row);
     }
 
+    /// <summary>The account's whole cash-event history, as immutable domain records. AsNoTracking for
+    /// the same reason as <see cref="GetTrades"/> (finding 357) — read-to-compute, never mutated, and
+    /// read once per account per day by both `ComputeCash` and `SessionsSinceInception`.</summary>
     public IReadOnlyList<CashEvent> GetCashEvents(long accountId, RunKind runKind)
     {
         var token = LedgerMapping.RunKindToken(runKind);
-        return db.CashEvents.Where(c => c.AccountId == accountId && c.RunKind == token)
+        return db.CashEvents.AsNoTracking()
+            .Where(c => c.AccountId == accountId && c.RunKind == token)
             .OrderBy(c => c.EventId)
             .AsEnumerable()
             .Select(LedgerMapping.ToDomain)
