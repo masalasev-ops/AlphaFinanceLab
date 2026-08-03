@@ -524,7 +524,13 @@ public sealed class DailyPipeline(
         var points = new List<ControlEquityWriter.Point>();
         foreach (var (family, populationId) in familyMap)
         {
-            var prior = writer.LatestEquity(populationId, asOf, runKindToken);
+            // Seek the prior session's row set (finding 359) rather than scanning the population's whole
+            // history. Empty is NOT taken as inception: it falls back to the full scan, so a gap in
+            // history still carries equity forward instead of resetting members to starting cash.
+            IReadOnlyDictionary<int, decimal> prior = prevDate is null
+                ? new Dictionary<int, decimal>()
+                : writer.EquityAt(populationId, prevDate, runKindToken);
+            if (prior.Count == 0) prior = writer.LatestEquity(populationId, asOf, runKindToken);
             for (var m = 0; m < family.Size; m++)
             {
                 // Inception is decided PER MEMBER, not per family: a member with no prior equity is on its
@@ -542,12 +548,19 @@ public sealed class DailyPipeline(
         writer.Write(asOf, points, runKindToken);
     }
 
+    // ONE save for the whole day, never one per security (finding 358). A replay session flags ~2,100 rows
+    // across hundreds of securities; a SaveChanges per security made each of those re-run DetectChanges
+    // over everything already tracked that day, so the cost grew with the day's own writes. Same defect as
+    // finding 354 (equity points) and finding 357 (ledger reads). The batch preserves the loop's order, so
+    // the rows land in exactly the sequence — and therefore the flag_id order — they did before.
     private void PersistQualityFlags(long runId, StagedDay staged, string watermark)
     {
-        foreach (var s in staged.All.Where(s => s.Report.Flags.Count > 0))
-        {
-            flagStore.Save(runId, s.SecurityId, s.Report.Flags, watermark);
-        }
+        var batch = staged.All
+            .Where(s => s.Report.Flags.Count > 0)
+            .Select(s => new SecurityFlags(s.SecurityId, s.Report.Flags))
+            .ToList();
+
+        if (batch.Count > 0) flagStore.Save(runId, batch, watermark);
     }
 
     private void FinaliseRun(long runId, string runKind, string asOf)

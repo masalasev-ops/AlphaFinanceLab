@@ -2808,3 +2808,61 @@ The generation-2 run passed the window that mattered. Over the identical span an
 | generation 2 (fixed) | **9.49 %/yr** | **0** |
 
 That is the v1.9.77 exclusions and D119 marking fix validated against a live re-run rather than an offline reconstruction: a 4x noise reduction and every impossible day gone. 9.49 %/yr is plausible for this span, which contains the 2008 crisis and so genuinely carries elevated equal-weight dispersion.
+
+## v1.9.80 — the replay's two real hot spots, found by measuring and not by reading (findings 358–360)
+
+*Recorded 2026-08-03. Branch `perf/v1.9.80-replay-hotspots`. No decision, no migration, no config key. Pure performance: the output is proved unchanged on live data.*
+
+### The hypothesis that was wrong, and why that matters
+Generation 2's session rate was climbing again after v1.9.79's finding-357 fix. The obvious suspect was `ComputeCash`, which v1.9.78 had already named as "genuinely O(N²)" and deliberately left alone — it re-reads an account's entire trade and cash-event history on every account-day, and one of the three trading accounts now holds 23,726 of the 30,144 trades. Reading the code, it is the compelling answer.
+
+**A 40-sample live stack profile of the running worker put it in 0 of 40 samples.** The two real costs were elsewhere and account for 65 % of sampled stacks. Had the plan been executed as reasoned rather than as measured, the pass would have rewritten the cash-reconciliation path — the one piece of this system where an error is a silently wrong ledger — and bought nothing. v1.9.78 recorded the rule this pass had to re-learn: *"fixing what a measurement did not implicate is how the previous 1.2x disappointment gets repeated."*
+
+The reason the earlier profile missed these two and this one found them is not subtlety, it is history length: both defects scale with the run behind them, and both were invisible on the 22-session window v1.9.78 measured.
+
+### finding 359 — the prior-equity seed scanned the whole run (42.5 % of samples)
+`ControlEquityWriter.LatestEquity` answered "each member's latest equity before today" by selecting EVERY row older than the target day, grouping by member, and keeping the newest — `WHERE population_id = ? AND run_kind = ? AND as_of < ?`, then `GROUP BY member_index`.
+
+`control_equity` gains ~650 rows per session across four populations. By session 1,178 the query plan was `SEARCH control_equity USING COVERING INDEX (population_id=?)` — an index seek to the population, then a **scan of all 242,400 of its rows**, once per population per session, ~788,000 rows per session in total and growing linearly forever. That is a quadratic in the run's own length, and it was the single largest term in a replay day.
+
+`EquityAt` answers the same question with one seek of the prior session. That is legitimate for a specific structural reason: a day's rows are written by ONE `AddRange` inside that day's write transaction, so they are all-or-nothing — if the prior session has any row it has all of them.
+
+**The fallback is the whole safety argument.** An empty result is NOT read as inception; the caller falls back to the full scan. Without that, a gap in history would silently reset every member to starting cash — an optimisation quietly becoming a data-corruption bug (rule 10, fail closed). `Finding359_EquityAt_ReturnsEmpty_WhenThePriorSessionHasNoRows_SoTheCallerFallsBack` pins it, and asserts the carry-forward the fallback preserves.
+
+### finding 358 — the quality-flag save, once per security (22.5 % of samples)
+`DataQualityFlagStore.Save` called `SaveChanges()` per security, inside a loop over every flagged security. A replay session flags ~2,100 rows across hundreds of securities, so each save re-ran `DetectChanges` over the whole day's tracked graph — cost growing with the day's own writes.
+
+This is the **third instance of one defect**: finding 354 removed it from equity points, finding 357 from the ledger reads, and it was still here. The batch overload appends every security's flags and saves once, in the same order, so the `flag_id` sequence `GetForRun` promises is unchanged — asserted by writing the same flags both ways into two arenas and comparing field by field, rather than by asserting the batch is merely "correct".
+
+### The output is unchanged — proved against the live run, not a fixture
+The snapshot/branch method: one consistent SQLite-backup snapshot of the live arena at session 1,281 (2011-02-02), continued by the NEW binary while the live generation-2 run continued the same sessions on the OLD one. Same starting state, same 20 sessions (2011-02-03..2011-03-03), arguments identical to the live run — only the connection string differed.
+
+| table | rows | |
+|---|---:|---|
+| `data_quality_flags` | 3,343,272 | identical — **finding 358's table** |
+| `control_equity` | 845,650 | identical — **finding 359's table** |
+| `position_snapshots` | 643,142 | identical |
+| `equity_curve` | 524,303 | identical |
+| `overfitting_checks` | 96,240 | identical |
+| `trades` · `cash_events` · `decisions` · `runs` · `overfitting_status` · `allocation_log` | 69,305 | identical |
+| **total** | **5,521,912** | **matching SHA-256** |
+
+Surrogate `run_id`s are excluded from the hash for one unavoidable reason: the snapshot caught run 1282 in flight, so the copy's D72 self-heal marked it failed and re-ran the day as 1283, offsetting every later `run_id` by one. That is bookkeeping from restarting, not behaviour.
+
+**The one real difference, and what it turned out to be.** Three evaluation-written tables differed on exactly one date — live evaluated at 2011-02-02, the copy at 2011-02-03 — with all 60 earlier evaluation dates identical. The cadence gaps tell the story: `21, 21, 21, 21` on live against `21, 21, 21, 22` on the copy. The snapshot landed between session 1281's day-transaction commit and its evaluation, which `DailyPipeline` runs "AFTER the daily write commits, in its own transaction". The copy therefore inherited one outstanding evaluation and re-drove it on its next session — **exactly the documented recovery**: *"a cadence whose evaluation crashed is re-driven on the next launch rather than lost."* Excluding that one boundary date, all three tables are byte-identical. The comparison did not just clear the change; it exercised and confirmed the crash-recovery path.
+
+### finding 360 — the rate measurement was contaminated by the act of measuring it
+This pass reported a session rate of **24.30 s/session** and projected **4.4 days** to finish generation 2. Both were wrong, and the cause was the measurement, not the system.
+
+Bucketing the live run's per-session duration by wall clock separates the two cleanly:
+
+| UTC | s/session | concurrent activity |
+|---|---:|---|
+| 03:10–03:50 | 6.88 → 9.92 | none — clean |
+| 04:00–04:50 | 14.88, 13.71, 11.09, 9.09, 15.97, 13.44 | 40 `dotnet-stack` samples, the 1,132-test suite, a 3.9 GB DB copy, a Release build |
+
+`dotnet-stack report` **suspends** its target to walk the stacks. Forty samples, a full test suite and a 3.9 GB file copy were all charged to the thing being timed. The honest baseline is 7–10 s/session; the 4.4-day figure was roughly 2.5x pessimistic and should never have been quoted.
+
+**What survives the correction is the part that never depended on timing.** The growth is real and independently visible (6.88 → 9.92 across ~230 clean sessions). The *profile* is unaffected — contention changes how long work takes, not which stacks are executing. And finding 359's cost is a fact about the code readable from the query plan: 242,400 rows scanned per population per session, growing by 650 every session, whatever a stopwatch says. The fixes were justified by the plan and the profile; the ETA was not justified by anything.
+
+**The rule this leaves behind:** a wall-clock rate taken from a machine you are also profiling, testing, or copying 3.9 GB on is not a measurement of the system. Either quiesce the machine or attribute by wall-clock bucket before quoting a number — and never derive a multi-day projection from a window you were standing in.
