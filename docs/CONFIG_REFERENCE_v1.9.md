@@ -113,8 +113,11 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     "MinTrackDays": 63,
     "Confidence": 0.95, "Power": 0.80,
     "NwLagCapDays": 21,
-    "DetectabilityHorizonYears": 3                  // D89 (v1.9.35): the FR-40 detectability-at-admission gate refuses a candidate whose pre-registered
-                                                   // expected_effect_ann could not clear the NW-MDE within this horizon, calibrated against the C-1 detection-power curves
+    "DetectabilityHorizonYears": 10                 // D89 (v1.9.35), value amended by D121 (v1.9.79; was 3): the FR-40 detectability-at-admission gate refuses a candidate whose pre-registered
+                                                   // expected_effect_ann could not clear the NW-MDE within this horizon, calibrated against the C-1 detection-power curves.
+                                                   // The floor it implies is z*TE/sqrt(H): at 3y and clean noise that is ~13%/yr against D116's 32%/yr ceiling — an admissible band
+                                                   // that is entirely too-good-to-be-true, so the floor would push claims UP as the ceiling holds them down. 10y puts the floor at ~7%/yr.
+                                                   // Applied at gate-decision time against the frozen knot curve, so changing it needs no recalibration run.
   },
 
   "Populations": {                                 // D36

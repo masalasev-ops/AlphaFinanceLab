@@ -27,8 +27,18 @@ public sealed class GateOptions
     /// <summary>Bartlett-kernel lag cap L for the Newey–West long-run variance (D48). L = min(2·maxHorizon, this).</summary>
     public int NwLagCapDays { get; set; } = 21;
 
-    /// <summary>D89 (v1.9.35)/FR-40: the detectability-at-admission horizon — a candidate whose
-    /// pre-registered expected effect could not clear the NW-MDE within this many years (net of the
-    /// trials-budget cost it adds) is refused at creation (Phase 4).</summary>
-    public int DetectabilityHorizonYears { get; set; } = 3;
+    /// <summary>
+    /// D89 (v1.9.35)/FR-40: the detectability-at-admission horizon — a candidate whose pre-registered
+    /// expected effect could not clear the NW-MDE within this many years (net of the trials-budget cost
+    /// it adds) is refused at creation (Phase 4).
+    ///
+    /// **10 since D121 (v1.9.79); 3 as originally issued.** The floor this implies is `z·TE/√H`, so the
+    /// horizon decides what may be proposed at all. At 3 years and generation 2's clean noise the floor
+    /// is ~13 %/yr against D116's 32 %/yr ceiling — a band that is entirely too-good-to-be-true for a
+    /// real equity strategy, so the FLOOR would push the researcher's claims up exactly as the CEILING
+    /// holds them down. Ten years puts it at ~7 %/yr, which admits realistic edges. Pre-registered by
+    /// the operator BEFORE generation 2's curves existed: choosing it afterwards would be picking the
+    /// value that opens the gate, which is tuning against the monitor.
+    /// </summary>
+    public int DetectabilityHorizonYears { get; set; } = 10;
 }
