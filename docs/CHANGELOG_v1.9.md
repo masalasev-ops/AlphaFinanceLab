@@ -2723,3 +2723,43 @@ The sweep's yield detector flagged HNZ (Heinz) 29 times — on a price series th
 **What this buys:** generation 2 replays on a roster where the S&P-member-shaped fiction is gone and a missing bar can no longer fabricate a benchmark collapse. The finding-348 horizon table is re-derived AFTER that re-run, on clean noise — the v1.9.76 caveat stands until then.
 
 **Not done here, deliberately:** no bar was deleted or versioned (rule 3; the bars stay, inert); no delisting dates were invented (unavailable on this tier); the HNZ dividend correction and the identity-lifecycle population (terminal actions, `ticker_history` closure) are recorded as owed, not smuggled in.
+
+## v1.9.78 — the replay is 9.3x faster and byte-identical: three EF write patterns, measured not guessed (findings 354–355)
+
+*Recorded 2026-08-02. Branch `perf/v1.9.78-replay-throughput`. **No new decision and no behaviour change** — the output is proved bit-identical, so nothing in MASTER §2 is touched. Tests 1,119 → 1,124; `ci.ps1` green; `check-register` green at 120 rows.*
+
+Generation 1 took **~4.5 days**. Generation 2 was about to cost the same, on the operator's clock, before the finding-348 horizon table could be re-derived on clean noise. It now takes **~9.6 hours**.
+
+### The measurement that started it (finding 354)
+The run was assumed to be heavy arithmetic — 400 plants and 650 control members a session. It was not. Measured against the live process: **89 % of ONE core, zero I/O, 387 MB resident, on a 16-core machine** — single-threaded and CPU-bound, using 5.6 % of the box. The obvious move was parallelism, and it would have been the wrong one: three `dotnet-stack` samples of the live run landed on the SAME frame, and it was not arithmetic at all.
+
+```
+PlantEquityStep.AfterPopulations -> LedgerStore.RecordEquityPoint
+  -> DbContext.SaveChanges -> ChangeTracker.DetectChanges
+```
+
+`RecordEquityPoint` runs a `SaveChanges` per point, and the plants call it **400 times a session**. Every call re-runs EF's `DetectChanges` over the WHOLE change tracker — which by then holds the day's ingested bars, positions, snapshots and control-equity rows. The step therefore cost O(plants x tracked entities): quadratic inside a single session, on a machine that was 94 % idle. Parallelising that would have multiplied a quadratic across 16 cores instead of removing it.
+
+### The second sample set (finding 355)
+Batching the plant writes alone moved 63.5 s -> 53.9 s: **1.2x**, which is the useful kind of disappointment — it says the first bottleneck was real but not dominant. Five fresh samples then landed, 5/5, on `DailyPipeline.IngestStaged` -> `BarIngestionService.IngestEod` / `CorporateActionIngestion.IngestDividends` / `IngestSplits`. Two defects, both invisible until profiled:
+
+1. **The existence reads were TRACKED.** `IngestEod` loads the staged span to compare values (~20 k bar rows a replay session) and EF tracked every one, so each later `SaveChanges` re-scanned all of them. The rows are never mutated — rule 3 forbids `UPDATE`/`DELETE` on a bar, and a correction is an INSERT of the next version — so tracking them was provably pointless. `AsNoTracking` on both existence reads.
+2. **`SaveChanges` ran even when NOTHING was staged.** Per security, per call, ~500 securities x 3 calls = **~1,500 no-op `SaveChanges` a session**, each a full `DetectChanges` pass. And a replay re-stages the exact vintage it already holds on all 5,031 sessions, so it inserts nothing on essentially every one of them. Now `if (inserted > 0)`.
+
+**The corpus already knew this disease.** `HistoricalBackfill` carries a comment — *"every ingested bar row stays tracked and each member's SaveChanges walks the whole accumulated set"* — from finding 262, which fixed it in the BACKFILL. The identical pattern in the daily pipeline was never swept, because nothing had profiled a replay day.
+
+### Result, and the proof it is only speed
+| | per session | 5,031 sessions |
+|---|---:|---:|
+| generation 1 (as-run) | 56–180 s | ~4.5 days |
+| measured baseline | 63.5 s | 3.70 days |
+| + plant batching | 53.9 s | 3.14 days |
+| **+ ingestion fixes** | **6.86 s** | **9.6 hours** |
+
+**9.3x, and the output is unchanged.** The same 22-session window (2009-08-01..09-01, chosen because it contains the worst ACS contamination) was run before and after and every replay-scoped table fingerprinted — 13 tables, 37,182 rows, **identical SHA-256 on every one**: `equity_curve`, `position_snapshots`, `control_equity`, `decisions`, `trades`, `cash_events`, `overfitting_checks`, `overfitting_status`, `power_reports`, `go_live_log`, `allocation_log`, `regime_labels`, `positions`. That equality is the whole licence for this pass: a performance change to a simulation is only admissible if it is provably not a behaviour change.
+
+Five regression tests pin the parts a future edit could silently break: the batch path is asserted EQUAL to the per-point path rather than merely correct; idempotency on re-run (FR-7); a key repeated inside one batch landing on one row (the hazard a single-write path does not have, since it re-reads what it just wrote); the empty batch; and — the one that guards the `SaveChanges` skip — that a no-op ingest leaves a caller's own pending work intact for its next save.
+
+**Not done, deliberately:** no parallelism. It is available (15 idle cores) and the population/plant RNG is a pure hash of `(family seed, member index, security)` so it would stay deterministic — but the shared `BarFeatureView` memoises into plain `Dictionary` caches over an EF `DbContext`, neither of which is thread-safe, so it needs a pre-warm or an immutable day snapshot. At 9.6 hours the run is no longer the constraint, and that work would be optimising something that has stopped hurting. Recorded as available, not owed.
+
+**Also known and NOT fixed here:** `ComputeCash` re-reads an account's entire trade and cash-event history on every account-day (458 M row materialisations across a run vs 182 k accumulated incrementally — 2,515x). It is genuinely O(N²) and is what dragged generation 1 from 56 s to 180 s per session late in the run. It is left alone because the profiler never pointed at it: the three heavy accounts are 3 of 403, and after the fixes above the whole session is 6.86 s. Fixing what a measurement did not implicate is how the previous 1.2x disappointment gets repeated.

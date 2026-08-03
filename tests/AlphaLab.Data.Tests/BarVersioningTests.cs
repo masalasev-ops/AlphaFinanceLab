@@ -264,4 +264,41 @@ public class BarVersioningTests
         }
         finally { TestDb.Delete(path); }
     }
+
+    /// <summary>
+    /// Finding 355: an identical re-fetch is a no-op, so <see cref="BarIngestionService.IngestEod"/> no
+    /// longer calls SaveChanges for it — that unconditional call ran a full EF DetectChanges per security
+    /// per session (~500 a replay day, every one with nothing to write), and a replay re-stages the exact
+    /// vintage it already holds on all 5,031 of them.
+    ///
+    /// The hazard the skip could introduce is a caller that leaned on the side effect to flush its OWN
+    /// pending work. It cannot: nothing is discarded, only not-yet-flushed, and the caller's next
+    /// SaveChanges still writes it. Stage 2 ends in exactly such a SaveChanges before its commit.
+    /// </summary>
+    [Fact]
+    public void FX_IdenticalRefetch_WritesNothing_AndLeavesOtherPendingWorkIntact()
+    {
+        var path = SeededDb();
+        try
+        {
+            using var db = TestDb.Open(path);
+            var before = db.Bars.Count();
+
+            // Unrelated pending work, added BEFORE the no-op ingest and never explicitly saved by it.
+            db.Securities.Add(new Entities.SecurityRow
+            {
+                CurrentSymbol = "MSFT", Exchange = "US", FirstSeen = "2020-01-01",
+            });
+
+            var written = new BarIngestionService(db).IngestEod(Sec, [V2], ObservedV2);
+
+            Assert.Equal(0, written);                    // identical re-fetch ⇒ idempotent no-op
+            Assert.Equal(before, db.Bars.Count());       // and no version appended
+
+            // The pending row survived the skip and persists on the caller's own SaveChanges.
+            db.SaveChanges();
+            Assert.Contains(db.Securities, s => s.CurrentSymbol == "MSFT");
+        }
+        finally { TestDb.Delete(path); }
+    }
 }

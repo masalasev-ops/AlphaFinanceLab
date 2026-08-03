@@ -1,5 +1,6 @@
 using AlphaLab.Data.Entities;
 using AlphaLab.Data.Providers;
+using Microsoft.EntityFrameworkCore;
 
 namespace AlphaLab.Data.Services;
 
@@ -55,7 +56,13 @@ public sealed class BarIngestionService(AlphaLabDbContext db) : IBarIngestionSer
         // All versions land in one dictionary; latest-per-date and max-observed resolve in memory.
         var minDate = bars.Select(b => b.Date).OrderBy(d => d, StringComparer.Ordinal).First();
         var maxDate = bars.Select(b => b.Date).OrderBy(d => d, StringComparer.Ordinal).Last();
+        // AsNoTracking (finding 355): these rows are READ to compare values and are never mutated — rule 3
+        // forbids UPDATE/DELETE on a bar, so a correction is an INSERT of the next version, never an edit
+        // of what is loaded here. Tracking them put the whole staged span (~20k rows a replay session)
+        // into the change tracker, and EVERY subsequent SaveChanges then re-scanned all of it in
+        // DetectChanges. Untracked reads cannot change what is written; they change what it costs.
         var existingByDate = db.Bars
+            .AsNoTracking()
             .Where(x => x.SecurityId == securityId
                         && string.Compare(x.Date, minDate) >= 0
                         && string.Compare(x.Date, maxDate) <= 0)
@@ -92,7 +99,11 @@ public sealed class BarIngestionService(AlphaLabDbContext db) : IBarIngestionSer
             // else: identical re-fetch ⇒ idempotent no-op.
         }
 
-        db.SaveChanges();
+        // Nothing staged ⇒ nothing for THIS call to flush (finding 355). The unconditional SaveChanges
+        // cost a full DetectChanges pass per security per session — ~500 of them a replay day, every one
+        // of which had nothing to write, because a replay re-stages the vintage it already holds.
+        // Other pending work is unaffected: Stage 2 ends in its own SaveChanges before the commit.
+        if (inserted > 0) db.SaveChanges();
         return inserted;
     }
 

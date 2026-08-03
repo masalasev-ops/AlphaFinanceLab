@@ -360,6 +360,98 @@ public class LedgerStoreTests
         });
     }
 
+    // ---- RecordEquityPoints: the batch form (finding 354) ------------------------------------------
+    // It exists ONLY to make 400 plant writes a session affordable, so the property that matters is that
+    // it is indistinguishable from the per-point path. These pin that, plus the two edge cases a batch
+    // has and a single write does not: a key repeated INSIDE one batch, and an empty batch.
+
+    [Fact]
+    public void FX_RecordEquityPoints_IsIdenticalToTheSinglePointPath()
+    {
+        var viaBatch = new List<(long, string, decimal, decimal)>();
+        var viaSingle = new List<(long, string, decimal, decimal)>();
+
+        Run((db, store) =>
+        {
+            var a = store.OpenAccount(new Account { StrategyId = "a", StartingCash = 100m }, "2026-01-02");
+            var b = store.OpenAccount(new Account { StrategyId = "b", StartingCash = 100m }, "2026-01-02");
+            store.RecordEquityPoints(
+            [
+                (a.AccountId, "2026-01-05", 101.25m, 1.5m),
+                (b.AccountId, "2026-01-05", 99.75m, 0m),
+                (a.AccountId, "2026-01-06", 102.5m, 1.5m),
+            ], RunKind.Replay);
+            viaBatch.AddRange(Points(db));
+        });
+
+        Run((db, store) =>
+        {
+            var a = store.OpenAccount(new Account { StrategyId = "a", StartingCash = 100m }, "2026-01-02");
+            var b = store.OpenAccount(new Account { StrategyId = "b", StartingCash = 100m }, "2026-01-02");
+            store.RecordEquityPoint(a.AccountId, "2026-01-05", 101.25m, 1.5m, RunKind.Replay);
+            store.RecordEquityPoint(b.AccountId, "2026-01-05", 99.75m, 0m, RunKind.Replay);
+            store.RecordEquityPoint(a.AccountId, "2026-01-06", 102.5m, 1.5m, RunKind.Replay);
+            viaSingle.AddRange(Points(db));
+        });
+
+        Assert.Equal(viaSingle, viaBatch);
+    }
+
+    [Fact]
+    public void FX_RecordEquityPoints_IsIdempotent_ARerunOverwritesRatherThanDuplicating()
+    {
+        Run((db, store) =>
+        {
+            var a = store.OpenAccount(new Account { StrategyId = "a", StartingCash = 100m }, "2026-01-02");
+
+            store.RecordEquityPoints([(a.AccountId, "2026-01-05", 101m, 1m)], RunKind.Replay);
+            store.RecordEquityPoints([(a.AccountId, "2026-01-05", 202m, 2m)], RunKind.Replay);
+
+            // FR-7: a recovered day re-runs onto the SAME point, never a second one.
+            var point = Assert.Single(Points(db));
+            Assert.Equal((a.AccountId, "2026-01-05", 202m, 2m), point);
+        });
+    }
+
+    [Fact]
+    public void FX_RecordEquityPoints_ARepeatedKeyWithinOneBatch_LandsOnOneRow()
+    {
+        Run((db, store) =>
+        {
+            var a = store.OpenAccount(new Account { StrategyId = "a", StartingCash = 100m }, "2026-01-02");
+
+            // The single-point path resolves this by re-reading the row it just wrote. The batch reads
+            // existence ONCE, so it has to register its own inserts — otherwise a repeated key inserts a
+            // second row and violates the (account, as_of, run_kind) primary key.
+            store.RecordEquityPoints(
+            [
+                (a.AccountId, "2026-01-05", 101m, 1m),
+                (a.AccountId, "2026-01-05", 303m, 3m),
+            ], RunKind.Replay);
+
+            var point = Assert.Single(Points(db));
+            Assert.Equal((a.AccountId, "2026-01-05", 303m, 3m), point);   // last wins, as the loop implies
+        });
+    }
+
+    [Fact]
+    public void FX_RecordEquityPoints_EmptyBatch_WritesNothing()
+    {
+        Run((db, store) =>
+        {
+            store.RecordEquityPoints([], RunKind.Replay);
+            Assert.Empty(Points(db));
+        });
+    }
+
+    /// <summary>Every replay equity point on disk, ordered — the comparison basis for the tests above.</summary>
+    private static List<(long, string, decimal, decimal)> Points(AlphaLabDbContext db) =>
+        db.EquityCurve.Where(e => e.RunKind == "replay")
+            .OrderBy(e => e.AccountId).ThenBy(e => e.AsOf)
+            .AsEnumerable()
+            .Select(e => (e.AccountId, e.AsOf, e.Equity, e.Cash))
+            .ToList();
+
     private static void Run(Action<AlphaLabDbContext, ILedgerStore> body)
     {
         var path = TestDb.CreateMigrated();

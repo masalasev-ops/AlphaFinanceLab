@@ -1,5 +1,6 @@
 using AlphaLab.Data.Entities;
 using AlphaLab.Data.Providers;
+using Microsoft.EntityFrameworkCore;
 
 namespace AlphaLab.Data.Services;
 
@@ -62,7 +63,8 @@ public sealed class CorporateActionIngestion(AlphaLabDbContext db) : ICorporateA
                 Source = source
             });
         }
-        db.SaveChanges();
+        // Only when something was actually appended (finding 355) — see IngestEod.
+        if (inserted > 0) db.SaveChanges();
         return inserted;
     }
 
@@ -85,7 +87,8 @@ public sealed class CorporateActionIngestion(AlphaLabDbContext db) : ICorporateA
                 Source = source
             });
         }
-        db.SaveChanges();
+        // Only when something was actually appended (finding 355) — see IngestEod.
+        if (inserted > 0) db.SaveChanges();
         return inserted;
     }
 
@@ -97,7 +100,11 @@ public sealed class CorporateActionIngestion(AlphaLabDbContext db) : ICorporateA
     /// </summary>
     private int AppendIfNew(CorporateActionRow candidate)
     {
+        // AsNoTracking (finding 355): read to COMPARE only. A restatement appends version+1 (D76); the
+        // loaded rows are never mutated, so tracking them only grows the set every later DetectChanges
+        // must re-scan.
         var versions = db.CorporateActions
+            .AsNoTracking()
             .Where(c => c.SecurityId == candidate.SecurityId
                         && c.Type == candidate.Type
                         && c.EffectiveDate == candidate.EffectiveDate)
