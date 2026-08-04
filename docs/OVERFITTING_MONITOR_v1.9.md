@@ -131,7 +131,7 @@ monitor:
   mde: { confidence: 0.95, power: 0.80, nw_lag_cap_days: 21 }
   calibration:                      # D64 — the plants under P_noise(t)/P_edge(t)
     plant:
-      alpha_annual_pct: 2.0         # edge plant target (§1.1's realistic prize)
+      alpha_annual_pct: 2.0         # edge plant target: the base rung of the D64 ladder (D122)
       anti_alpha_annual_pct: -2.0   # anti-predictive plant (the Suspect fixture)
       active_day_frac: 0.25         # lumpy delivery — edge arrives in streaks
       persistence_phi: 0.9          # AR(1)-style run persistence, scaled to horizon

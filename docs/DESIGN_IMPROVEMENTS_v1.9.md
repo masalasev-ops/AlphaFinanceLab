@@ -77,7 +77,7 @@ Paired tests on `d_t` (D31) → NW-MDE gate (D48) → deflated Sharpe over hones
 
 ---
 
-## 2. Factor research — what the literature supports, and the long-only haircut
+## 2. Factor research — what the literature supports, and why the expectation is MEASURED
 
 *(Carried from v5; unchanged in substance, restated compactly because it calibrates every expectation in the system.)*
 

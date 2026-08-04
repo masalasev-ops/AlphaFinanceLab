@@ -2989,3 +2989,25 @@ It was also, by generation 2, **redundant and in tension with a measurement**. T
 2. Three further sites had **inherited** the constant as an illustration (*"a genuine 1–3 %/yr edge sits in the 60th–90th percentile for years"*): D56's rationale, MASTER §20.7, and OVERFITTING_MONITOR's history note. One of those is a register row, so **D122 amends D56** rather than editing it — D56's substance (trajectory curves rather than flat percentile cuts) is untouched; only the retired citation is restated against the measured band.
 
 That second class is the interesting one: the constant had propagated as *supporting illustration* into rows that were about something else entirely. A grep for the headline sentence would have missed all three. The machine check found them because it reasons about the register's relations rather than its prose — the same argument that made `check-register` a script instead of a review checklist.
+
+### v1.9.87 (cont.) — the first sweep missed seven sites, because the idea outlived the words (finding 368)
+
+The operator asked whether I had looked *everywhere*. I had not, and the honest answer is that the first pass searched for **the number** — `1–3 %` — and one phrase, `long-only haircut`. That is a search for the sentence I had already read, not for the idea.
+
+A deliberately over-broad re-sweep (eight patterns, twelve file extensions, 3,835 files, nothing excluded but build output) found **17 hits, of which 7 were live-doc violations the first pass left standing**. Every one of them carried the retired concept **without the number**:
+
+| site | how it survived |
+|---|---|
+| MASTER §1.1 | *"three to five times the entire **realistic prize**"* — the comparison, not the constant |
+| MASTER "four research truths" | *"keep perhaps **a third to a half** of published premia — the realistic prize is small"* — a second asserted fraction |
+| MASTER §20.9 plant drift | plant target justified as *"matching §1.1's realistic prize"* |
+| `CONFIG_REFERENCE` §Calibration | the **config-key comment** anchoring `AlphaAnnualPct` to *"(§1.1 realistic prize)"* |
+| `OVERFITTING_MONITOR` §Appendix | the same justification in the YAML comment |
+| `DESIGN_IMPROVEMENTS` §2 | **the section heading itself** still read *"and the long-only haircut"* |
+| `DESIGN_IMPROVEMENTS_EXPLAINED` | the replacement text I had just written still used the retired phrase |
+
+**What was NOT changed, deliberately: `Calibration.Plant.AlphaAnnualPct` stays 2.0.** It is a frozen calibration input — generation 2's curves were built with it — so only its *justification* is restated (the base rung of the D64 ladder the arena actually sweeps, rather than an assumed prize). Retiring a rationale must not silently move a number the curves depend on.
+
+**The lesson, and it is the second instance in one pass.** The register checker had already caught the same shape: the constant had propagated into D56's rationale as *supporting illustration*. This sweep found it propagating further, into a section heading and two config-key comments, under the phrase "realistic prize" alone. **A concept spreads faster than its canonical phrasing**, so a grep for the sentence you remember is a lower bar than it feels like. The check that worked was over-broad by construction — many patterns, all file types, and a classifier that sorted legitimate survivors (D122's own record, D38's gravestone, the CHANGELOG trace, the dated archives) from violations, rather than a count.
+
+*Verification: `ci.ps1` green end to end; `check-register` 122 rows. One run failed first on `PaperControlTests` with `ObjectDisposedException: 'SQLitePCL.sqlite3'` — **finding 366's fourth distinct victim**, unrelated to a documentation change and green on the immediate re-run.*
