@@ -140,6 +140,23 @@ try {
     Assert-NoMatch -Files $codeFiles -Pattern 'DELETE\s+FROM\s+corporate_actions\b' -Message 'DELETE FROM corporate_actions is forbidden (D76 append-only).'
     Assert-NoMatch -Files $codeFiles -Pattern 'UPDATE\s+corporate_actions\b'         -Message 'UPDATE corporate_actions is forbidden (D76 append-only).'
 
+    # 1c. config is the THIRD append-only-versioned table (rule 24 / D72, finding 108): a change INSERTs
+    #     (key, version+1) and the current value is MAX(version) per key. Never an UPDATE or DELETE - the
+    #     frozen calibration rows ARE the audit trail, and a mutated one is indistinguishable from a value
+    #     that was always there. Added at v1.9.85 (finding 365): the invariant held by review alone until
+    #     now, and this corpus has already shown (finding 363) that an unchecked invariant can be broken
+    #     for two generations without anyone noticing.
+    #
+    #     SCOPED TO src + tools, NOT tests - deliberately, and this is the one exclusion in the guard set.
+    #     DetectabilityGateTests re-seeds a fixture DB by clearing its Calibration.DetectionPower row to
+    #     exercise the no-curves branch; that is a test constructing a scenario, not the lab mutating its
+    #     own config history. If a future test needs the same, prefer a fresh arena.
+    $srcToolFiles = Get-ChildItem -Path (Join-Path $repoRoot 'src'), (Join-Path $repoRoot 'tools') -Recurse -File -Include *.cs, *.sql -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' } | ForEach-Object { $_.FullName }
+    Assert-NoMatch -Files $srcToolFiles -Pattern 'DELETE\s+FROM\s+config\b' -Message 'DELETE FROM config is forbidden - config is append-only-versioned (rule 24 / D72).'
+    Assert-NoMatch -Files $srcToolFiles -Pattern 'UPDATE\s+config\b'         -Message 'UPDATE config is forbidden - a change INSERTs (key, version+1) (rule 24 / D72).'
+    Assert-NoMatch -Files $srcToolFiles -Pattern 'Config\.Remove(Range)?\s*\(' -Message 'db.Config.Remove/RemoveRange is forbidden - config is append-only-versioned (rule 24 / D72).'
+
     # 2. No committed secret-key material (D67). appsettings.Secrets.json is gitignored, so it is
     #    excluded from the committable set below.
     $committable = Get-CommittableFiles
@@ -183,6 +200,36 @@ try {
             Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' } | ForEach-Object { $_.FullName }
     }
     Assert-NoMatch -Files $consumerCs -Pattern 'signal_ic|ISignal\b|SignalIc|SignalLibrary' -Message 'The Signal Library is descriptive only (D91) - the allocator/gate/sizing/eligibility must never read it.'
+
+    # 5. Ledger money is C# decimal persisted as TEXT, NEVER double/REAL (rule 20 / D69). Added at
+    #    v1.9.85 (finding 365) for the same reason as 1c: the invariant was held by review alone.
+    #
+    #    The pattern is a NAME LIST, not a type scan, and that is the whole design of it. Money and rates
+    #    are both numbers; only the name distinguishes them. `double ImpactK`, `double HalfSpreadBp` and
+    #    `double ParticipationCapPctAdv` are CORRECT - a coefficient, a basis-point rate and a percentage
+    #    are not money and must not be forced to decimal. So the guard names the members that carry
+    #    currency and says nothing about anything else. It is a RATCHET: it catches a new money member
+    #    declared as double, which is how this defect would actually arrive.
+    #
+    #    TWO SCOPING DECISIONS, both learned by RUNNING the guard rather than reasoning about it - its
+    #    first execution failed on two false positives, which is the argument for writing it at all:
+    #
+    #    (a) ANCHORED ON AN ACCESS MODIFIER, so it matches a DECLARATION and not prose. Without this it
+    #        fired on `// ... A double commission would ...` - a comment explaining this very rule.
+    #    (b) src ONLY, never tests. A test theory cannot comply even in principle: C# attribute arguments
+    #        may not be decimal constants, so `[InlineData]` money MUST be double or string and a test
+    #        signature like `(double cash)` is forced, not sloppy. A guard that cannot be satisfied is a
+    #        guard that gets deleted.
+    #
+    #    KNOWN GAP, stated rather than hidden: a record POSITIONAL parameter (`record X(double Cash)`)
+    #    carries no access modifier and so is not matched. Every money member in src today is a property
+    #    with a modifier; if that changes, widen this.
+    $moneyNames = 'StartingCash|CostBasis|RawFillPrice|Commission|SpreadCost|ImpactCost|CashDelta|' +
+                  'TotalCost|CashPerShare|LastPrintPrice|SpinoffBasisAllocated|Equity|Cash|Amount'
+    $srcCs = Get-ChildItem -Path (Join-Path $repoRoot 'src') -Recurse -File -Include *.cs -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' } | ForEach-Object { $_.FullName }
+    Assert-NoMatch -Files $srcCs -Pattern ('\b(public|private|internal|protected)\s+(double|float)\??\s+(' + $moneyNames + ')\b') `
+        -Message 'Ledger money must be decimal, never double/float (rule 20 / D69).'
 
     Write-Host 'CI OK' -ForegroundColor Green
 }
