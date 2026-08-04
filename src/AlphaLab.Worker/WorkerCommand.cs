@@ -47,6 +47,12 @@ public enum WorkerCommandKind
     /// guard) and report the securities recommended for `Universe:Exclusions`. REPORT-ONLY — it writes
     /// an artefact under docs/calibration and never a row, a flag, or a config value.</summary>
     StoreSweep,
+
+    /// <summary>The D123/FR-47 construction study (Phase 5.5): measure each registered signal's tracking
+    /// error — and therefore its detectability floor — under a LONG-ONLY and a LONG-SHORT construction,
+    /// to decide whether this arena can adjudicate a realistic edge at all. REPORT-ONLY — it writes an
+    /// artefact under docs/calibration and never a row, a flag, or a config value.</summary>
+    ConstructionStudy,
 }
 
 /// <summary>The `replay-recompute` request: the candidate rule change, and whether this run is the §25.3
@@ -60,7 +66,7 @@ public sealed record WorkerCommand(
     WorkerCommandKind Kind, string? Date = null, string? ArenaId = null, ReplayRequest? Replay = null,
     bool ReportOnly = false, SignalBackfillRequest? SignalBackfill = null,
     SignalPinRequest? SignalPin = null, ProposalPinRequest? ProposalPin = null,
-    RecomputeRequest? Recompute = null);
+    RecomputeRequest? Recompute = null, ConstructionStudyRequest? ConstructionStudy = null);
 
 /// <summary>
 /// Pure parsing of the Worker's command line (the <see cref="WorkerModeParser"/> precedent —
@@ -88,6 +94,7 @@ public static class WorkerCommandParser
     public const string PinProposalThresholdsVerb = "pin-proposal-thresholds";
     public const string ReplayRecomputeVerb = "replay-recompute";
     public const string StoreSweepVerb = "store-sweep";
+    public const string ConstructionStudyVerb = "construction-study";
 
     public static WorkerCommand Parse(string[] args)
     {
@@ -118,6 +125,54 @@ public static class WorkerCommandParser
         if (string.Equals(verb, StoreSweepVerb, StringComparison.OrdinalIgnoreCase))
         {
             return new WorkerCommand(WorkerCommandKind.StoreSweep, null, arena);
+        }
+
+        if (string.Equals(verb, ConstructionStudyVerb, StringComparison.OrdinalIgnoreCase))
+        {
+            var from = RequireDate(ConstructionStudyVerb, "--from", ValueOf(args, "--from"));
+            var to = RequireDate(ConstructionStudyVerb, "--to", ValueOf(args, "--to"));
+            if (string.CompareOrdinal(from, to) >= 0)
+            {
+                throw new ArgumentException($"{ConstructionStudyVerb}: --from ({from}) must precede --to ({to}).");
+            }
+
+            // --tail-fraction is OPTIONAL and defaults to deciles. Present-but-unparseable is still
+            // refused, so a typo cannot silently become "the default" and produce a report whose header
+            // disagrees with what was actually measured.
+            var tailRaw = ValueOf(args, "--tail-fraction");
+            double? tail = null;
+            if (tailRaw is not null)
+            {
+                if (!double.TryParse(tailRaw, System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out var t) || t is <= 0 or > 0.5)
+                {
+                    throw new ArgumentException(
+                        $"{ConstructionStudyVerb}: --tail-fraction must be in (0, 0.5] (got '{tailRaw}'). " +
+                        "Above 0.5 the two tails would overlap and they would not be two portfolios.");
+                }
+                tail = t;
+            }
+
+            // --borrow-bp is repeatable: each value is one stated ASSUMPTION about stock-borrow cost,
+            // applied to the short leg only. Omitted means the default pair (0 and 40 bp/yr) — the
+            // optimistic bound plus a general-collateral figure.
+            var borrows = new List<double>();
+            for (var i = 1; i < args.Length - 1; i++)
+            {
+                if (!string.Equals(args[i], "--borrow-bp", StringComparison.OrdinalIgnoreCase)) continue;
+                if (!double.TryParse(args[i + 1], System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out var bp) || bp < 0)
+                {
+                    throw new ArgumentException(
+                        $"{ConstructionStudyVerb}: --borrow-bp expects a non-negative number of basis " +
+                        $"points per year, got '{args[i + 1]}'.");
+                }
+                borrows.Add(bp);
+            }
+
+            return new WorkerCommand(WorkerCommandKind.ConstructionStudy, null, arena,
+                ConstructionStudy: new ConstructionStudyRequest(
+                    from, to, tail, borrows.Count > 0 ? borrows : null));
         }
 
         if (string.Equals(verb, ReplayRecomputeVerb, StringComparison.OrdinalIgnoreCase))
@@ -219,7 +274,8 @@ public static class WorkerCommandParser
         throw new ArgumentException(
             $"Unknown command '{verb}'. Expected '{ReproduceDayVerb}', '{VerifyWalVerb}', " +
             $"'{ReplayCalibrateVerb}', '{SignalBackfillVerb}', '{SignalPinThresholdsVerb}', " +
-            $"'{PinProposalThresholdsVerb}', '{ReplayRecomputeVerb}', '{StoreSweepVerb}', or no verb at " +
+            $"'{PinProposalThresholdsVerb}', '{ReplayRecomputeVerb}', '{StoreSweepVerb}', " +
+            $"'{ConstructionStudyVerb}', or no verb at " +
             "all (the daily launch). Refusing to fall through to the daily run on a typo — that would start " +
             "the sole DB writer against the live arena.");
     }

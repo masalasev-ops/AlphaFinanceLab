@@ -54,6 +54,8 @@ public static class OpsCommandHost
                 ReplayRecompute(command, configuration, arena, connectionString, loggerFactory),
             WorkerCommandKind.StoreSweep =>
                 StoreSweep(configuration, arena, connectionString, loggerFactory),
+            WorkerCommandKind.ConstructionStudy =>
+                ConstructionStudy(command, configuration, arena, connectionString, loggerFactory, ct),
             _ => throw new ArgumentOutOfRangeException(nameof(command), command.Kind, "Not an ops verb."),
         };
     }
@@ -265,6 +267,41 @@ public static class OpsCommandHost
         catch (Exception ex)
         {
             logger.LogCritical(ex, "store-sweep could not run.");
+            return 1;
+        }
+    }
+
+    // The D123/FR-47 construction study (Phase 5.5). REPORT-ONLY like store-sweep and replay-recompute:
+    // no writer guard, no transaction — it reads the stored corpus and writes one markdown artefact
+    // measuring each signal's tracking error under a long-only and a long-short construction.
+    //
+    // An UNFAVOURABLE result is exit 0, not an error. "Long-short does not lower the floor enough to be
+    // worth building" is the verb's PRODUCT — a publishable answer that saves weeks — and an operator
+    // who scripted this must not read a negative finding as a failed run. Only an inability to MEASURE
+    // is a failure.
+    private static int ConstructionStudy(
+        WorkerCommand command,
+        IConfiguration configuration,
+        ArenaOptions arena,
+        string connectionString,
+        ILoggerFactory loggerFactory,
+        CancellationToken ct)
+    {
+        var logger = loggerFactory.CreateLogger("AlphaLab.Worker.ConstructionStudy");
+        try
+        {
+            var run = new ConstructionStudyOrchestrator(configuration, arena, loggerFactory)
+                .Run(connectionString, command.ConstructionStudy!,
+                    DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), null, ct);
+
+            logger.LogInformation(
+                "construction-study: {Count} signal(s) measured over {Sessions} session(s). Report: {Path}",
+                run.Result.Signals.Count, run.Result.Sessions, run.ReportPath);
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            logger.LogCritical(ex, "construction-study could not run.");
             return 1;
         }
     }

@@ -3011,3 +3011,67 @@ A deliberately over-broad re-sweep (eight patterns, twelve file extensions, 3,83
 **The lesson, and it is the second instance in one pass.** The register checker had already caught the same shape: the constant had propagated into D56's rationale as *supporting illustration*. This sweep found it propagating further, into a section heading and two config-key comments, under the phrase "realistic prize" alone. **A concept spreads faster than its canonical phrasing**, so a grep for the sentence you remember is a lower bar than it feels like. The check that worked was over-broad by construction — many patterns, all file types, and a classifier that sorted legitimate survivors (D122's own record, D38's gravestone, the CHANGELOG trace, the dated archives) from violations, rather than a count.
 
 *Verification: `ci.ps1` green end to end; `check-register` 122 rows. One run failed first on `PaperControlTests` with `ObjectDisposedException: 'SQLitePCL.sqlite3'` — **finding 366's fourth distinct victim**, unrelated to a documentation change and green on the immediate re-run.*
+
+## v1.9.88 — Phase 5.5: the construction question, answered by measuring instead of arguing (D123; FR-47; findings 369–371)
+
+*Recorded 2026-08-04. **D123 new; nothing superseded, nothing amended.** New code: `AlphaLab.Evaluation/Construction/`, `ConstructionStudyOrchestrator`, the `construction-study` Worker verb, 14 fixtures. No migration, no schema change, no config key, no row written anywhere. `check-register` green at **123 rows, 107 active, 5 superseded, 11 amended**.*
+
+### Why a phase for one report
+
+D122 (v1.9.87) retired the asserted 1–3 %/yr prize and made the expected effect a **measured property of the construction and the arena**. That immediately raises the question it was carefully not answering: *which construction?* The operator had opened the long-short option explicitly, and the arithmetic gave the question teeth — the detectability floor is `ZSum · TE / sqrt(H)`, so TRACKING ERROR decides what an arena can adjudicate at all, and generation 2 froze this arena's band at α*(10y) = 6.947 %/yr against realistic factor tilts of a few percent.
+
+A dollar-neutral book carries far less market risk than a long-only tilt, so its TE should be lower and its floor with it. **That reasoning is wrong, and the study is what showed it.**
+
+### finding 369 — the study refuted its own framing before it measured anything about the world
+
+The first version of the report led with the two constructions' **floors**. The 2020–21 smoke run killed that headline immediately:
+
+| signal | TE ratio | effect ratio | IR long-only | IR long-short |
+|---|---:|---:|---:|---:|
+| `resmom:L252` | ×3.01 | ×3.01 | 0.374 | 0.373 |
+
+**A long-short book is roughly 2× leverage on the same cross-sectional bet.** It scales tracking error AND effect together, so the floor rises exactly as fast as the effect that has to clear it. Since the t-statistic is `IR · sqrt(T)`, detectability depends on the **information ratio alone**, and a construction that doubles both terms changes nothing. Comparing floors across constructions compares nothing.
+
+The report now leads with the IR gain and **`years-to-detect = (ZSum/IR)^2`**, which IS comparable, and `FX-ConstructionScaleFree` pins the arithmetic so the framing cannot regress. Worth recording as a finding rather than a quiet fix: the error was not a slip, it was a plausible-sounding argument that survived design, review and implementation, and only a measurement dislodged it.
+
+### The answer: NO — and a larger result behind it
+
+Full stored history, 6,287 sessions (2001-07-24..2026-07-24), 912 securities, 233–245 monthly rebalances per signal, ~44-name tails out of ~448 scored, 13m34s:
+
+| signal | IR long-only | IR long-short | IR gain | yrs to detect (LO) | yrs (LS) |
+|---|---:|---:|---:|---:|---:|
+| `mom:L252s21` | 0.026 | 0.032 | 1.21x | 11519 | 7813 |
+| `mom:L126` | 0.082 | 0.101 | 1.24x | 1166 | 765 |
+| `rev:L21` | 0.009 | 0.008 | 0.99x | 107316 | 109482 |
+| `lowvol:L252` | 0.178 | 0.305 | **1.71x** | 248 | 84 |
+| `brk:L252` | 0.279 | 0.208 | 0.74x | 101 | 182 |
+| `resmom:L252` | 0.104 | 0.045 | 0.43x | 719 | 3927 |
+| `bab:L252` | 0.245 | 0.392 | **1.60x** | 131 | **51** |
+
+**Long-short does not rescue this arena.** Two signals gain materially (`bab` 1.60x, `lowvol` 1.71x), **three are WORSE long-short**, and the best result anywhere — `bab:L252` at 51 years — is still five times the ten-year gate horizon. Under the 5.5.3 rule written before the numbers were read, that is *"real but insufficient"*: recorded, and the horizon is a separate decision that is NOT reopened to rescue this one.
+
+### finding 370 — the bar, stated as one number
+
+Inverting years-to-detect at the gate horizon gives the cleanest statement the corpus has of what D121's ten years actually demands:
+
+> **At H = 10 years this arena can only adjudicate a strategy whose active-return information ratio is at least `ZSum/sqrt(H)` = 0.886, sustained.**
+
+It follows from the horizon and the confidence/power pair alone — no measurement enters it. The best of fourteen measured (signal × construction) pairs is **0.392**, so the gap is a factor of 2.3, and it is a property of the SIGNALS and the HORIZON rather than of the construction. That reframes what Phase 6 is up against far more usefully than the long-short answer does. (For scale: H=20 needs 0.626, H=30 needs 0.511.)
+
+The control validates the arithmetic against numbers the corpus derived independently: σ_LR 0.005263/day from the last 50 replay `power_reports` gives **TE 8.35 %/yr** (corpus: "~8 %/yr") and an analytic floor of **7.40 %/yr** (D121 predicted "~7 %/yr"). It sits ABOVE the empirical α*(10y) of 6.947 %, which is correct and not a discrepancy — the gate takes `max(analytic, empirical)`, so the two are different quantities.
+
+### finding 371 — a fixture that passed while measuring nothing
+
+The all-seven-signals fixture was first built on **geometric ramps** and passed. It was hollow. On a pure ramp every daily return is identical, so the market's return variance is ~1e-32 — floating-point residue: `bab` and `resmom` divided by it and got noise instead of a beta, `lowvol` saw zero volatility everywhere, and `brk` scored 1.0 for every name at its own high. **Four of the seven signals were numerically degenerate and every assertion — finite, non-negative, non-empty — was satisfied anyway.**
+
+Replaced with a deterministic one-factor panel (per-name beta 0.5–1.5, dispersed idiosyncratic vol) plus assertions that TE is **strictly** positive and that the seven produce distinguishable results. The generalisable lesson, and the reason it is a numbered finding: **a fixture whose synthetic data cannot exercise the code path passes for the wrong reason**, and shape-only assertions cannot tell the difference.
+
+### The rails, and the one that needed a decision
+
+Report-only on the D117 clause-1 discipline — verified structurally, not promised: there is no `SaveChanges`, no EF `Add`/`Remove`/`Update` and no raw SQL anywhere in the study's code. **No second point-in-time view**: scoring runs through the real `BarFeatureView`, whose own docstring is the argument (*"there is deliberately no second place for the watermark rule to drift"*), and the realisation panel is backward-looking by construction and loads through `IBarReadService.GetCrossSection` (the `BandInputs` precedent). Cost is a drag on the MEAN, never folded into the series TE is measured from. Borrow is an ASSUMPTION at two levels, and the report says outright whether the verdict depends on it.
+
+**The D91 guard had to be taught about this consumer, and how mattered.** `DescriptiveOnlyGuardTests` is assembly-scoped default-deny, so the engine's `ISignal` dependency reddened CI — correctly. Two things were rejected before the sanction was written. Adding `AlphaLab.Evaluation.Construction` to the namespace exclusion list would exempt that folder **forever**, so a future allocator input dropped into it would inherit the exemption silently — the exact failure-by-omission the guard's default-deny design exists to close. Handing the engine a scoring **delegate** instead of an `ISignal` would compile clean and never trip the guard — obfuscation, not compliance, since the dependency would remain and the one instrument built to surface it would have stopped seeing it. The sanction is therefore declared **by TYPE**, with `TheD123Sanction_IsScopedToTheTypeAndNotItsNamespace` asserting that `AdjClosePanel` — the engine's immediate neighbour in the same namespace — is still scanned.
+
+Also pinned in the report itself, where a future reader meets it: **nothing measured here may set a pre-registered `expected_effect_ann`** (rule 16 / D52). The study answers *"which construction?"*, never *"what should I claim?"*.
+
+*Verification: `ci.ps1` green; `check-register` 123 rows; 14 construction/guard fixtures green; the archived report committed in the same PR (findings 362/363 — an artefact that can be regenerated away is not evidence).*
