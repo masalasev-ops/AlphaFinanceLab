@@ -2958,3 +2958,34 @@ Generation 2 did not just produce numbers; it **falsified statements that were l
 **Archives are evidence and were left alone**: the CHANGELOG's history, and the dated calibration reports under `docs/calibration/`. Rewriting them would make the corpus internally tidy and externally worthless — the same principle v1.9.79 stated and v1.9.82's finding 362 broke. A record of what the lab believed on 2026-08-02 is not stale; it is the reason anyone can check whether the lab's beliefs improved.
 
 The distinction this pass applies: **a document that TELLS you what to do must be current; a document that RECORDS what happened must not be edited to look current.** MASTER's prose, the build prompts, TEST_PLAN and the test suite are the first kind. The CHANGELOG, the calibration reports, and PROGRESS's struck-through entries are the second.
+
+## v1.9.87 — the 1–3 %/yr prize is retired: the expectation is MEASURED, not asserted (D122; finding 367)
+
+*Recorded 2026-08-03. Branch `docs/v1.9.86-phase5-status` (this pass shares the branch by operator instruction). **D122 supersedes D38 and amends D56.** No code, no config value, no migration, no schema change. `check-register` green at **122 rows, 106 active, 5 superseded, 11 amended**.*
+
+### What was there
+
+MASTER §1.1 and DESIGN_IMPROVEMENTS §2 asserted a constant: *"a realistic expectation for a well-implemented long-only S&P 500 factor tilt is **1–3 % annualized β-adjusted alpha**… **Every screen, gate, and expectation in this system is calibrated to that prize**."* D38 built the lab's success criteria on it, and the plain-language companion called it *"the most important calibration in the whole system."*
+
+### Why it had to go, and the part that is NOT the obvious reason
+
+The operator's objection was that the lab should not carry a stated design target of 1–3 %/yr. The sharper reason is structural: **the number is derived from ONE construction** — long-only, large-cap, this cost model — and the operator has put that construction in question by opening the long-short option. A number that follows from a premise the lab may discard cannot be the thing every expectation is calibrated to.
+
+It was also, by generation 2, **redundant and in tension with a measurement**. The arena now measures its own admissible band and freezes it: α\*(10 y) = 6.947 %/yr from `Calibration.DetectionPower`, ceiling 32 %/yr from D116. Carrying both an asserted 1–3 % and a measured [6.95 %, 32 %] invites the corpus to be quoted two ways about the same quantity — the exact failure rule 25 exists to prevent, and the one D87 demonstrated.
+
+### D122 — what replaces it
+
+**The expected effect is a property of the CONSTRUCTION and the ARENA, measured per generation.** The band is READ from the frozen row in force rather than quoted from a paragraph. A long-short book, a different cost model, or another arena produces a different band **by measurement**, not by re-negotiating a sentence.
+
+**D38's conclusion survives verbatim in D122**, because it never depended on the number: the lab is graded on §1.2's laboratory KPIs — verdict honesty, anti-predictive detection speed, indistinguishability honesty (D63), control calibration, leakage integrity, attribution coverage, operator learning — never on "found a winner". `TooEarly` remains the expected common verdict, promotion a rare ceremonial event. That framing rests on the prize being HARD TO DETECT, which the measured floor now states directly and per-arena. **Deleting the premise without restating the conclusion would have left the governing objective hanging**, which is why this is a supersession and not a deletion.
+
+### finding 367 — the review that preceded the edit, and what the checker caught
+
+**No code depends on the figure.** A full search of `src/`, `tests/` and `tools/` found no reference to "1–3 %", "realistic prize" or the long-only haircut. Every `haircut` in code is a different one: `BankruptcyHaircutPct` (the delist force-exit), the Bonferroni trials haircut in `DetectabilityGate`, and the Bailey–López de Prado deflated-Sharpe haircut. **This is a documentation supersession with no behavioural surface** — stated because "remove the design target" could reasonably have been expected to touch the power math, and it does not.
+
+**The register checker caught what the manual sweep missed**, twice over:
+
+1. `MASTER §1.2`'s heading cited D38 without naming its successor — check-register rule 3b, caught the moment D38's status changed.
+2. Three further sites had **inherited** the constant as an illustration (*"a genuine 1–3 %/yr edge sits in the 60th–90th percentile for years"*): D56's rationale, MASTER §20.7, and OVERFITTING_MONITOR's history note. One of those is a register row, so **D122 amends D56** rather than editing it — D56's substance (trajectory curves rather than flat percentile cuts) is untouched; only the retired citation is restated against the measured band.
+
+That second class is the interesting one: the constant had propagated as *supporting illustration* into rows that were about something else entirely. A grep for the headline sentence would have missed all three. The machine check found them because it reasons about the register's relations rather than its prose — the same argument that made `check-register` a script instead of a review checklist.
