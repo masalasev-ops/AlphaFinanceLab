@@ -2959,6 +2959,51 @@ Generation 2 did not just produce numbers; it **falsified statements that were l
 
 The distinction this pass applies: **a document that TELLS you what to do must be current; a document that RECORDS what happened must not be edited to look current.** MASTER's prose, the build prompts, TEST_PLAN and the test suite are the first kind. The CHANGELOG, the calibration reports, and PROGRESS's struck-through entries are the second.
 
+## v1.9.85 — two invariants stop being held by attention alone (findings 365–366)
+
+*Recorded 2026-08-03. Branch `fix/v1.9.85-invariant-ratchets`. No decision, no config value, no migration, no schema change. Two CI guards and one CLAUDE.md clause.*
+
+### Why now, and what the review found
+
+A full architecture-conformance review against the 25 hard rules found **no violations**. Every rule checkable by inspection held: no env vars in the config builder (rule 11), no `UPDATE`/`DELETE` on `config` (rule 24), no `double` on ledger money (rule 20), no statistics or thresholds inside `AlphaLab.Api` (rule 17), no thresholds, verdicts or `Math.Sqrt` anywhere in `AlphaLab.Web` (rule 18), ~60 fail-closed refusal sites (rule 10), and **zero `TODO`/`HACK`/`FIXME` markers across 52,473 lines of `src`**.
+
+Two things that looked like gaps were answered design decisions, which is worth recording as the healthy case: `SignalLibraryBuilder` has no `run_kind` filter because SCHEMA states *"a grade is a property of a signal and a date, not of a forward/replay strategy run"*; and the Api's `BeginTransaction` is exactly D59's sanctioned *"small, bounded writes … never overlap a daily run"*.
+
+**The finding is about ENFORCEMENT, not conformance.** Five of the twenty-five rules have CI machinery (3, 17, 25, D67, D91) and cannot regress. The rest rely on tests, review, or memory. Rules 20 and 24 had neither test nor guard — obeyed today because someone was paying attention.
+
+This corpus has already paid for that distinction. **finding 363**: `Calibration.ReportRef` existed to make a freeze auditable, had no machine check, and was silently broken across TWO generations. Nothing was looking, so nothing was found.
+
+### finding 365 — the two ratchets, and what writing them taught
+
+**Rule 24 (config append-only):** `DELETE FROM config`, `UPDATE config`, and `db.Config.Remove/RemoveRange` now fail CI. Scoped to `src` + `tools` and **not** tests — `DetectabilityGateTests` legitimately clears a fixture's `DetectionPower` row to exercise the no-curves branch, which is a test constructing a scenario, not the lab mutating its own history. The one exclusion in the guard set, named in the guard so it reads as considered rather than accidental.
+
+**Rule 20 (ledger money is decimal):** a NAME LIST, not a type scan, and that is the design. Money and rates are both numbers; only the name tells them apart. `double ImpactK`, `double HalfSpreadBp` and `double ParticipationCapPctAdv` are CORRECT — a coefficient, a basis-point rate and a percentage are not money.
+
+**Both scoping decisions were learned by RUNNING the guard, not by reasoning about it — its first execution FAILED, which is the argument for writing it at all.** It fired on two false positives:
+
+1. A **comment explaining this very rule**: `// … A double commission would …`. Fixed by anchoring on an access modifier so the pattern matches a DECLARATION, not prose.
+2. A test signature `(double cash)` — and this one is **unfixable in principle**: C# attribute arguments may not be decimal constants, so `[InlineData]` money MUST be `double` or `string`. A guard that cannot be satisfied is a guard that gets deleted. Hence `src` only.
+
+Known gap, stated rather than hidden: a record POSITIONAL parameter carries no access modifier and is not matched. Every money member in `src` today is a modifier-bearing property; widen if that changes.
+
+**Rule 19's wording** also gained a clause. CLAUDE.md said "the sole DB writer"; D59 says sole owner of *scheduled and long* work, with bounded Api writes explicitly permitted. The code follows D59. The shorthand was stronger than the decision, and a reader trusting the shorthand would "fix" conformant code.
+
+### finding 366 — the test suite has an intermittent failure that is NOT a flaky test
+
+Recorded, not fixed, because a guessed fix is worse than a named symptom.
+
+Three failures tonight across three separate full-suite runs, in **three different tests** (`SectorIngestionTests`, `BackfillRunnerTests`, `OefSliceTests`), always in `AlphaLab.Data.Tests`, always the same exception:
+
+```
+System.ObjectDisposedException : Cannot access a disposed object.
+Object name: 'SQLitePCL.sqlite3'
+```
+
+Every one passes in isolation — `Data.Tests` ran **394/394 three times consecutively**. The failure appears only when the whole solution runs. The affected test is correctly scoped (`using var db`, all use inside the block), so this is not test-authoring error, and the stack reaches into production code (`SecurityMaster.ResolveAsOf`) rather than test scaffolding.
+
+**Why it matters more than an annoyance:** this pass exists to make CI the thing that catches invariant breaks. A CI that fails randomly trains a reader to re-run rather than read, and the guard that eventually fires for a real reason gets the same shrug. An unreliable check is worth less than no check, because it also spends attention.
+
+Deliberately NOT diagnosed further here: the evidence supports "a connection-lifetime issue that surfaces under parallel-load memory pressure" and does not yet distinguish between candidate mechanisms. It earns its own pass.
 ## v1.9.87 — the 1–3 %/yr prize is retired: the expectation is MEASURED, not asserted (D122; finding 367)
 
 *Recorded 2026-08-03. Branch `docs/v1.9.86-phase5-status` (this pass shares the branch by operator instruction). **D122 supersedes D38 and amends D56.** No code, no config value, no migration, no schema change. `check-register` green at **122 rows, 106 active, 5 superseded, 11 amended**.*
