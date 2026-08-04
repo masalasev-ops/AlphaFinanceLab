@@ -3120,3 +3120,53 @@ Report-only on the D117 clause-1 discipline — verified structurally, not promi
 Also pinned in the report itself, where a future reader meets it: **nothing measured here may set a pre-registered `expected_effect_ann`** (rule 16 / D52). The study answers *"which construction?"*, never *"what should I claim?"*.
 
 *Verification: `ci.ps1` green; `check-register` 123 rows; 14 construction/guard fixtures green; the archived report committed in the same PR (findings 362/363 — an artefact that can be regenerated away is not evidence).*
+
+---
+
+## v1.9.89 — who the gate actually pairs against, and over which sessions (findings 372–373)
+
+*Recorded 2026-08-04. **No decision, no migration, no schema change, no config key.** One fixture added; one paragraph added to DESIGN_IMPROVEMENTS §1.2. Finding 373 is **recorded and deliberately NOT resolved** — see below. Next-free finding after this entry: **374**.*
+
+### Where these came from
+
+An operator question, and a good one: *"if a fork starts mid-month while the others are already running and doing well, doesn't it start from zero?"* The intuition behind it — that a young strategy is compared on cumulative return against an older one's head start — describes a real and common way to build this wrong. Answering it meant reading the gate rather than the design text, and the read turned up one thing the corpus was silent about and one thing it contradicts.
+
+### finding 372 — the pairing domain is the overlap, implemented but stated nowhere
+
+`CurveMath.AlignedReturns` takes the **common-date intersection** of the two equity curves before differencing, so `T` is the length of the overlap and a mid-life fork contributes only the sessions it actually traded. The behaviour is correct, is shared by the gate and the monitor (one definition, so the two can never pair over different windows), and the class docstring says so.
+
+**The design corpus never did.** DESIGN_IMPROVEMENTS §1.2 defined `d_t = a_t^{(A)} − a_t^{(B)}` and moved straight to the Newey–West correction; the domain of `t` was left to the reader. And no fixture covered it — the gate tests all seed both curves over identical date ranges, so nothing would have failed if the intersection were dropped for a truncation or a zero-fill, both of which silently change `T` and therefore every MDE.
+
+This is the load-bearing-rule-with-no-anchor shape the corpus has hit before, and the healthy counterexample is on record: `SignalLibraryBuilder` has no `run_kind` filter, and SCHEMA *states why*. Here the rule lived only in a code comment.
+
+**Recorded and closed in this pass:** §1.2 gains the paragraph, and `FX-PairedWindowIsTheOverlap` makes it executable — a fork born at session 60 against a 100-session incumbent, both earning the same +0.1 %/day over the benchmark. It asserts the fork's `T` is its own 39 sessions, that both recover the same 25.2 %/yr **rate** despite the 2.5× track difference, and that what the short track costs is **power** (a wider MDE, hence `TooEarly`) rather than standing. One shared idiosyncratic series is read at the same index by both strategies, so window length is the only variable between their two power reports.
+
+*Fixture note worth keeping:* the first version built the fork as an exact `bench + 0.001`. A perfect β = 1 fit has **no residual**, so `AlphaSe` and the MDE are both zero and the power assertion compared `0 > 0`. The finding-371 lesson one pass later — synthetic data has to be able to exercise the path being asserted on.
+
+### finding 373 — the gate pairs against the BENCHMARK; five sentences say it pairs against Live. NOT RESOLVED HERE
+
+`EvaluationStep.Run` pairs **every** promotable strategy against `benchmarkStrategyId`, defaulting to `buyhold:cw` (the D26 cap-weight Buy&Hold). `DailyPipeline.cs:631` calls it without overriding that default, so **every gate verdict in the lab is strategy-vs-benchmark. No candidate is ever paired against Live.**
+
+The design text says otherwise in five places:
+
+| where | says |
+|---|---|
+| MASTER §8 | "the `PromotionGate` promotes a Candidate **over Live** only if it wins …" |
+| MASTER §8 | "**Revert** if a promotion regresses" |
+| MASTER §20.2 | allocator inputs include "gate verdict **vs Live**" |
+| DESIGN_IMPROVEMENTS §3.5 *Inputs* | "current gate verdict **vs Live**" |
+| DESIGN_IMPROVEMENTS §3.5 Step 3 cl.2 | "`TooEarly` **vs Live** ⇒ `\|t_i − current_i\| ≤ TooEarlyTiltCapPts`" |
+
+**This is not confined to prose.** `AllocationStep.cs:60` sets the allocator's flag as `r.Verdict == "TooEarly"` read from `power_reports`, whose every row carries `StrategyB = buyhold:cw`. So §20.2 clause 3's tilt cap, documented as firing on *TooEarly vs Live*, actually fires on *TooEarly vs the cap-weight benchmark*. Those are different conditions and bind on different strategies: a candidate can be inseparable from the benchmark while clearly separated from Live, and the reverse.
+
+**Which side is wrong is not decided here, and deliberately so.** The evidence leans toward the code being right and the prose being pre-D51 legacy:
+
+- **Hard rule 6 names the cap-weight account** as *the* alpha benchmark. Pairing against Live would contradict a hard rule.
+- **The allocator's own math requires a common benchmark.** §20.2 clause 1 shrinks each `α̂_i` toward `ᾱ`, the cross-sectional mean over the roster. A mean across strategies is only meaningful if every `α̂_i` was measured against the *same* opponent; pair each candidate against Live and the quantity being averaged differs per strategy.
+- **§8 itself says binary promotion is the rare event** and the allocator is the primary mechanism — a continuous weighted roster, not a champion being displaced. "Over Live" reads as v5-era language from when there were two strategies and one seat.
+
+Against that: the words are explicit and repeated, and `Revert` exists as a SCHEMA verdict token that `PromotionGate.Decide` never returns (the demotion path writes it from the monitor instead) — so the "displacement" model is *partially* present in the store's vocabulary.
+
+**Left to the operator on purpose.** Resolving it one way edits design text; resolving it the other changes what the gate does. Either way it touches what D31 means, and rule 25 is explicit that a decision is changed only by another decision — not by a finding, and not by me picking the reading I find more convincing. **Nothing in MASTER §8, MASTER §20.2, or DESIGN_IMPROVEMENTS §3.5 was touched in this pass**; the discrepancy is recorded intact so the resolution can quote it.
+
+*Verification: `FX-PairedWindowIsTheOverlap` green; `ci.ps1` green; `check-register` unchanged at 123 rows (no register edit in this pass).*
