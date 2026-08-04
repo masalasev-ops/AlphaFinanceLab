@@ -54,6 +54,49 @@ public class WorkerCommandParserTests
     }
 
     [Fact]
+    public void FR47_ConstructionStudy_ParsesWindowTailAndRepeatedBorrowAssumptions()
+    {
+        var c = WorkerCommandParser.Parse([
+            "construction-study", "--arena", "sp500", "--from", "2006-01-03", "--to", "2026-07-31",
+            "--tail-fraction", "0.10", "--borrow-bp", "0", "--borrow-bp", "40",
+        ]);
+
+        Assert.Equal(WorkerCommandKind.ConstructionStudy, c.Kind);
+        Assert.Equal("sp500", c.ArenaId);
+        Assert.Equal("2006-01-03", c.ConstructionStudy!.From);
+        Assert.Equal("2026-07-31", c.ConstructionStudy.To);
+        Assert.Equal(0.10, c.ConstructionStudy.TailFraction);
+        // --borrow-bp is REPEATABLE: each value is one stated assumption, and both survive parsing.
+        Assert.Equal([0.0, 40.0], c.ConstructionStudy.BorrowBpPerYear);
+    }
+
+    [Fact]
+    public void FR47_ConstructionStudy_OmittedOptionalsAreNullSoTheDefaultsAreTheStudys()
+    {
+        var c = WorkerCommandParser.Parse(["construction-study", "--from", "2006-01-03", "--to", "2026-07-31"]);
+        Assert.Null(c.ConstructionStudy!.TailFraction);
+        Assert.Null(c.ConstructionStudy.BorrowBpPerYear);
+    }
+
+    [Theory]
+    [InlineData("--tail-fraction", "0")]        // a tail of nothing
+    [InlineData("--tail-fraction", "0.75")]     // the two tails would overlap
+    [InlineData("--tail-fraction", "decile")]   // a typo must not silently become the default
+    [InlineData("--borrow-bp", "-10")]          // borrow is a cost, never a rebate
+    [InlineData("--borrow-bp", "cheap")]
+    public void FR47_ConstructionStudy_MalformedOptionalFailsClosed(string flag, string value) =>
+        Assert.Throws<ArgumentException>(() => WorkerCommandParser.Parse(
+            ["construction-study", "--from", "2006-01-03", "--to", "2026-07-31", flag, value]));
+
+    [Fact]
+    public void FR47_ConstructionStudy_RequiresAnOrderedWindow()
+    {
+        Assert.Throws<ArgumentException>(() => WorkerCommandParser.Parse(["construction-study", "--to", "2026-07-31"]));
+        Assert.Throws<ArgumentException>(() => WorkerCommandParser.Parse(
+            ["construction-study", "--from", "2026-07-31", "--to", "2006-01-03"]));
+    }
+
+    [Fact]
     public void UnknownVerb_FailsClosed_RatherThanStartingTheDailyRun()
     {
         // The one that matters: a typo must NOT fall through and launch the sole DB writer against the

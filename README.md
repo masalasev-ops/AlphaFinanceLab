@@ -12,46 +12,20 @@ without the honesty that qualifies it.
 
 ## Status
 
-**Phases 0–3.5 complete and merged; Phase 4 (Arena Replay) — SIGNED OFF 2026-07-31. Phase 4.5 (the
-Signal Library) is code-complete and merged**; what remains is the operator's full 20-year
-`signal-backfill` run and its measured wall time. (Phase, test count, and the finding/decision registers move fast;
-**`PROGRESS.md` and [`docs/CHANGELOG_v1.9.md`](docs/CHANGELOG_v1.9.md) are the source of truth** —
-this section describes the shape of the build and deliberately keeps no counters of its own.)
-Phases 0–2 stood up the skeleton, the market-data layer (forward operation runs **the S&P 100 slice**
-— 101 members, ~488k versioned bars over 20 years, plus the GSPC regime proxy; the widen to the S&P
-500 is a separate deliberate post-sign-off action), and the six-stage funnel + ledger + cost model +
-the staged daily pipeline hosted in `AlphaLab.Worker`. Phase 3 added the honest-arena evaluation —
-MDE, gate, overfitting monitor, allocator, random control populations — and Phase 3.5 the
-save/continue hardening (`reproduce-day` makes byte-identical reproducibility an executable proof).
+**Phases 0–5.5 complete and merged.** Phase 4 (Arena Replay) signed off 2026-07-31; Phase 4.5 (the Signal Library) and Phase 5 (the LLM layer + AI seats) shipped; **Phase 5.5 (the construction question) closed 2026-08-04**. (Phase, test count and the decision register move fast; **[`PROGRESS.md`](PROGRESS.md) and [`docs/CHANGELOG_v1.9.md`](docs/CHANGELOG_v1.9.md) are the source of truth** — this section describes the shape of the build and deliberately keeps no counters of its own.)
 
-**Phase 4 built the sealed room that proves the honesty engine works before forward judgment begins,
-and then ran it.** The whole pipeline was replayed over **5,031 sessions (2006-01-03 … 2025-12-31)**
-under `run_kind='replay'` quarantine against planted strategies with known truth. The result: **the
-monitor's calibrated pass marks are frozen** — the D56 `P_noise`/`P_edge` S3 trajectory curves,
-the C-1 detection-power curves, the S6 patience seed and the report cross-reference, written as five
-append-only config rows, with the report archived at
-[`docs/calibration/sp500/`](docs/calibration/sp500/). Forward S3 no longer runs on flat anchors.
+Phases 0–2 stood up the skeleton, the market-data layer and the six-stage funnel + ledger + D43 cost model + the staged daily pipeline hosted in `AlphaLab.Worker`. Phase 3 added the honest-arena evaluation — MDE, gate, overfitting monitor, allocator, random control populations — and Phase 3.5 the save/continue hardening (`reproduce-day` makes byte-identical reproducibility an executable proof). The store now holds **~3.65M versioned bars across 912 securities (2001–2026)** on the S&P 500 as-of membership (D109).
 
-**The single most useful number it produced** — the lab's detection threshold, measured for the first
-time: across monthly edge plants at 2/4/8/16 %/yr, **1/5/26/43 of 50 were promoted**. In plain terms,
-**a 4 %/yr edge is found about 10 % of the time** over twenty years. That is the honest power of this
-machinery, and it is why promotions are expected to be rare.
+**Phase 4 built the sealed room that proves the honesty engine works before forward judgment begins, then ran it twice.** The whole pipeline replays over **5,031 sessions** under `run_kind='replay'` quarantine against planted strategies with known truth. Generation 1 ran on a corpus that predated its own data-quality guard; the v1.9.77 sweep diagnosed it (55 securities carrying 1,763 impossible jump-days), 29 names were excluded from the roster, and **generation 2 re-ran clean**. The monitor's calibrated pass marks are frozen as append-only config rows with the report archived at [`docs/calibration/sp500/`](docs/calibration/sp500/).
 
-Still ahead in Phases 4.5–8 (see [`docs/BUILD_AND_PROMPTS_v1.9.md`](docs/BUILD_AND_PROMPTS_v1.9.md)
-§2 and [`PROGRESS.md`](PROGRESS.md)): the signal library (code-complete; the 20-year backfill run pending), the LLM layer, real strategies,
-risk/regimes/observability, and (contingent) fundamentals. No forward pipeline run has been committed
-yet, so the strategy/evaluation screens still return empty, `no_run_yet`-stamped read-models.
-`tools/ci.ps1` is green (build + the full test suite + guard greps); see `PROGRESS.md` for the
-current test count.
+**The two numbers worth knowing.**
 
-**What "working" will look like — set expectations now.** By construction, the lab's *fast* outputs
-are the honest-but-unglamorous ones: **anti-predictive kills** (a strategy the monitor can show is
-worse than random) and **`IndistinguishableFromRandom`** findings (an edgeless strategy that costs
-nothing to its cost-matched null). **Promotions are slow.** Because every head-to-head gap is judged
-against its Newey–West-corrected MDE, a small real edge can take *years* of paper trading to clear
-the noise — inside the MDE the verdict is `TooEarly`, not a number. This is the design working as
-intended, not a bug: a lab that promoted quickly would be lying about its statistical power. Don't
-judge it broken for being honest about how long real evidence takes to accrue.
+1. **The lab's detection power, measured** (generation 2, monthly edge plants, 50 each): **2 %/yr – 9/50 · 4 %/yr – 35/50 · 8 %/yr – 50/50 · 16 %/yr – 50/50**, with 0/50 no-edge plants promoted. In plain terms **a 4 %/yr edge is found about 70 % of the time** over twenty years. The admissible band is **[6.95 %, 32 %]/yr** (α*(10 y) = 6.947 %/yr floor, D116 ceiling). *(An earlier version of this README quoted 1/5/26/43 and "about 10 %" — generation 1's contaminated ladder. It is superseded.)*
+2. **The lab's resolving power, measured** (Phase 5.5, D123): at the ten-year horizon this arena can only adjudicate a strategy whose active-return information ratio is **≥ 0.886, sustained** — that follows from the horizon and the confidence/power pair alone. Measured across all seven registered signals under both a long-only and a long-short construction, the best of fourteen pairs is **0.392**. Long-short does not close the gap: it is ~2× leverage on the same bet, scaling tracking error and effect together, so it buys no detectability. **The long-short build was therefore not started** — a phase of work saved by one report.
+
+Still ahead in Phases 6–8 (see [`docs/BUILD_AND_PROMPTS_v1.9.md`](docs/BUILD_AND_PROMPTS_v1.9.md) §2 and [`PROGRESS.md`](PROGRESS.md)): real strategies + French factor attribution, risk/regimes/observability, and (contingent) fundamentals. **No forward pipeline run has been committed yet** — every one of the 5,033 `runs` rows is `run_kind='replay'` — so the strategy/evaluation screens still return empty, `no_run_yet`-stamped read-models. `tools/ci.ps1` is green (build + the full test suite + guard greps).
+
+**What "working" will look like — set expectations now.** By construction, the lab's *fast* outputs are the honest-but-unglamorous ones: **anti-predictive kills** (a strategy the monitor can show is worse than random) and **`IndistinguishableFromRandom`** findings (an edgeless strategy that costs nothing against its cost-matched null). **Promotions are slow.** Every head-to-head gap is judged against its Newey–West-corrected MDE, so a small real edge can take *years* of paper trading to clear the noise — inside the MDE the verdict is `TooEarly`, not a number. The bar above (IR ≥ 0.886 at ten years) is that statement made exact. This is the design working as intended, not a bug: a lab that promoted quickly would be lying about its statistical power. **The lab is graded on proposal quality and verdict honesty (§1.2), never on having found a winner.**
 
 ## Architecture
 
@@ -152,6 +126,7 @@ The `docs/` folder is the authoritative design package. Start with
 | [`docs/BUILD_AND_PROMPTS_v1.9.md`](docs/BUILD_AND_PROMPTS_v1.9.md) | Functional requirements + the gated phase plan (Phase 0 = checkpoints 0.1–0.6) |
 | [`docs/TEST_PLAN_v1.9.md`](docs/TEST_PLAN_v1.9.md) | The fixtures and tests each phase must pass (§8 = the Phase-0 inventory) |
 | [`docs/RUNBOOK_v1.9.md`](docs/RUNBOOK_v1.9.md) | Operations: daily cycle, catch-up, backups, the Phase-4 sign-off run (§8 — executed 2026-07-31) |
+| [`docs/phase5.5/`](docs/phase5.5/) | Phase 5.5 — the construction question: the measured answer on long-only vs long-short, and the IR bar it produced |
 | [`docs/calibration/sp500/`](docs/calibration/sp500/) | The archived calibration reports — the Phase-4 sign-off artifact and its frozen numbers |
 | [`ORIENTATION.md`](ORIENTATION.md) | The plain-language tour — what the lab is and how the whole system runs |
 | [`CLAUDE.md`](CLAUDE.md) | The standing hard rules the build obeys |

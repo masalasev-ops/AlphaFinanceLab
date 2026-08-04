@@ -214,7 +214,7 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
 
   "Calibration": {                                 // D64 — plants under P_noise(t)/P_edge(t)
     "Plant": {
-      "AlphaAnnualPct": 2.0,                       // edge plant target (§1.1 realistic prize); the DAILY survival plant + floor-cohort min — daily is a survival case, never a promotion target (Change 4)
+      "AlphaAnnualPct": 2.0,                       // edge plant target: the BASE RUNG of the D64 ladder (D122 - justified by the ladder the arena sweeps, never by an assumed prize); the DAILY survival plant + floor-cohort min — daily is a survival case, never a promotion target (Change 4)
       "AntiAlphaAnnualPct": -2.0,                  // anti-predictive plant (the Suspect fixture)
       "ActiveDayFrac": 0.25,                       // lumpy delivery — edge arrives in streaks
       "PersistencePhi": 0.9,                       // run persistence, scaled to family horizon (mean active run = max(1/(1−φ), horizon), v1.9.39)

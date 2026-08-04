@@ -1,4 +1,10 @@
-# Phase 5 — the per-checkpoint build prompts (5.0 … 5.8)
+# Phase 5 — the per-checkpoint build prompts (5.0 … 5.8) — **PHASE COMPLETE**
+
+> **Status: every checkpoint below shipped (v1.9.60 → v1.9.68), plus the live smoke test on both pinned
+> tiers (v1.9.69) and the post-close reconciliation that caught the drift 5.8 missed (v1.9.70).** These
+> files are kept as the built record — what was asked for, and the rails it was built under. They are no
+> longer instructions. The DoD evidence lives in PROGRESS's Phase-5 gate box; the narrative in
+> CHANGELOG v1.9.60–v1.9.70.
 
 *One file per checkpoint. Each is a **ready-to-paste Claude Code prompt**: what to build, the rails it must
 not cross, the fixtures that gate it, and the traps that are already known. This folder is the executable
@@ -22,13 +28,13 @@ to this folder rather than an exception to it.
 |---|---|---|---|
 | 5.0 | [5.0-prep.md](5.0-prep.md) | **DONE (v1.9.60)** — D112, D113, the model tier, the decomposition, findings 314–322 | `check-register` clean; no `src/` |
 | 5.1 | [5.1-provider-seam.md](5.1-provider-seam.md) | **DONE (v1.9.61)** — `IAnalysisProvider`, the Anthropic Batches client, the D24 budget, M7 | `FR21_CacheHit_CostsZero` |
-| 5.2 | [5.2-news-budget.md](5.2-news-budget.md) | The D46 news budget, enforced pre-token | `FR22_NewsBudget_CapsAndDedupes`, `FR22_Budget_DegradesInOrder` |
-| 5.3 | [5.3-pipeline-stage3.md](5.3-pipeline-stage3.md) | Stage 3 of the D53 pipeline + the daily regime brief | `FR21_Replay_HasNoAnalysisPath`, the FR-29 post-commit test |
-| 5.4 | [5.4-context-packs.md](5.4-context-packs.md) | `ContextPackBuilder`, `ai_context_packs`, the digest seam, the common floor field | `FX-PackWatermark`, `FX-PackNoLeak` |
-| 5.5 | [5.5-ai-decisions.md](5.5-ai-decisions.md) | `ai_decisions` persist-before-use, per-seat budgets, reproduce-day | `FX-AiDecisionIsTheRow`, `FX-BudgetAbstain`, `FX-ReproduceDay-AiSession` |
-| 5.6 | [5.6-researcher-seat.md](5.6-researcher-seat.md) | The hypotheses/brief/skeptic endpoints + the D112 evidence diet | `FR23_Hypotheses_RequireParentEvidence`, `FX-EvidenceDietRefusal` |
-| 5.7 | [5.7-proposal-inputs.md](5.7-proposal-inputs.md) | The D110 **inputs** + the D113 paper control | `FX-ProposalPriorRequired`, `FX-ProposalScorePinBeforeProposal`, `FX-ProposalScoreIsMechanical` |
-| 5.8 | [5.8-reconciliation.md](5.8-reconciliation.md) | Measured numbers, gate boxes, corpus reconciliation | The phase DoD |
+| 5.2 | [5.2-news-budget.md](5.2-news-budget.md) | **DONE (v1.9.62)** - the D46 news budget, enforced pre-token | `FR22_NewsBudget_CapsAndDedupes`, `FR22_Budget_DegradesInOrder` |
+| 5.3 | [5.3-pipeline-stage3.md](5.3-pipeline-stage3.md) | **DONE (v1.9.63)** - Stage 3 of the D53 pipeline + the daily regime brief | `FR21_Replay_HasNoAnalysisPath`, the FR-29 post-commit test |
+| 5.4 | [5.4-context-packs.md](5.4-context-packs.md) | **DONE (v1.9.64)** - `ContextPackBuilder`, `ai_context_packs`, the digest seam, the common floor field | `FX-PackWatermark`, `FX-PackNoLeak` |
+| 5.5 | [5.5-ai-decisions.md](5.5-ai-decisions.md) | **DONE (v1.9.65)** - `ai_decisions` persist-before-use, per-seat budgets, reproduce-day | `FX-AiDecisionIsTheRow`, `FX-BudgetAbstain`, `FX-ReproduceDay-AiSession` |
+| 5.6 | [5.6-researcher-seat.md](5.6-researcher-seat.md) | **DONE (v1.9.66)** - the hypotheses/brief/skeptic endpoints + the D112 evidence diet | `FR23_Hypotheses_RequireParentEvidence`, `FX-EvidenceDietRefusal` |
+| 5.7 | [5.7-proposal-inputs.md](5.7-proposal-inputs.md) | **DONE (v1.9.67)** - the D110 **inputs** + the D113 paper control | `FX-ProposalPriorRequired`, `FX-ProposalScorePinBeforeProposal`, `FX-ProposalScoreIsMechanical` |
+| 5.8 | [5.8-reconciliation.md](5.8-reconciliation.md) | **DONE (v1.9.68)** - measured numbers, gate boxes, corpus reconciliation | The phase DoD |
 
 ## Rails that bind every checkpoint
 
