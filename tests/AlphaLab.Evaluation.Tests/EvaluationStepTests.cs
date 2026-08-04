@@ -195,6 +195,59 @@ public class EvaluationStepTests
     }
 
     [Fact]
+    public void FX_PairedWindowIsTheOverlap_LateForkIsJudgedOnItsOwnSessionsAtTheSameAlphaRate()
+    {
+        // Finding 372 — the mid-life fork. A candidate registered part-way through the arena's life has no
+        // returns for the sessions before it existed. The pair is the COMMON-DATE INTERSECTION
+        // (`CurveMath.AlignedReturns`), so the fork is judged on its own sessions and the incumbent's earlier
+        // ones never enter its difference series: it is neither credited nor charged for them.
+        //
+        // The second assertion is the substantive one. Alpha is a RATE, not a level. Both strategies earn the
+        // same +0.1%/day over the benchmark, so their annualized gaps agree exactly even though the incumbent
+        // has 2.5x the track and a very different cumulative return. A gate that compared equity levels — the
+        // intuitive design, and the wrong one — would rank a young fork below an incumbent for no reason but
+        // its birthday.
+        using var arena = new EvalArena();
+        var dates = EvalArena.Dates(100, new DateOnly(2026, 1, 5));
+        var bench = EvalArena.Noise(99, 0.008, seed: 7);
+        arena.SeedStrategy("buyhold:cw", "baseline", dates, bench);
+
+        // One idiosyncratic series, read at the SAME index by both strategies, so on every overlapping
+        // session the fork and the incumbent hold identical returns. Window length is then the only variable
+        // between their two power reports. (It must be non-zero: a perfect β = 1 fit has no residual, hence
+        // no standard error and a zero MDE for both — which would make assertion 3 vacuous rather than true.)
+        var idio = EvalArena.Noise(99, 0.00005, seed: 8);
+
+        // Incumbent: all 100 sessions, β = 1, +0.1%/day of alpha.
+        arena.SeedStrategy("live:old", "live", dates, bench.Select((b, i) => b + 0.001 + idio[i]).ToArray());
+
+        // Fork: born at session 60, the SAME construction over its own sub-window.
+        const int birth = 60;
+        var forkDates = dates.Skip(birth).ToList();
+        arena.SeedStrategy("cand:fork", "candidate", forkDates,
+            bench.Skip(birth).Select((b, j) => b + 0.001 + idio[birth + j]).ToArray());
+
+        using var db = arena.Open();
+        new EvaluationStep(db, new GateOptions()).Run(dates[^1]);
+
+        var incumbent = db.PowerReports.Single(p => p.StrategyA == "live:old");
+        var fork = db.PowerReports.Single(p => p.StrategyA == "cand:fork");
+
+        // 1. The window is the overlap — the fork's own sessions, not the benchmark's full history.
+        Assert.Equal(dates.Count - 1, incumbent.TDays);
+        Assert.Equal(forkDates.Count - 1, fork.TDays);
+
+        // 2. The same alpha RATE — both recover the planted 25.2%/yr — despite the 2.5x track difference.
+        Assert.Equal(0.252, incumbent.ObservedGapAnn!.Value, 2);
+        Assert.Equal(0.252, fork.ObservedGapAnn!.Value, 2);
+
+        // 3. What the short track actually costs is POWER, not alpha: a wider MDE, and therefore the honest
+        //    TooEarly rather than an adverse verdict. "Starts from zero" is zero TRACK, never zero standing.
+        Assert.True(fork.MdeAnn > incumbent.MdeAnn);
+        Assert.Equal("TooEarly", fork.Verdict);
+    }
+
+    [Fact]
     public void Run_NoBenchmarkAccount_ProducesNothing()
     {
         using var arena = new EvalArena();

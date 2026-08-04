@@ -38,7 +38,11 @@
 
 ### 1.2 The MDE — Newey–West corrected (D48)
 
-For any head-to-head, form the **daily active-return difference series** `d_t = a_t^{(A)} − a_t^{(B)}` (paired testing, D31). The v5 MDE assumed i.i.d. `d_t`; active-return differences are autocorrelated (shared holdings persist across days; overlapping horizons), which understates the effective variance and makes the honesty metric itself overclaim. v6:
+For any head-to-head, form the **daily active-return difference series** `d_t = a_t^{(A)} − a_t^{(B)}` (paired testing, D31).
+
+**The pairing domain is the overlap (stated v1.9.89, finding 372).** `t` ranges over the sessions **common to both equity curves** — never either side's full history — and `T` below is the length of that intersection. A strategy forked mid-life therefore contributes only the sessions it actually traded: it is neither credited nor charged for an older opponent's earlier track, and because the effect is an annualized **rate** rather than a cumulative level, a young fork and a long incumbent earning the same alpha per session produce the same `α̂`. What the short track costs is **power** — fewer paired observations ⇒ larger `se` ⇒ wider MDE ⇒ `TooEarly`, and (D51 §2.1) shrinkage toward the roster mean, i.e. ~equal weight. It costs nothing in standing. Implemented in `CurveMath.AlignedReturns` (the common-date intersection, shared by the gate and the monitor so the two can never pair over different windows); fixture `FX-PairedWindowIsTheOverlap`.
+
+The v5 MDE assumed i.i.d. `d_t`; active-return differences are autocorrelated (shared holdings persist across days; overlapping horizons), which understates the effective variance and makes the honesty metric itself overclaim. v6:
 
 ```
 σ²_LR = γ₀ + 2·Σ_{k=1..L} w_k·γ_k        # Newey–West long-run variance of d_t
