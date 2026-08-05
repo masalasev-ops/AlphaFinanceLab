@@ -15,7 +15,7 @@
 | S&P 100 slice (forward universe through Phase 4 — D65/D70) | **iShares OEF holdings CSV primary + Wikipedia S&P 100 cross-check** (count sanity 99–103); replay never uses the slice | n/a — retires when this arena widens to its full S&P 500 universe after Phase 4 sign-off, which is where that universe stops (D109 supersedes D87: further breadth is a separate arena, never an in-place widen) |
 | Fundamentals | **Phase 8 entry condition becomes: upgrade to a fundamentals-bearing tier for one trial month → run the §7.0 PIT protocol → keep paying only on a pass** | n/a |
 
-Everything runs Phases 0–7 completely on this tier; Phase 8 is the only blocked phase and was already contingent. Consequences are patched into INTEGRATIONS_v1.9 §1–2 and MASTER §2 (D49).
+Everything runs Phases 0–7 completely on this tier; Phase 8 is the only blocked phase and was already contingent. Consequences are patched into INTEGRATIONS_v1.9 §1–2 and the decision register, docs/DECISIONS_v1.9.md (D49).
 
 ## 2. Machine & OS
 Windows (your setup) is fine. ~10GB free disk (DB <2GB for years + backups + 30-day raw-payload cache). Prefer a machine that's on evenings — the daily job runs after close; catch-up (D47) covers outages but an always-on machine keeps the forward record gapless.

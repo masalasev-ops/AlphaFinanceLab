@@ -465,7 +465,7 @@ The trading and data machinery is inexpensive to operate. The AI seats, once bui
 
 ## Where to go next
 
-- The full architecture, decisions, and math: `MASTER_DESIGN_v1.9.md`.
+- The full architecture and math: `MASTER_DESIGN_v1.9.md`; the decision register: `docs/DECISIONS_v1.9.md`.
 - The specific strategies being tested and why: `STRATEGY_CATALOG_v1.9.md`.
 - The AI seats in full detail: `MASTER_DESIGN_v1.9.md` §23.
 - Current build status and what is finished vs. in progress: `PROGRESS.md`.

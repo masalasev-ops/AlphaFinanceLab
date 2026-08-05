@@ -1,6 +1,6 @@
 # AlphaLab — v1.9 Documentation Package (README)
 
-*Design revision v1.9. Build status is live, not pre-implementation — the build is well past the phases this package specifies. Read no phase, count, or D-range from this file: `PROGRESS.md` holds the current phase, test count and the open-item list; `docs/CHANGELOG_v1.9.md` holds the full pass-by-pass history and every finding; MASTER §2 is the decision register **and is the count**.*
+*Design revision v1.9. Build status is live, not pre-implementation — the build is well past the phases this package specifies. Read no phase, count, or D-range from this file: `PROGRESS.md` holds the current phase, test count and the open-item list; `docs/CHANGELOG_v1.9.md` holds the full pass-by-pass history and every finding; `docs/DECISIONS_v1.9.md` is the decision register **and is the count**.*
 
 *This package is sufficient for building the entire system through Claude Code, solo, with no undocumented decisions. The gap-closure pass (decisions D50–D56) is already merged into every document — there is no separate addendum to reconcile.*
 
@@ -10,7 +10,8 @@
 | Doc | Role |
 |---|---|
 | `ARENA_ARCHITECTURE_v1.9.3.md` | **How AlphaLab supports multiple isolated universes ("arenas").** Defines D71: one universe per arena, separate DB + process per arena, arena-scoped calibration, an arena-switcher frontend that never merges leaderboards, and a step-by-step "add an arena" checklist. Additive; no schema change; the S&P 500 build is unaffected. |
-| `MASTER_DESIGN_v1.9.md` | **The comprehensive document.** The decisions log (§2) — the register itself is the count, never a number quoted here — architecture, the daily funnel, data sourcing, golden rules, the plain-language math appendix (§19), the gap-closure specs (§20), the **UI-boundary specs (§21 `AlphaLab.Api`, §22 honesty read-models)** that make the front end swappable, the AI-seat spec (§23), and the Signal Library spec (§24, D91) |
+| `DECISIONS_v1.9.md` | **The decision register** (extracted from MASTER §0/§2 in v1.9.90) — the register itself is the count, never a number quoted here — plus the design-refinement history that narrates how it was reached |
+| `MASTER_DESIGN_v1.9.md` | **The comprehensive document.** Architecture, the daily funnel, data sourcing, golden rules, the plain-language math appendix (§19), the gap-closure specs (§20), the **UI-boundary specs (§21 `AlphaLab.Api`, §22 honesty read-models)** that make the front end swappable, the AI-seat spec (§23), and the Signal Library spec (§24, D91) |
 | `STRATEGY_CATALOG_v1.9.md` | Every strategy's exact spec, the `IModel` contract, acceptance criteria |
 | `DESIGN_IMPROVEMENTS_v1.9.md` | Metrics/evaluation math in full, factor research, sizing/costs, LLM economics, Arena Replay, the power-reality tables |
 | `DESIGN_IMPROVEMENTS_EXPLAINED.md` | The plain-language "why" companion to `DESIGN_IMPROVEMENTS_v1.9.md` (onboarding; section numbers match the spec) |
@@ -62,7 +63,7 @@ These are **static visual references, not code to run or deploy**. Open any of t
    - Phase 7: MASTER §15 + §20.6, RUNBOOK, UX_GUIDELINES UX-7..11 + UX-16, `alphalab_ux_mockups.html` + the standalone panel mockups under `docs/mockups/` (`cohort_curve_panel.html`, `signal_library_panel.html`)
    - Phase 8: CATALOG §7 (the gate first), INTEGRATIONS §1 (fundamentals row)
 6. **End every session:** tests green (or honestly red in PROGRESS.md), a PROGRESS.md entry, a commit.
-7. **New decisions** (anything the docs don't cover) get the next D-number appended to MASTER §2 in the same table format — the docs stay the single source of truth as the build evolves.
+7. **New decisions** (anything the docs don't cover) get the next D-number appended to `docs/DECISIONS_v1.9.md` in the same table format — the docs stay the single source of truth as the build evolves.
 8. **Then ask, for every new decision: "does this change a prompt that has not been spent yet?"** If it touches a phase already built, the decision row is the record and the prompt is history — leave it. If it touches a phase **nobody has built from yet**, the prompt is still load-bearing and must carry the change, or someone will build the superseded design from it. That single question is what separates a harmless back-fill from a live gap: `BUILD_AND_PROMPTS` drifted to D91 while MASTER reached D105, and the only consequential part of that drift was the unspent Phase-5 prompt, which would have produced an AI seat with no leakage invariant.
 
 > Research/paper-trading only. Not investment advice.

@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 700" width="1000" height="700" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#5A6169"/>
+    </marker>
+    <marker id="ahLoop" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3B72A8"/>
+    </marker>
+    <marker id="ahGate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#C2410C"/>
+    </marker>
+  </defs>
+
+  <rect width="1000" height="700" fill="#FBFAF8"/>
+
+  <text x="500" y="40" text-anchor="middle" font-size="22" font-weight="600" fill="#1F2328">Two loops, and the one thing that may cross</text>
+  <text x="500" y="64" text-anchor="middle" font-size="13" fill="#5A6169">The researcher may start a new trader generation. It may never change one that is already running.</text>
+
+  <text x="250" y="100" text-anchor="middle" font-size="12" font-weight="700" fill="#B45309" letter-spacing="1.4">LOOP A  ·  THE TRADER</text>
+  <text x="715" y="100" text-anchor="middle" font-size="12" font-weight="700" fill="#2C5F8A" letter-spacing="1.4">LOOP B  ·  THE STRATEGIES</text>
+
+  <!-- ===== THE WALL, with one gate ===== -->
+  <line x1="500" y1="112" x2="500" y2="405" stroke="#C2410C" stroke-width="3" stroke-dasharray="7 5"/>
+  <line x1="500" y1="445" x2="500" y2="548" stroke="#C2410C" stroke-width="3" stroke-dasharray="7 5"/>
+  <rect x="486" y="148" width="28" height="232" fill="#FBFAF8"/>
+  <text transform="rotate(-90, 500, 264)" x="500" y="264" text-anchor="middle" font-size="10.5" font-weight="700" fill="#C2410C" letter-spacing="0.7">NEVER ALTERS A RUNNING TRADER</text>
+
+  <!-- ===== LOOP A ===== -->
+  <rect x="45" y="118" width="410" height="42" rx="6" fill="#F2F4F6" stroke="#98A1AB" stroke-width="1.5"/>
+  <text x="250" y="144" text-anchor="middle" font-size="13" fill="#1F2328">Generation N enters as a new pair</text>
+
+  <path d="M 250 160 L 250 176 M 142 176 L 358 176" fill="none" stroke="#5A6169" stroke-width="1.5"/>
+  <path d="M 142 168 L 142 190" fill="none" stroke="#5A6169" stroke-width="1.5" marker-end="url(#ah)"/>
+  <path d="M 358 168 L 358 190" fill="none" stroke="#5A6169" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <rect x="45" y="190" width="195" height="58" rx="6" fill="#FFF1E0" stroke="#D97706" stroke-width="1.8"/>
+  <text x="142" y="214" text-anchor="middle" font-size="13" font-weight="600" fill="#1F2328">AI trader</text>
+  <text x="142" y="232" text-anchor="middle" font-size="11.5" fill="#5A6169">frozen once it starts</text>
+
+  <rect x="260" y="190" width="195" height="58" rx="6" fill="#EAF1F8" stroke="#3B72A8" stroke-width="1.8"/>
+  <text x="357" y="214" text-anchor="middle" font-size="13" font-weight="600" fill="#1F2328">Its clone</text>
+  <text x="357" y="232" text-anchor="middle" font-size="11.5" fill="#5A6169">fixed rule, no model</text>
+
+  <path d="M 142 248 L 142 264 M 358 248 L 358 264 M 142 264 L 358 264 M 250 264 L 250 274" fill="none" stroke="#5A6169" stroke-width="1.5"/>
+  <path d="M 250 266 L 250 282" fill="none" stroke="#5A6169" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <rect x="45" y="282" width="410" height="46" rx="6" fill="#F2F4F6" stroke="#98A1AB" stroke-width="1.5"/>
+  <text x="250" y="302" text-anchor="middle" font-size="13" font-weight="600" fill="#1F2328">Subtract one from the other</text>
+  <text x="250" y="319" text-anchor="middle" font-size="11.5" fill="#5A6169">the market cancels out, only the disagreement is left</text>
+
+  <path d="M 250 328 L 250 356" fill="none" stroke="#5A6169" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <rect x="45" y="356" width="410" height="60" rx="6" fill="#E8F5EC" stroke="#2F855A" stroke-width="1.8"/>
+  <text x="250" y="380" text-anchor="middle" font-size="13.5" font-weight="600" fill="#1F2328">Does the AI trade better than its clone?</text>
+  <text x="250" y="400" text-anchor="middle" font-size="11.5" fill="#2F855A">about a year, and it needs nothing from the researcher</text>
+
+  <!-- ===== LOOP B ===== -->
+  <rect x="545" y="118" width="340" height="42" rx="6" fill="#EAF1F8" stroke="#3B72A8" stroke-width="1.8"/>
+  <text x="715" y="144" text-anchor="middle" font-size="13" fill="#1F2328">Chart strategies (momentum, reversal, ...)</text>
+  <path d="M 715 160 L 715 186" fill="none" stroke="#5A6169" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <rect x="545" y="186" width="340" height="42" rx="6" fill="#F2F4F6" stroke="#98A1AB" stroke-width="1.5"/>
+  <text x="715" y="212" text-anchor="middle" font-size="13" fill="#1F2328">Run them against the random crowd</text>
+  <path d="M 715 228 L 715 254" fill="none" stroke="#5A6169" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <rect x="545" y="254" width="340" height="42" rx="6" fill="#F2F4F6" stroke="#98A1AB" stroke-width="1.5"/>
+  <text x="715" y="280" text-anchor="middle" font-size="13" fill="#1F2328">Results, and eventually verdicts</text>
+  <path d="M 715 296 L 715 322" fill="none" stroke="#5A6169" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <rect x="545" y="322" width="340" height="52" rx="6" fill="#FFF1E0" stroke="#D97706" stroke-width="1.8"/>
+  <text x="715" y="344" text-anchor="middle" font-size="13" font-weight="600" fill="#1F2328">AI researcher</text>
+  <text x="715" y="362" text-anchor="middle" font-size="11.5" fill="#5A6169">reads the results, proposes the next thing to try</text>
+  <path d="M 715 374 L 715 402" fill="none" stroke="#5A6169" stroke-width="1.5" marker-end="url(#ah)"/>
+
+  <rect x="545" y="402" width="340" height="42" rx="6" fill="#F2F4F6" stroke="#98A1AB" stroke-width="1.5"/>
+  <text x="715" y="428" text-anchor="middle" font-size="12.5" fill="#1F2328">You approve it</text>
+
+  <path d="M 885 423 L 920 423 L 920 139 L 891 139" fill="none" stroke="#3B72A8" stroke-width="1.8" marker-end="url(#ahLoop)"/>
+  <text x="940" y="281" text-anchor="middle" font-size="10.5" fill="#3B72A8" transform="rotate(-90, 940, 281)" letter-spacing="0.6">THE IMPROVEMENT LOOP</text>
+
+  <path d="M 715 444 L 715 470" fill="none" stroke="#5A6169" stroke-width="1.5" marker-end="url(#ah)"/>
+  <rect x="545" y="470" width="340" height="60" rx="6" fill="#E8F5EC" stroke="#2F855A" stroke-width="1.8"/>
+  <text x="715" y="494" text-anchor="middle" font-size="13.5" font-weight="600" fill="#1F2328">Do the proposals get better over time?</text>
+  <text x="715" y="514" text-anchor="middle" font-size="11.5" fill="#5A6169">slower, and the verdict half stays blank for now</text>
+
+  <!-- ===== THE ONE CROSSING ===== -->
+  <path d="M 545 423 L 20 423 L 20 139 L 38 139" fill="none" stroke="#C2410C" stroke-width="2.2" marker-end="url(#ahGate)"/>
+  <text x="250" y="443" text-anchor="middle" font-size="11.5" font-weight="600" fill="#C2410C">starts a NEW trader and clone, earning from scratch</text>
+  <text x="250" y="459" text-anchor="middle" font-size="11" fill="#5A6169">never an edit to the pair already running</text>
+
+  <!-- ===== SHARED FOUNDATION ===== -->
+  <rect x="45" y="576" width="875" height="46" rx="6" fill="#F0EDE7" stroke="#B8AFA1" stroke-width="1.5"/>
+  <text x="482" y="604" text-anchor="middle" font-size="12.5" fill="#5A6169">Both loops run on the same market data, the same costs, and the same arena mechanics</text>
+
+  <text x="500" y="654" text-anchor="middle" font-size="12" fill="#5A6169" font-style="italic">Each generation is held fixed and judged against its own clone, so improvement is by selection, never by tuning.</text>
+</svg>

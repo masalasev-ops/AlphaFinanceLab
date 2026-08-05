@@ -290,7 +290,7 @@ Stage 4 semantics: **the wish list opens/adds; only the `ExitPolicy` closes** �
 3. **Lag realism:** distribution of (availability − period-end) lags is plausible (weeks, not zero).
 4. **Depth check:** ≥ 3 years of quarterly history per name for Quality's earnings-stability term; measure coverage across the universe.
 5. **Survivor check:** do delisted names retain their historical fundamentals? (Vanishing history ⇒ survivorship contamination.)
-Record the protocol's results in `PROGRESS.md`; a pass names the source in the decision log (a **new** decision appended to MASTER §2 under the next free D-number at that time — D49 itself is the budget-tier launch configuration and is not reused); any fail keeps Phase 8 closed.
+Record the protocol's results in `PROGRESS.md`; a pass names the source in the decision log (a **new** decision appended to docs/DECISIONS_v1.9.md under the next free D-number at that time — D49 itself is the budget-tier launch configuration and is not reused); any fail keeps Phase 8 closed.
 
 > **Leakage warning (all of §7):** fundamentals join on `report_available_date <= asOf`, **as-reported**, availability-lagged. `IFeatureView` exposes fundamentals only in that form. Getting this wrong silently inflates every backtest.
 
