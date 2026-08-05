@@ -234,12 +234,18 @@ $frozenZoneDirs = @(
     (Join-Path $repoRoot 'docs/phase5.5'),            # the Phase 5.5 spec as issued
     (Join-Path $repoRoot 'docs/calibration')          # archived reports (D117 report-only discipline)
 )
-# Files frozen at SECTION granularity: the named sections are historical records (the session log,
-# the prior-session bullets, the resolved-proposal ledger, the revision-state ledger).
+# Files frozen at SECTION granularity: the named sections are append-only records where a new
+# entry IS history the moment it is written (the session log, the resolved-proposal ledger, the
+# revision-state ledger). PROGRESS's '## Current state' is deliberately NOT here: it is the
+# NON-historical part of the file, so a stale citation written into it later must FAIL this scan.
+# Its historical prior-session bullets are exempted by LINE MARKER below instead.
 $frozenSections = @{
-    (Join-Path $repoRoot 'PROGRESS.md')      = @('## Current state', '## Session log', '## Decision proposals');
+    (Join-Path $repoRoot 'PROGRESS.md')      = @('## Session log', '## Decision proposals');
     (Join-Path $repoRoot 'docs/MANIFEST.md') = @('## Revision state')
 }
+# The prior-session bullet markers inside PROGRESS '## Current state' (one historical run of
+# bullets; 'Earlier session'/'Earlier still' are its continuation markers).
+$frozenLineMarker = '^\s*-\s+\*\*(Prior session|Earlier session|Earlier still)'
 $sectionAt = @{}
 foreach ($fsPath in $frozenSections.Keys) {
     if (-not (Test-Path -LiteralPath $fsPath)) { continue }
@@ -258,6 +264,35 @@ foreach ($fsPath in $frozenSections.Keys) {
 # MASTER by another section AND some other doc's own section 2 (e.g. "MASTER (sect)13, TEST_PLAN
 # (sect)2") from false-positiving; a bare "(sect)2 row" with no MASTER token is out of reach and is
 # accepted as the heuristic's cost.
+# ---- 3e SELF-TEST (always on): the zone classification must behave as ruled, or the scan is
+# silently mis-scoped. A synthetic stale citation in PROGRESS '## Current state' must FAIL (not be
+# exempt); the same citation inside a prior-session bullet, or anywhere in '## Session log', must
+# PASS (be exempt). Runs against the real section map so a heading rename breaks loudly here.
+$progressKey = Join-Path $repoRoot 'PROGRESS.md'
+if ($sectionAt.ContainsKey($progressKey)) {
+    $pmap = $sectionAt[$progressKey]
+    $currentStateLine = ($pmap.Keys | Where-Object { $pmap[$_] -like '## Current state*' } | Sort-Object | Select-Object -First 1)
+    $sessionLogLine   = ($pmap.Keys | Where-Object { $pmap[$_] -like '## Session log*'   } | Sort-Object | Select-Object -First 1)
+    if (-not $currentStateLine -or -not $sessionLogLine) {
+        throw 'check-register 3e self-test: PROGRESS.md no longer has ## Current state / ## Session log headings - re-scope the frozen zones.'
+    }
+    function Test-3eExempt([int]$line, [string]$text) {
+        $sec = $pmap[$line]
+        foreach ($s in $frozenSections[$progressKey]) { if ($sec -and $sec.StartsWith($s)) { return $true } }
+        if ($text -match $frozenLineMarker) { return $true }
+        return $false
+    }
+    if (Test-3eExempt $currentStateLine 'a synthetic stale MASTER citation in the live narrative') {
+        throw 'check-register 3e self-test: a stale citation in ## Current state would be silently exempt - the scan is mis-scoped.'
+    }
+    if (-not (Test-3eExempt $currentStateLine '- **Prior session:** a historical bullet citing the register')) {
+        throw 'check-register 3e self-test: a prior-session bullet is no longer exempt - the line marker drifted.'
+    }
+    if (-not (Test-3eExempt $sessionLogLine 'any session-log line citing the register')) {
+        throw 'check-register 3e self-test: a session-log line is no longer exempt - the section freeze drifted.'
+    }
+}
+
 $stalePattern = 'MASTER[^' + $sect + ']{0,25}' + $sect + '\s*2(?![0-9])'
 $staleHits = Select-String -Path $citeFiles -Pattern $stalePattern -ErrorAction SilentlyContinue
 foreach ($hit in $staleHits) {
@@ -271,6 +306,7 @@ foreach ($hit in $staleHits) {
         $inFrozenSection = $false
         foreach ($s in $frozenSections[$hit.Path]) { if ($sec -and $sec.StartsWith($s)) { $inFrozenSection = $true; break } }
         if ($inFrozenSection) { continue }
+        if ($hit.Line -match $frozenLineMarker) { continue }   # a prior-session bullet is history wherever it sits
     }
     $rel = $hit.Path.Substring($repoRoot.Length + 1)
     Add-Violation '3e' ("stale register citation (MASTER " + $sect + "2) outside the frozen zones at ${rel}:" + $hit.LineNumber + " - the register lives in docs/DECISIONS_v1.9.md")
