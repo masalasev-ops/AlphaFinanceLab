@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AlphaLab.Core.Config;
 using AlphaLab.Data;
 
 namespace AlphaLab.Data.Tests;
@@ -163,13 +164,92 @@ public sealed class ConfigConsistencyTests
         if (!doc.RootElement.TryGetProperty("Llm", out var llm) ||
             !llm.TryGetProperty("DailyBudget", out var b))
         {
-            return (1.0, 10, 0);   // LlmDailyBudgetOptions' defaults
+            return (0.39, 10, 130_000);   // LlmDailyBudgetOptions' defaults (derived, D130)
         }
 
         return (
-            b.TryGetProperty("MaxCostUsd", out var c) ? c.GetDouble() : 1.0,
+            b.TryGetProperty("MaxCostUsd", out var c) ? c.GetDouble() : 0.39,
             b.TryGetProperty("MaxCalls", out var n) ? n.GetInt32() : 10,
-            b.TryGetProperty("MaxTokens", out var t) ? t.GetInt32() : 0);
+            b.TryGetProperty("MaxTokens", out var t) ? t.GetInt32() : 130_000);
+    }
+
+    /// <summary>
+    /// FX-BudgetDerivation (D130): every derived spend cap equals its formula output from the ONE
+    /// authored number, recomputed here from the COMMITTED appsettings — so a hand-edit of a derived cap
+    /// fails the suite. Rounding is to the cent, as CONFIG_REFERENCE's D130 block states, so the fixture
+    /// and the file cannot disagree about what "equals" means. The Api's copy of DailyBudget is held
+    /// equal to the Worker's by Config_LlmDailyBudget_AgreesAcrossProcesses above.
+    /// </summary>
+    [Fact]
+    public void FX_BudgetDerivation_DerivedCapsEqualTheirFormulas()
+    {
+        var repoRoot = FindRepoRoot();
+        var worker = Path.Combine(repoRoot, "src", "AlphaLab.Worker", "appsettings.json");
+        using var doc = JsonDocument.Parse(File.ReadAllText(worker));
+        var llm = doc.RootElement.GetProperty("Llm");
+        var ai = doc.RootElement.GetProperty("Ai");
+
+        var annual = llm.GetProperty("AnnualBudgetUsd").GetDecimal();
+        var committed = annual * (1m - 0.15m);
+
+        Assert.Equal(
+            Math.Round(committed * 0.60m / 252m, 2),
+            ai.GetProperty("Contestant").GetProperty("DailyBudgetUsd").GetDecimal());
+        Assert.Equal(
+            Math.Round(committed * 0.40m / 12m, 2),
+            ai.GetProperty("Researcher").GetProperty("MonthlyBudgetUsd").GetDecimal());
+
+        var budget = llm.GetProperty("DailyBudget");
+        var maxCost = budget.GetProperty("MaxCostUsd").GetDecimal();
+        Assert.Equal(Math.Round(committed / 252m * 1.15m, 2), maxCost);
+
+        // MaxTokens = floor(MaxCostUsd / (mean uncached input rate / 1e6)) — finding 320's knob, enforced.
+        var meanInputPerMTok = llm.GetProperty("Pricing").EnumerateObject()
+            .Select(m => m.Value.GetProperty("InputPerMTok").GetDecimal())
+            .Average();
+        Assert.Equal(
+            (int)Math.Floor(maxCost / (meanInputPerMTok / 1_000_000m)),
+            budget.GetProperty("MaxTokens").GetInt32());
+
+        // The token ceiling is >0 under DEFAULT config too — committed file and bound defaults agree
+        // that the third D24 dimension is enforced, not disabled.
+        Assert.True(budget.GetProperty("MaxTokens").GetInt32() > 0);
+        Assert.True(new LlmDailyBudgetOptions().MaxTokens > 0);
+    }
+
+    /// <summary>
+    /// D130/3-C: the shortlist size is bounded by the STRUCTURAL D24 scope cap, not the budget.
+    /// Recomputes the budget-affordable N from the committed values and the MODELLED per-name tokens
+    /// (72 in / 24 out — MASTER §23.2's layer table at 25 names; MODELLED, NOT MEASURED, replaced by
+    /// analysis_cache actuals per D130's recalibration trigger) and asserts it clears the committed size:
+    /// the budget does not bind at the authored annual, so the scope rail (25, D24/D127) is what binds —
+    /// and that value is FROZEN per contestant generation into config_json, never re-read per session
+    /// (FX-ShortlistSizeFrozenPerGeneration, Phase 6, when the generation machinery exists).
+    /// </summary>
+    [Fact]
+    public void FX_ShortlistDerivation_TheScopeCapBinds_NotTheBudget()
+    {
+        var repoRoot = FindRepoRoot();
+        var worker = Path.Combine(repoRoot, "src", "AlphaLab.Worker", "appsettings.json");
+        using var doc = JsonDocument.Parse(File.ReadAllText(worker));
+        var llm = doc.RootElement.GetProperty("Llm");
+        var ai = doc.RootElement.GetProperty("Ai");
+
+        var daily = ai.GetProperty("Contestant").GetProperty("DailyBudgetUsd").GetDecimal();
+        var opus = llm.GetProperty("Pricing").GetProperty("claude-opus-5");
+        var batch = llm.GetProperty("BatchDiscountMultiplier").GetDecimal();
+
+        var costPerNamePerDay =
+            (72m * opus.GetProperty("InputPerMTok").GetDecimal()
+             + 24m * opus.GetProperty("OutputPerMTok").GetDecimal())
+            / 1_000_000m * batch;
+        var affordable = (int)Math.Floor(daily / costPerNamePerDay);
+
+        var committedSize = ai.GetProperty("Contestant").GetProperty("ShortlistSize").GetInt32();
+        Assert.Equal(25, committedSize);            // the D24/D127 structural scope rail, pinned
+        Assert.True(affordable >= committedSize,    // the budget does not bind at the authored annual
+            $"budget affords only {affordable} names/day — below the scope cap {committedSize}; " +
+            "the budget has become the binding constraint and D130's 3-C derivation must be re-read");
     }
 
     /// <summary>

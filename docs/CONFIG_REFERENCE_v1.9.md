@@ -291,7 +291,11 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
   // key is left UNTOUCHED and reported, so a re-run is a no-op, not a new version (pinned once, never
   // re-stamped). The verb records each row's DERIVATION in its own `reason` (key rule 3).
 
-  "Llm": {                                         // D24/D46
+  "Llm": {                                         // D24/D46; D130 (v1.9.92) — the annual budget is THE one authored spend number
+    "AnnualBudgetUsd": 100,                        // THE ONE AUTHORED SPEND NUMBER (D130, amends D24). Every other spend cap
+                                                   // below is DERIVED from it and recomputed by FX-BudgetDerivation; the
+                                                   // derivation block after this fence is the arithmetic. A derived cap is
+                                                   // never hand-edited: the fixture fails on any divergence.
     "Tasks": {                                     // PER-TASK TIER RE-PINNED 2026-08-01 at Phase-5 prep (v1.9.60).
                                                    // The prompt requires this to be a deliberate build-time CHOICE with its
                                                    // date, not an inheritance: the previous regime_brief/research_brief/
@@ -301,10 +305,22 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
                                                    // plausible-but-wrong brief read alike), and Batches is already half
                                                    // price, so the top tier is bought exactly where judgment is the product;
                                                    // news_extraction is a mechanical shape-transform with a checkable output.
-      "news_extraction": { "Model": "claude-haiku-4-5" },
-      "regime_brief":    { "Model": "claude-opus-5" },
-      "research_brief":  { "Model": "claude-opus-5" },
-      "skeptic":         { "Model": "claude-opus-5" }
+      "news_extraction": { "Model": "claude-haiku-4-5", "ExpectedOutputTokens": 700 },
+      "regime_brief":    { "Model": "claude-opus-5", "ExpectedOutputTokens": 700 },
+      "research_brief":  { "Model": "claude-opus-5", "ExpectedOutputTokens": 1500 },
+      "skeptic":         { "Model": "claude-opus-5", "ExpectedOutputTokens": 1500 }
+                                                   // ExpectedOutputTokens (D130/finding 380): the PRE-FLIGHT estimate's output
+                                                   // term — a PRE-REGISTERED ESTIMATE, neither authored nor derived. The seeds
+                                                   // are MODELLED, NOT MEASURED (provenance: the v1.9.91 design conversation —
+                                                   // ~700 compact reads, ~1,500 long-form researcher tasks). Pre-registered
+                                                   // recalibration trigger: after N completed calls per task, the seed is
+                                                   // replaced by the p90 (a HIGH PERCENTILE, never a mean — a mean lets half
+                                                   // of calls breach the cap in aggregate) of that task's observed output in
+                                                   // analysis_cache, where N = MaxCalls × the 21-session evaluation window
+                                                   // (both existing numbers — the finding-309 rule; no new authored constant).
+                                                   // 0/absent = the estimator falls back to the API ceiling (fail-conservative,
+                                                   // the pre-v1.9.92 lockout behaviour). The ceiling itself (MaxOutputTokens,
+                                                   // 8192, AnthropicProviderOptions) stays as the API hard cap ONLY.
     },
     // CLIENT CONSEQUENCES OF THE OPUS-5 TIER, verified against the current API contract at the same date
     // (they are build constraints, not trivia - each one silently breaks something if missed):
@@ -362,7 +378,18 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     "BatchDiscountMultiplier": 0.5,                // the documented Batches half price (D46) - applied to every rate when a
                                                    // call goes through the Batches API, which is why every scheduled read is
                                                    // batched and the interactive path is not
-    "DailyBudget": { "MaxCostUsd": 1.00, "MaxCalls": 10, "MaxTokens": 0 },
+    "DailyBudget": { "MaxCostUsd": 0.39, "MaxCalls": 10, "MaxTokens": 130000 },
+                                                   // DERIVED (D130): MaxCostUsd = round(committed/252 × 1.15, 2) = 0.39;
+                                                   // MaxTokens = floor(MaxCostUsd / (mean uncached input rate / 1e6)) = 130,000
+                                                   // at the authored 100 (mean of the configured InputPerMTok values). The
+                                                   // token ceiling is now ENFORCED (>0) — finding 320's knob finally has a
+                                                   // derived value. Overshoot note (finding 382): the token guard is checked
+                                                   // state >= cap (backward-looking), unlike the cost guard's pre-flight
+                                                   // state + estimate > cap, so it admits ONE call past the limit; aligning it
+                                                   // is a named Phase 6 item. The caps assume a CALIBRATED estimator (D130):
+                                                   // until the ExpectedOutputTokens seeds and EstimatedArmCostUsd are
+                                                   // recalibrated from actuals, the binding constraint is the estimator
+                                                   // rather than the budget.
                                                    // CLOSED [finding 320, at checkpoint 5.1]: MaxTokens is the third D24
                                                    // ceiling, which the docs described ("tokens/calls/cost") and
                                                    // llm_budget_log had a column for while no key existed to enforce it.
@@ -390,8 +417,7 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     "AlertSink": "log+gui"                        // extend: email/webhook later (Phase 7 alerting)
   },
 
-  "FactorData": { "RefreshDayOfMonth": 5 }         // D41 French library pull
-}
+  "FactorData": { "RefreshDayOfMonth": 5 },        // D41 French library pull
 
   "Ai": {                                          // D79-D82 (v1.9.21) — the AI seats; budgets are per-seat hard caps (D24)
     "PackRecipeVersion": "cp-1.1",                 // context-pack recipe id; a frozen param (D80) — a change forks candidates
@@ -403,12 +429,22 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
                                                    //   can look up, which is the one failure this identifier cannot have.
     "Contestant": {                                // the LLM decision layer as a first-class IModel (D81)
       "Model": "llm-a",                            // vendor-neutral model id (Anthropic, local LM Studio, etc.) — set per frozen param, never hardcoded in code
-      "ShortlistSize": 25,                         // the deterministic local pre-filter hands the LLM at most this many names (Level-3 whole-universe scoring stays unreachable, D24)
-      "DailyBudgetUsd": 0.05                        // on exhaustion the contestant ABSTAINS (empty score map — the funnel's honest "nothing scored"), never a padded/stale decision
+      "ShortlistSize": 25,                         // the D127 pre-filter hands the LLM at most this many names (Level-3 stays
+                                                   // unreachable, D24). D130/3-C: the budget-affordable N at the derived daily
+                                                   // budget is ~416 (MODELLED per-name tokens 72 in / 24 out from the MASTER
+                                                   // §23.2 layer table; opus rates, batched), so the STRUCTURAL D24 scope cap
+                                                   // (25) binds, not the budget — the budget would bind only below ~$6/yr.
+                                                   // FROZEN per generation: computed once at candidate creation, written into
+                                                   // config_json, never re-read per session (a frozen param must not float
+                                                   // with budget or rates) — FX-ShortlistSizeFrozenPerGeneration, Phase 6.
+      "DailyBudgetUsd": 0.20                        // DERIVED (D130): round(committed × 0.60 / 252, 2) = 0.20 at the authored
+                                                   // 100. On exhaustion the contestant ABSTAINS (empty score map — the
+                                                   // funnel's honest "nothing scored"), never a padded/stale decision
     },
     "Researcher": {                                // the generative seat (D82); runs weekly/on-demand
       "Model": "llm-b",                            // may differ from the contestant's; a frozen param
-      "MonthlyBudgetUsd": 5.0                       // on exhaustion the researcher job simply queues
+      "MonthlyBudgetUsd": 2.83                      // DERIVED (D130): round(committed × 0.40 / 12, 2) = 2.83 at the authored
+                                                   // 100. On exhaustion the researcher job simply queues
     }
   },                                               // BOUND at checkpoint 5.7 (v1.9.67) as AiOptions, by AddForwardLlmStage ONLY - the replay and reproduce compositions must stay provably seat-free, and binding this in the pipeline CORE would have made "no seat" a runtime fact instead of a structural one. Ai.Researcher.MonthlyBudgetUsd is read as a PAIR headroom check (D113): both arms propose or neither does, because exhaustion between them would emit an unpaired observation into the margin series. Per-seat spend is attributed from analysis_cache (task + cost per call), NOT from llm_budget_log, which is one row per DAY across every seat and so cannot answer a per-seat question
                                                    // NOTE: per-strategy frozen params (prompt hash, model id, shortlist size, memory option + rule R, the no-LLM twin's scoring rule — D85) live in strategies.config_json, NOT here (key rule 1). The twin's scoring rule is a FIXED FORM (equal-weight z-score blend of the pack features), not a tunable key; its feature set follows Ai.PackRecipeVersion, so a recipe change forks like any frozen-policy change.
@@ -417,7 +453,8 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
                                                    // D82 — the trials budget that rations self-improvement's deflated-Sharpe spend (S2)
     "ForkBudgetPerYear": 6,                        // fork cadence; surfaced beside the trials count in the research UI
     "MaxConcurrentCandidates": 3                   // matches the "1 Live + 2-3 Candidates" roster shape (§8); ALSO the D112 evidence-diet bound (v1.9.66) — see below
-  },
+  }
+}
 ```
 
 **`Research.MaxConcurrentCandidates` carries a second job (D112, v1.9.66).** It is also the bound the
@@ -429,9 +466,36 @@ hold in flight — the right quantity to measure a saturated evidence base again
 was a new `Research.OutcomeOverdueGraceDays` key, an undefended number of exactly the class finding 309
 flagged, governing whether the researcher can propose at all.
 
-```json
+**The D130 derivation block (v1.9.92; amends D24) — one authored number, one pre-registered estimate,
+everything else derived.** Before D130, eight spend and scope bounds existed and not one was annual, so an
+operator constraint of the form "$X per year" had nowhere to live and every cap below it was authored
+rather than derived — the finding-309 defect, generalized. `Llm.AnnualBudgetUsd` is now THE authored spend
+number; the derivation (its ratios are the DECISION'S STRUCTURE, changeable only by a row amending D130,
+never a config edit — rule 25):
 
 ```
+reserve                          = 0.15                                  (unspent headroom)
+committed                        = AnnualBudgetUsd × (1 − reserve)       = 85.00 @ 100
+contestant/yr                    = committed × 0.60                      = 51.00
+researcher/yr                    = committed × 0.40                      = 34.00
+Ai.Contestant.DailyBudgetUsd     = round(contestant/yr ÷ 252, 2)         = 0.20
+Ai.Researcher.MonthlyBudgetUsd   = round(researcher/yr ÷ 12, 2)          = 2.83
+Llm.DailyBudget.MaxCostUsd       = round(committed ÷ 252 × 1.15, 2)      = 0.39   (15% intraday overshoot allowance)
+Llm.DailyBudget.MaxTokens        = floor(MaxCostUsd ÷ (mean InputPerMTok ÷ 1e6)) = 130,000
+```
+
+`FX-BudgetDerivation` recomputes every line from the committed appsettings and fails on a hand-edited
+derived cap. Rounding is to the cent, stated here so the fixture and the file cannot disagree. THE CAPS
+ASSUME THE PRE-FLIGHT ESTIMATOR IS CALIBRATED, and until it is, the binding constraint is the estimator
+rather than the budget (finding 380's lockout: with the 8192 ceiling as the output term, an Opus call
+estimated ~0.28 against a 0.20/day cap while actually costing ~0.09 — the guard refused before spending,
+the seat abstained daily, and the ledger showed zero spend with the budget unused). The calibration inputs
+are the `ExpectedOutputTokens` pre-registered estimates above and `ResearchJobExecutor.EstimatedArmCostUsd`
+(0.25, an authored dollar figure still living in code — finding 381, Phase 6). **Batch is the cost lever,
+not a cap input (3-F):** every scheduled read already runs through the Batches API at the documented half
+price (`UseBatchesApiForScheduled`, D46), and the contestant and researcher paths are latency-insensitive
+by construction — batch therefore DOUBLES the effective headroom under every derived cap rather than
+changing any cap's formula; the interactive path alone pays full rate.
 
 ## tools/Backfill/appsettings.json (the one-time bootstrap CLI — D65/D70)
 

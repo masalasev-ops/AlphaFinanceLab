@@ -8,6 +8,26 @@ public sealed class LlmTaskOptions
     /// (v1.9.60): the previous value for the reasoning tasks was superseded and had been carried forward
     /// unreviewed through four passes.</summary>
     public string Model { get; set; } = "";
+
+    /// <summary>
+    /// The EXPECTED output tokens for this task, feeding the PRE-FLIGHT estimate only (D130; finding 380).
+    ///
+    /// Until v1.9.92 the estimate assumed the full <c>MaxOutputTokens</c> ceiling (8192) as the output
+    /// term — and output is the dominant cost term, so against the derived daily caps the guard refused
+    /// calls the budget could comfortably afford: a LOCKOUT, not an over-estimate. The ceiling stays as
+    /// the API's hard cap; THIS value is what the estimator reads.
+    ///
+    /// It is a PRE-REGISTERED ESTIMATE, neither authored nor derived (D130): the committed seeds are
+    /// MODELLED, NOT MEASURED (provenance: the v1.9.91 design conversation — ~700 for the compact reads,
+    /// ~1,500 for the researcher's long-form tasks), and the pre-registered recalibration trigger replaces
+    /// each seed with a HIGH PERCENTILE (p90, never a mean — a mean lets half of calls breach the cap in
+    /// aggregate) of the task's observed output in <c>analysis_cache</c> once N completed calls exist,
+    /// where N = MaxCalls × the 21-session evaluation window (both existing numbers; finding-309 rule).
+    ///
+    /// 0 = no seed configured: the estimator falls back to the ceiling — the fail-conservative pre-v1.9.92
+    /// behaviour, never a silent zero-cost estimate.
+    /// </summary>
+    public int ExpectedOutputTokens { get; set; }
 }
 
 /// <summary>The D46 news ingestion budget — the real token lever, enforced BEFORE any token is spent
@@ -31,12 +51,22 @@ public sealed class NewsBudgetOptions
 /// </summary>
 public sealed class LlmDailyBudgetOptions
 {
-    public decimal MaxCostUsd { get; set; } = 1.00m;
+    /// <summary>DERIVED (D130): round(AnnualBudgetUsd × (1 − 0.15) / 252 × 1.15, 2) — the committed
+    /// share spread over trading days with a 15% intraday overshoot allowance. 0.39 at the authored 100.
+    /// Never hand-edit: FX-BudgetDerivation recomputes the formula from the committed appsettings and
+    /// fails on a divergence. The caps assume a calibrated pre-flight estimator (D130; finding 380) —
+    /// until it is calibrated, the binding constraint is the estimator, not the budget.</summary>
+    public decimal MaxCostUsd { get; set; } = 0.39m;
+
     public int MaxCalls { get; set; } = 10;
 
     /// <summary>Daily token ceiling across all seats and tasks; 0 = no token ceiling (cost and calls
-    /// still apply).</summary>
-    public int MaxTokens { get; set; }
+    /// still apply). DERIVED (D130, closing finding 320's open knob): floor(MaxCostUsd / (the mean
+    /// uncached input rate across the configured pricing table / 1e6)) = 130,000 at the authored 100.
+    /// Overshoot note (finding 382): this guard is checked as state ≥ cap (backward-looking), unlike the
+    /// cost guard's state + estimate &gt; cap, so it admits one call past the limit — aligning it with the
+    /// pre-flight shape is a named Phase 6 item, not changed in the v1.9.92 config pass.</summary>
+    public int MaxTokens { get; set; } = 130_000;
 }
 
 /// <summary>
@@ -74,6 +104,15 @@ public sealed class ModelPriceOptions
 public sealed class LlmOptions
 {
     public const string SectionName = "Llm";
+
+    /// <summary>
+    /// THE ONE AUTHORED SPEND NUMBER (D130, amends D24): the operator's annual LLM budget in USD. Every
+    /// other spend cap is DERIVED from it and recomputed by FX-BudgetDerivation — the derivation (reserve
+    /// 0.15; committed × 0.60 to the contestant, × 0.40 to the researcher; /252 daily, /12 monthly;
+    /// × 1.15 global-daily overshoot allowance) is the decision's structure, changeable only by a row
+    /// amending D130, never a config edit (rule 25). Full arithmetic: CONFIG_REFERENCE, the D130 block.
+    /// </summary>
+    public decimal AnnualBudgetUsd { get; set; } = 100m;
 
     /// <summary>
     /// The documented degradation order (D24): held names first, then whatever is cached, then a neutral
@@ -123,6 +162,15 @@ public sealed class LlmOptions
     /// <summary>The degradation order actually in force.</summary>
     public IReadOnlyList<string> ResolvedDegradationOrder =>
         DegradationOrder.Count > 0 ? DegradationOrder : DefaultDegradationOrder;
+
+    /// <summary>The expected output tokens feeding a task's PRE-FLIGHT estimate (D130; finding 380).
+    /// Falls back to <paramref name="ceiling"/> when the task carries no seed (0) or is unconfigured —
+    /// the fail-conservative pre-v1.9.92 behaviour. The ceiling itself remains the API's hard cap; the
+    /// estimator reads THIS.</summary>
+    public int ExpectedOutputTokensFor(string taskWireName, int ceiling) =>
+        Tasks.TryGetValue(taskWireName, out var t) && t.ExpectedOutputTokens > 0
+            ? t.ExpectedOutputTokens
+            : ceiling;
 
     /// <summary>The model pinned for a task. **Fails closed** (rule 10): an unconfigured task throws
     /// rather than falling back to some other task's model, because a silent substitution would be

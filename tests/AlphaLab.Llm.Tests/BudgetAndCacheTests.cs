@@ -36,6 +36,43 @@ public class BudgetAndCacheTests
         t.EnqueueGet(string.Join("\n", lines));
     }
 
+    /// <summary>
+    /// D130 / finding 380 — the lockout fix: the pre-flight estimate's output term is the task's
+    /// PRE-REGISTERED ExpectedOutputTokens seed, NOT the API ceiling. The budget here (0.05) sits
+    /// BETWEEN the two estimates — seed-based ≈ 0.009 (700 out), ceiling-based ≈ 0.102 (8192 out) —
+    /// so the call being ADMITTED proves the estimator read the seed; under the ceiling it would have
+    /// been refused before spending, which is exactly the lockout the finding records.
+    /// </summary>
+    [Fact]
+    public async Task D130_PreflightEstimate_ReadsTheExpectedOutputSeed_NotTheCeiling()
+    {
+        var llm = TestOptions.Llm(maxCost: 0.05m);
+        llm.Tasks[AnalysisTaskNames.RegimeBrief].ExpectedOutputTokens = 700;
+        var (provider, transport, _, _) = Build(llm);
+        ScriptBatch(transport, ("r1", "brief"));
+
+        var results = await provider.RunBatchAsync([TestOptions.Request("r1")]);
+
+        Assert.Equal(AnalysisOutcome.Succeeded, results[0].Outcome);
+    }
+
+    /// <summary>
+    /// The companion guard: with NO seed configured the estimator falls back to the ceiling —
+    /// fail-conservative, never a silent zero-cost estimate — and the same 0.05 budget refuses the
+    /// call pre-flight with nothing spent (the D24 before-any-token rule; the 3-D "pre-flight guard
+    /// trips on an over-budget estimate" fixture).
+    /// </summary>
+    [Fact]
+    public async Task D130_NoSeedConfigured_FallsBackToTheCeiling_AndRefusesPreflight()
+    {
+        var (provider, transport, _, ledger) = Build(TestOptions.Llm(maxCost: 0.05m));
+
+        var results = await provider.RunBatchAsync([TestOptions.Request("r1")]);
+
+        Assert.Equal(AnalysisOutcome.BudgetExhausted, results[0].Outcome);
+        Assert.Equal(0, transport.CallCount);
+    }
+
     [Fact]
     public async Task FR21_CacheHit_CostsZero()
     {

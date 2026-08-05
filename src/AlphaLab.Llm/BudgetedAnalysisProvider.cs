@@ -69,8 +69,12 @@ public sealed class BudgetedAnalysisProvider(
         foreach (var r in toSpend)
         {
             var model = llm.ModelFor(r.Task.Wire());
+            // D130/finding 380: the estimate's output term is the task's PRE-REGISTERED expected value,
+            // not the API ceiling — the ceiling (8192) as the output term made the guard refuse calls the
+            // budget could afford (a lockout, since output dominates cost). Ceiling remains the fallback.
             var estimate = CostModel.Estimate(
-                r.Prompt, _opts.MaxOutputTokens, llm.PricingFor(model), llm.BatchDiscountMultiplier,
+                r.Prompt, llm.ExpectedOutputTokensFor(r.Task.Wire(), _opts.MaxOutputTokens),
+                llm.PricingFor(model), llm.BatchDiscountMultiplier,
                 llm.UseBatchesApiForScheduled);
 
             if (WouldExceed(state, estimate, admitted.Count))
@@ -125,7 +129,8 @@ public sealed class BudgetedAnalysisProvider(
 
         var state = await ledger.GetAsync(day, ct).ConfigureAwait(false);
         var estimate = CostModel.Estimate(
-            request.Prompt, _opts.MaxOutputTokens, llm.PricingFor(model), llm.BatchDiscountMultiplier, batched: false);
+            request.Prompt, llm.ExpectedOutputTokensFor(request.Task.Wire(), _opts.MaxOutputTokens),
+            llm.PricingFor(model), llm.BatchDiscountMultiplier, batched: false);
 
         if (WouldExceed(state, estimate, 0))
         {
