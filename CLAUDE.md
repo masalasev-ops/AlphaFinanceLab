@@ -14,7 +14,8 @@ envelope, 202+job_id for long-running commands, read-models stamped run_id+water
 money as strings/minor-units (never floats).
 
 ## Documentation map (read the phase's diet per docs/README_v1.9.md §3 — not everything)
-- docs/MASTER_DESIGN_v1.9.md — the decision register (§2 is the register AND the count — never restate the range here), architecture, golden rules, math appendix, UI boundary (§21–22), the Signal Library (§24)
+- docs/DECISIONS_v1.9.md — the decision register (it is the register AND the count — never restate the range here) plus the design-refinement history; extracted from MASTER §0/§2 in v1.9.90
+- docs/MASTER_DESIGN_v1.9.md — architecture, golden rules, math appendix, UI boundary (§21–22), the Signal Library (§24); §0/§2 are pointer stubs to DECISIONS_v1.9.md
 - docs/ARENA_ARCHITECTURE_v1.9.3.md — multi-arena isolation (D71): one universe per arena, arena-namespaced storage, arena-scoped calibration, the no-merge frontend rule
 - docs/STRATEGY_CATALOG_v1.9.md — IModel contracts + per-strategy acceptance criteria
 - docs/DESIGN_IMPROVEMENTS_v1.9.md — metrics math, costs/sizing, LLM economics, Arena Replay
@@ -34,7 +35,7 @@ money as strings/minor-units (never floats).
 - docs/DESIGN_IMPROVEMENTS_EXPLAINED.md — plain-language "why" companion to DESIGN_IMPROVEMENTS (section numbers match the spec)
 - docs/POST_PHASE8_IMPROVEMENTS.md - post-Phase-8 roadmap: what each improvement is and why it earns its slot (companion: POST_PHASE8_PLAN.md holds the sequence)
 - docs/POST_PHASE8_PLAN.md - post-Phase-8 build sequence: the passes in order + the hooks that exist when post-8 begins (incl. the Phase 4.5 signal digest, D91)
-- docs/CHANGELOG_v1.9.md — every consistency finding + decision (MASTER §2 is the register AND the count), the provenance trace
+- docs/CHANGELOG_v1.9.md — every consistency finding + decision (DECISIONS_v1.9.md is the register AND the count), the provenance trace
 - Diagrams (not part of any phase diet): docs/diagrams/alphalab-architecture.svg — ~~the architecture picture (projects, the sole-writer path, the Api/UI boundary)~~ CORRECTED (v1.9.70, finding 335): the one-page RESEARCH-FLOW picture — the field, the measured-alongside group, the judging layer, the AI researcher loop, calibration. No technical (projects/sole-writer/Api-boundary) diagram exists; authoring one is a recorded non-goal until wanted
 - Navigation (not part of any phase diet): START_HERE.md (entry point), docs/README_v1.9.md (file map + build workflow), docs/MANIFEST.md (package manifest + revision state)
 - Mockups (visual direction for the GUI): docs/alphalab_ux_mockups.html — the consolidated UX mockup (every screen, as of v1.9.26); docs/mockups/cohort_curve_panel.html and docs/mockups/signal_library_panel.html — the two standalone panel mockups added since (the UX-15 and UX-16 "reference look"), which the consolidated file absorbs at the next UI-workstream regeneration
@@ -139,11 +140,11 @@ money as strings/minor-units (never floats).
     (finding 108); the current value is MAX(version) per key.
 
 25. A REGISTER ROW IS CHANGED ONLY BY ANOTHER REGISTER ROW (v1.9.55, D109).
-    A decision in MASTER §2 is superseded or amended ONLY by another §2 row. No finding, no
+    A decision in docs/DECISIONS_v1.9.md is superseded or amended ONLY by another register row. No finding, no
     PROGRESS entry, no checkpoint note, no changelog paragraph and no conversation may change
     what a decision says. If work changes a decision, it TAKES A DECISION NUMBER and names the
     row it supersedes or amends; the named row's Status cell is updated in the same commit.
-    Every §2 row carries a Status: `active`, `superseded-by <D>`, `amended-by <D>`, or `reserved`.
+    Every register row carries a Status: `active`, `superseded-by <D>`, `amended-by <D>`, or `reserved`.
     A superseded row is TOMBSTONED in the same commit (D115, v1.9.70): its body compresses to a
     one-line gravestone naming the successor and where live content was rescued — the anchor stays, the
     quotable dead text goes.
@@ -182,7 +183,7 @@ money as strings/minor-units (never floats).
   the phase seems necessary, stop and record it in PROGRESS.md as a proposal.
 - Every phase ends with: tests green, a working demo, a PROGRESS.md entry, a commit.
 - Test names cite FRs (e.g. FR10_ParticipationCap_RejectsAndLogs); new decisions get
-  D-numbers appended to MASTER §2.
+  D-numbers appended to docs/DECISIONS_v1.9.md.
 - **Commit subjects name the phase and stage**: `type(phase X stage Y): summary` — e.g.
   `feat(phase 5 stage 1): the batches + caching provider`. Adopted at Phase 4.5 and applied to its
   own commits retroactively (they were unpushed, so the rewrite was free; do NOT rewrite pushed

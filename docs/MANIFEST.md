@@ -1,6 +1,6 @@
 # AlphaLab — Complete Design Package (revision v1.9)
 
-This is the **full, self-contained** design package. Design revision v1.9. Build status is live, not pre-implementation: `PROGRESS.md` holds the current phase, test count, and the open-item list, and `docs/CHANGELOG_v1.9.md` holds the full pass-by-pass history (v4/v5/v6 onward — every finding and decision). **MASTER §2 is the decision register and is the count** — no range is restated here. Every file here is current; nothing external is required.
+This is the **full, self-contained** design package. Design revision v1.9. Build status is live, not pre-implementation: `PROGRESS.md` holds the current phase, test count, and the open-item list, and `docs/CHANGELOG_v1.9.md` holds the full pass-by-pass history (v4/v5/v6 onward — every finding and decision). **`docs/DECISIONS_v1.9.md` is the decision register and is the count** — no range is restated here. Every file here is current; nothing external is required.
 
 Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to drive the build).
 
@@ -13,9 +13,12 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
 - `CLAUDE.md` (repo root) — hard rules, solution layout, commands (the constitution the build obeys).
 
 **The design**
-- `docs/MASTER_DESIGN_v1.9.md` — the comprehensive document: the decisions log (§2 is the
-  register, and its length is the count), architecture, golden rules, math appendix,
-  UI boundary, the Signal Library (§24).
+- `docs/DECISIONS_v1.9.md` — the decision register (its length is the count) plus the
+  design-refinement history; extracted verbatim from MASTER §0/§2 in v1.9.90. A register
+  row is changed only by another register row (rule 25/D109; `tools/check-register.ps1`).
+- `docs/MASTER_DESIGN_v1.9.md` — the comprehensive document: architecture, golden rules,
+  math appendix, UI boundary, the Signal Library (§24); its §0/§2 are pointer stubs to
+  `DECISIONS_v1.9.md`.
 - `docs/ARENA_ARCHITECTURE_v1.9.3.md` — how AlphaLab supports multiple isolated universes
   ("arenas"); decision D71. Additive, no schema change; the S&P 500 build is unaffected.
 - `docs/SCHEMA_v1.9.md` — the exact database schema (the rule-14 source of truth).
@@ -451,6 +454,7 @@ Start with `START_HERE.md`, then `docs/README_v1.9.md` (the file map and how to 
   dated calibration reports — were deliberately NOT rewritten: they are evidence.
 - **v1.9.88 — Phase 5.5: the construction question, answered by measuring** (2026-08-04; **D123** new, FR-47; findings 369–371): D122 made the expected effect a measured property of the CONSTRUCTION, so this measured which one. The report-only `construction-study` verb builds a monthly-rebalanced top tail vs the equal-weight scored universe (long-only) and top-minus-bottom (long-short) for all seven registered signals over 6,287 sessions. **The answer is NO:** two signals gain materially (`bab:L252` 1.60x, `lowvol:L252` 1.71x), three are WORSE, and the best anywhere — `bab:L252` at 51 years to detect — is five times the ten-year horizon. The larger result is the bar itself: at H=10 the arena can only adjudicate an information ratio ≥ **0.886**, and the best of fourteen measured pairs is 0.392 — a gap that belongs to the SIGNALS and the HORIZON, not the construction, which is why changing the construction could not close it. Two process findings: the report's first headline (comparing FLOORS) was refuted by its own smoke run, since long-short is ~2× leverage and scales TE and effect together; and the all-seven fixture PASSED on geometric ramps while four of the scorers were numerically degenerate.
 - **v1.9.89 — who the gate pairs against, and over which sessions** (2026-08-04; no decision; findings 372–373): an operator question about a mid-life fork ("doesn't it start from zero?") sent a read into the gate rather than the design text. **372, closed here:** the pairing domain is the **common-date intersection** of the two equity curves (`CurveMath.AlignedReturns`), so a fork is judged on its own sessions at the same annualized **rate** as a long incumbent — the short track costs power, not standing — but the rule lived only in a code comment and no fixture covered it. DESIGN_IMPROVEMENTS §1.2 gains the paragraph; `FX-PairedWindowIsTheOverlap` makes it executable. **373, recorded and NOT resolved:** `EvaluationStep` pairs every strategy against `buyhold:cw` and `DailyPipeline` never overrides that default, so no candidate is ever paired against Live — while MASTER §8, MASTER §20.2 and DESIGN_IMPROVEMENTS §3.5 say "vs Live" in five places, and `AllocationStep` feeds that benchmark-paired verdict to a tilt cap documented as firing on *TooEarly vs Live*. Evidence leans toward the code (hard rule 6 names the cap-weight account; the allocator's shrinkage toward a cross-sectional mean requires a common benchmark), but resolving it either way touches what D31 means, so under rule 25 it waits for a decision. **No design text was edited for 373.**
+- **v1.9.90 — the decision register extracted to `docs/DECISIONS_v1.9.md`** (2026-08-04; no decision, no finding; mechanical only): MASTER's §0 (design-refinement history) and §2 (the decisions log — preamble, pass-index table, all 123 rows) moved **verbatim** into the new file, §0 leading; MASTER keeps one-line pointer stubs under both headings and now opens on §1. Exactly one locational repoint inside the moved blocks (§0's "banners above" → MASTER's front-matter) and two declared edits outside them (MASTER:5's "§2 below"; ORIENTATION's tail pointer). `check-register.ps1` reads the new path (identical shape: 123 rows, 107/11/5), keeps its old MASTER blind spot byte-for-byte (the latent D38-without-D122 3b hit is on record for the next pass), and gains check **3e**: a "MASTER §2" citation may survive only inside the frozen historical zones, whose whitelist in the script is the one extensible place they are named.
 - The mockups were consolidated into the single `alphalab_ux_mockups.html` in the v1.9.21/v1.9.22 passes
   (the earlier per-topic and v2 files are gone; the consolidated file gained the UX-14 paired-comparison block
   and the slate-grey replay tokens in v1.9.22). SCHEMA received its first post-v1.9.1 edit in v1.9.7

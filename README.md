@@ -120,7 +120,8 @@ The `docs/` folder is the authoritative design package. Start with
 
 | Doc | What it is |
 |---|---|
-| [`docs/MASTER_DESIGN_v1.9.md`](docs/MASTER_DESIGN_v1.9.md) | The decision register (§2), architecture, golden rules, the UI boundary — §2 is the count, so no range is restated here |
+| [`docs/DECISIONS_v1.9.md`](docs/DECISIONS_v1.9.md) | The decision register + the design-refinement history — the register is the count, so no range is restated here |
+| [`docs/MASTER_DESIGN_v1.9.md`](docs/MASTER_DESIGN_v1.9.md) | Architecture, golden rules, the UI boundary, the math appendix |
 | [`docs/SCHEMA_v1.9.md`](docs/SCHEMA_v1.9.md) | The database schema — the single source of truth for table shapes |
 | [`docs/CONFIG_REFERENCE_v1.9.md`](docs/CONFIG_REFERENCE_v1.9.md) | Every config key, default, and owning decision |
 | [`docs/BUILD_AND_PROMPTS_v1.9.md`](docs/BUILD_AND_PROMPTS_v1.9.md) | Functional requirements + the gated phase plan (Phase 0 = checkpoints 0.1–0.6) |
