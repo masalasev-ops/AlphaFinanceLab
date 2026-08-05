@@ -1,5 +1,24 @@
 # AlphaLab: how to read this system
 
+## The invariants card
+
+*The boundaries that never drift, each pointing at its register row in `docs/DECISIONS_v1.9.md`; every line reads correctly with its bracket deleted.*
+
+- The AI trader and its clone are frozen the moment they start; changing the instructions, model, recipe, shortlist size, memory option or clone scorer creates a NEW trader with a NEW clone. [D17, D81, D126]
+- The researcher may propose a new trader or strategy; it may never alter one that is already running. [D126]
+- The researcher's output is a draft hypothesis in the journal — never a strategy, never a trade; only your registration creates a candidate. [D82, D52]
+- What may prompt a proposal is named: a decaying-or-gone signal flag for strategies; a collapsed divergence rate or an explicit indistinguishable clone verdict for traders. Raw short-window profit and "below the best" never qualify. [D128]
+- The trader loop answers "does the AI beat its clone?" on the pair's own clock — about a year, a derived figure — and needs nothing from the researcher. [D125, D122]
+- The strategy loop answers "are the proposals getting better?" on a much slower clock, and for the current signal set its calibration half is structurally silent — no reading, not a zero. [D124]
+- Exactly one thing crosses between the loops: an approved proposal starting a NEW pair, earning from scratch. [D126]
+- The clone comparison, the divergence rate, and the cohort curves are descriptive; they may never gate, retire, or size anything. [D125, D88]
+- The shortlist both the trader and its clone receive is built by one deterministic rule — hard pass/fail, then signal disagreement, plus a seeded random slice — and the signal set it reads is frozen per trader. [D127]
+- Signals grade rules, not traders; the one sanctioned read of signal scores outside grading is the shortlist's disagreement ranking, which carries no direction. [D91, D127]
+- Money splits by the allocator's math, and no AI output is ever an input to a component that judges AI outputs. [D51, rule 32]
+- Replay judges the machinery, never the strategies, and nothing replayed ever reaches a forward screen. [D37, rule 1]
+
+---
+
 *A plain-language orientation. No code. Read this before the design documents; it gives you the mental model everything else hangs on. The detailed, authoritative specifications live in `MASTER_DESIGN_v1.9.md` and its companions, this file only exists so those read clearly.*
 
 ---
@@ -94,10 +113,10 @@ flowchart TB
     end
     subgraph OFFFIELD["OFF THE FIELD, these do NOT trade"]
         direction LR
-        R["<b>AI researcher</b><br/>seat 2 of 3<br/><i>proposes the next strategy</i>"]:::notrade
+        R["<b>AI researcher</b><br/>seat 2 of 3<br/><i>proposes the next hypothesis</i>"]:::notrade
         AD["<b>AI advisor</b><br/>seat 3 of 3<br/><i>capital splits, switched off</i>"]:::notrade
     end
-    R -. "proposes a new strategy → a human approves → it joins the field" .-> ONFIELD
+    R -. "proposes a hypothesis → you pre-register it (if it passes the worth-proving check) → a new strategy joins the field" .-> ONFIELD
 
     classDef trade fill:#E8F5E9,stroke:#2E7D46,stroke-width:1.5px,color:#14351f;
     classDef notrade fill:#EEEEEE,stroke:#7A7A7A,stroke-width:1.5px,color:#2b2b2b;
@@ -109,7 +128,7 @@ flowchart TB
 
 **The contestant (seat 1) trades.** It is an AI acting as an investor: it looks at a short list of candidate stocks each day, decides which to hold, and runs its own $100k account exactly like any other strategy, competing head to head with the human-designed strategies. This is "the AI that makes trades," and it is real.
 
-**The researcher (seat 2) does not trade.** It reads the accumulated results of the whole lab and proposes **the next new strategy worth testing**. It is the idea generator. It cannot start anything on its own, a human approves each proposal, and once approved, that new strategy goes onto the field and trades independently like all the others. This seat is what makes the lab *improve itself*: instead of a person having to think up every new experiment by hand, the AI reads the evidence and suggests where to look next.
+**The researcher (seat 2) does not trade.** It reads the accumulated results of the whole lab and proposes **the next hypothesis worth testing, which you then pre-register as a candidate**. It is the idea generator. It cannot start anything on its own, a human approves each proposal, and once approved, that new strategy goes onto the field and trades independently like all the others. This seat is what makes the lab *improve itself*: instead of a person having to think up every new experiment by hand, the AI reads the evidence and suggests where to look next.
 
 **The advisor (seat 3) is switched off.** It would eventually suggest how to split capital across strategies (the allocator's job), but it stays off until it can prove it beats the existing math-based allocator, and it is never allowed to move capital until then.
 
@@ -173,8 +192,8 @@ flowchart TB
     VERDICT ==>|"too early to tell"| WAIT["<b>Keeps running</b><br/><i>no big bets yet</i>"]:::outcome
     WIN ==> LESSON["Lesson recorded"]:::machine
     RETIRE ==> LESSON
-    LESSON ==> PROPOSE["<b>Researcher</b> reads the lessons<br/>and proposes the next strategy"]:::notrade
-    PROPOSE -.->|"a human approves"| RUN
+    LESSON ==> PROPOSE["<b>Researcher</b> reads the lessons<br/>and proposes the next hypothesis"]:::notrade
+    PROPOSE -.->|"you pre-register it as a new strategy"| RUN
 
     classDef trade fill:#E8F5E9,stroke:#2E7D46,stroke-width:1.5px,color:#14351f;
     classDef notrade fill:#EEEEEE,stroke:#7A7A7A,stroke-width:1.5px,color:#2b2b2b;
@@ -202,7 +221,7 @@ This is the question most worth answering plainly, because the intuitive picture
 
 **So how does the trader pick stocks at all?** It is handed, each day, a compact factsheet for each candidate stock, the same point-in-time signals the human-designed strategies see (recent trend, volatility, valuation measures, the current market regime, a short summary of what it already holds). It never reads raw market data or live news; it reasons over that prepared factsheet, the way an analyst would weigh a one-page brief, and returns a score per name. Its "skill," if it has any, is simply whether an AI's judgment over those signals beats a mechanical rule over the *same* signals. That is a real, testable question, and the twin comparison is precisely what answers it. There is no hidden genius here: the trader is only ever as informed as the factsheet it is given.
 
-**Then where does improvement come from? From breeding better traders, not from teaching one trader.** When a trader's results are in, the researcher can propose a **new** trader with a changed recipe, a richer factsheet, a different instruction framing, a newer model. But proposing is not the same as launching: the researcher can only propose when it has evidence to justify it, **you approve each proposal by hand** (the AI never launches itself), and there must be budget for another experiment. Once approved, the new trader enters as a fresh contestant with its own twin and must earn its place from scratch. The old one is not upgraded in place; it is *superseded* by a better-specified sibling if the sibling proves better. Improvement is **generational**, the lineage of traders improves by selection over held-fixed individuals, the way a population improves through evolution, not the way a student improves through study. And there is one concrete place to check whether that generational process is actually working: if later cohorts of traders and strategies do better than earlier ones when compared at the same age, the loop is learning, and the cohort maturation curve on the research screen is where you read that signal.
+**Then where does improvement come from? From breeding better traders, not from teaching one trader.** When a trader's results are in, the researcher can propose a **new** trader with a changed recipe, a richer factsheet, a different instruction framing, a newer model. But proposing is not the same as launching: the researcher can only propose when it has evidence to justify it, **you approve each proposal by hand** (the AI never launches itself), and there must be budget for another experiment. Once approved, the new trader enters as a fresh contestant with its own twin and must earn its place from scratch. The old one is not upgraded in place; it is *superseded* by a better-specified sibling if the sibling proves better. Improvement is **generational**, the lineage of traders improves by selection over held-fixed individuals, the way a population improves through evolution, not the way a student improves through study. The researcher never alters a running trader — a changed recipe is always a new trader with its own twin. And there is one concrete place to check whether that generational process is actually working: if later cohorts of traders and strategies do better than earlier ones when compared at the same age, the loop is learning, and the cohort maturation curve on the research screen is where you read that signal.
 
 Two things happen on separate, unrelated clocks, and it is worth not confusing them. A **new** trader is *born* only when the researcher proposes one and you approve it, there is no schedule and no automatic trigger for this. A trader is *retired* on a completely different rule: sustained underperformance against the random crowd across several evaluations. Birth is proposal-and-approval; death is failure-against-luck. Nothing "improves after N evaluations", after enough bad evaluations a trader is benched, and separately, whenever the evidence and budget allow, a better-specified new trader may be proposed and approved.
 
@@ -311,7 +330,7 @@ flowchart TB
 
 ### Picture 2: telling real from lucky
 
-This reads the two piles from picture 1, and it is deliberately not the AI. Two questions get asked: did a strategy beat the random crowd by enough to clear the luck margin, and for the AI specifically, did the contestant minus its twin show that the AI added value beyond the strategy itself. Those combine into a verdict and a set of lessons. The verdict flows two ways, into the math allocator, which shifts capital slowly toward proven edges, and onto your dashboards, the consistency ledger you read. Separately, the researcher, seat 2, reads the lessons and proposes one new strategy; you approve it, and it joins the field next evening. The advisor, seat 3, sits switched off beside the allocator until it can prove it beats the math. This whole picture is the rule that the part which proposes and the part which judges are never the same part.
+This reads the two piles from picture 1, and it is deliberately not the AI. Two questions get asked: did a strategy beat the random crowd by enough to clear the luck margin, and for the AI specifically, did the contestant minus its twin show that the AI added value beyond the strategy itself. Those combine into a verdict and a set of lessons. The verdict flows two ways, into the math allocator, which shifts capital slowly toward proven edges, and onto your dashboards, the consistency ledger you read. Separately, the researcher, seat 2 — on its own slower, roughly weekly clock — reads the lessons and proposes a hypothesis; if you pre-register it, a new strategy joins the field. The advisor, seat 3, sits switched off beside the allocator until it can prove it beats the math. This whole picture is the rule that the part which proposes and the part which judges are never the same part.
 
 ```mermaid
 flowchart TB
@@ -329,7 +348,7 @@ flowchart TB
     subgraph RESEARCH["The researcher, seat 2"]
         direction TB
         READ["Reads the lessons<br/><i>the whole lab's evidence</i>"]:::verdict
-        PROP["Proposes one strategy<br/><i>cannot start it alone</i>"]:::verdict
+        PROP["Proposes one hypothesis<br/><i>cannot start anything alone</i>"]:::verdict
         GATE["Worth-proving check,<br/>then you approve"]:::machine
         READ ==> PROP ==> GATE
     end

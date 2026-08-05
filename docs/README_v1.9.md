@@ -30,7 +30,7 @@
 | `CONFIG_REFERENCE_v1.9.md` | Every config key, default, unit, and owning decision |
 | `INTEGRATIONS_v1.9.md` | Exact external endpoints (EODHD, IVV CSV, Ken French, FRED, Anthropic, Alpaca) with ⚠VERIFY flags |
 | `TEST_PLAN_v1.9.md` | The fixture library + FR-mapped test inventory (§8 = the canonical 39-case Phase-0 inventory a rebuild must reproduce) |
-| `UX_GUIDELINES_v1.9.md` | The sixteen interface rules (UX-1…UX-16) as build specs |
+| `UX_GUIDELINES_v1.9.md` | The twenty interface rules (UX-1…UX-20) as build specs |
 | `UX_DESIGN_SYSTEM_v1.9.md` | The component catalogue: each honesty read-model field → its Blazor component, element, and token treatment (entries 1–18). The visual-assembly layer *under* `UX_GUIDELINES_v1.9.md` — it references those tokens and rules, never redefines them |
 | `RUNBOOK_v1.9.md` | Operations: daily cycle, catch-up, backups, incident playbook |
 | `DB_RELOCATION.md` | Ops runbook: moving the SQLite database file(s) to another directory/drive — a config edit + file move, guarded by `ConfigConsistencyTests`. The deployed base is a literal absolute path (`E:/AlphaLabDatabase`); separators are normalized to the running OS (v1.9.36), so the same template works on a Linux VM and the `{Arena.Id}` token stays regardless of base |

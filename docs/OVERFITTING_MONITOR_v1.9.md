@@ -72,7 +72,7 @@ Rolling-window (63d) net alpha trend vs the strategy's own history **and vs its 
 For strategies exposing probabilities (Kelly variants, learned blends): Brier score / reliability-curve drift vs the calibration baseline over the declared horizon. ⚙ Elevated: Brier degradation > 20%; critical: reliability slope sign-flip. Skipped for strategies without probability semantics.
 
 ### S8 — Cross-metric divergence
-Metrics that should co-move but don't: net alpha up while expectancy down (cost story changed?); Sharpe up while population percentile down (luck vs the null); **daily-alpha track and trade-level track in sharp contradiction (v6, D44)**; equity up while max-drawdown-adjusted rank collapses; **the contestant-vs-twin paired difference contradicting the standalone percentile path (v1.9.23, §3½)**. ⚙ Elevated: any one divergence sustained an evaluation window; critical: two simultaneously. S8 is the tripwire for "the number you optimized got better while the thing it measured got worse."
+Metrics that should co-move but don't: net alpha up while expectancy down (cost story changed?); Sharpe up while population percentile down (luck vs the null); **daily-alpha track and trade-level track in sharp contradiction (v6, D44)**; equity up while max-drawdown-adjusted rank collapses; **the contestant-vs-twin paired difference contradicting the standalone percentile path (v1.9.23, §3½ — the difference itself arrives with the D125 read model at Phase 6)**. ⚙ Elevated: any one divergence sustained an evaluation window; critical: two simultaneously. S8 is the tripwire for "the number you optimized got better while the thing it measured got worse."
 
 ### 3½ — AI-seat handling (v1.9.23; the contestant under the eight signals)
 
@@ -80,7 +80,7 @@ The AI pass (D79–D82) made the contestant a first-class `IModel` the monitor m
 
 - **S1 — skipped.** The contestant is forward-only (D81) and the replay engine refuses it by construction (`FX-ContestantReplayRefused`), so it has no seeding-replay side to degrade against. Same skip mechanism S1 already applies to strategies without a seeding replay.
 - **S4 — N/A.** S4 perturbs frozen *numeric* parameters; the contestant's frozen policy (prompt text, model id, pack recipe, shortlist size — D80) has no ±1–2-step neighbourhood. The twin A/B carries the falsification role instead.
-- **S8 — gains the twin input.** The contestant-vs-twin paired difference (M.1) is an S8 divergence input: a paired difference that contradicts the standalone percentile path is exactly the "optimized number up, measured thing down" tripwire. The twin therefore does double duty — the promotion signal *and* a monitor input.
+- **S8 — gains the twin input.** The contestant-vs-twin paired difference (M.1; published as its own read model with its own NW-MDE and track length per D125, arriving at Phase 6) is an S8 divergence input: a paired difference that contradicts the standalone percentile path is exactly the "optimized number up, measured thing down" tripwire. The twin therefore does double duty — the promotion signal *and* a monitor input.
 
 All other signals (S2 deflated Sharpe, S3 population percentile, S5 PSI, S6 edge decay, S7 calibration drift where probabilities exist) apply to the contestant unchanged — the seat is priced by the same arena as every other strategy (golden rule 32 governs what may *judge* it, not what it is judged *by*).
 
