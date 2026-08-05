@@ -264,32 +264,47 @@ foreach ($fsPath in $frozenSections.Keys) {
 # MASTER by another section AND some other doc's own section 2 (e.g. "MASTER (sect)13, TEST_PLAN
 # (sect)2") from false-positiving; a bare "(sect)2 row" with no MASTER token is out of reach and is
 # accepted as the heuristic's cost.
+# THE ONE EXEMPTION FUNCTION - the scan loop and the self-test both call THIS, never a private
+# re-derivation (finding 383: the v1.9.90 self-test re-implemented the lookup with keys taken FROM
+# the map, so it passed on an engine where the real loop's lookup missed - the loop indexed the
+# per-line map with Select-String's LineNumber, whose boxed numeric type under pwsh 7 is not the
+# [int] the map was keyed with, and a .NET hashtable does not coerce numeric key types. The [int]
+# cast below is the fix; sharing the function is what makes the self-test able to catch the next
+# such divergence).
+function Test-FrozenSectionExempt([string]$path, $lineNumber, [string]$lineText) {
+    if (-not $frozenSections.ContainsKey($path)) { return $false }
+    $sec = $sectionAt[$path][[int]$lineNumber]
+    foreach ($s in $frozenSections[$path]) { if ($sec -and $sec.StartsWith($s)) { return $true } }
+    return ($lineText -match $frozenLineMarker)
+}
+
 # ---- 3e SELF-TEST (always on): the zone classification must behave as ruled, or the scan is
 # silently mis-scoped. A synthetic stale citation in PROGRESS '## Current state' must FAIL (not be
 # exempt); the same citation inside a prior-session bullet, or anywhere in '## Session log', must
-# PASS (be exempt). Runs against the real section map so a heading rename breaks loudly here.
+# PASS (be exempt). The session-log probe is a REAL Select-String hit, so its LineNumber carries
+# whatever type the running engine produces - an engine-specific lookup divergence throws HERE,
+# named, instead of surfacing as a page of false 3e violations (finding 383).
 $progressKey = Join-Path $repoRoot 'PROGRESS.md'
 if ($sectionAt.ContainsKey($progressKey)) {
     $pmap = $sectionAt[$progressKey]
     $currentStateLine = ($pmap.Keys | Where-Object { $pmap[$_] -like '## Current state*' } | Sort-Object | Select-Object -First 1)
-    $sessionLogLine   = ($pmap.Keys | Where-Object { $pmap[$_] -like '## Session log*'   } | Sort-Object | Select-Object -First 1)
-    if (-not $currentStateLine -or -not $sessionLogLine) {
-        throw 'check-register 3e self-test: PROGRESS.md no longer has ## Current state / ## Session log headings - re-scope the frozen zones.'
+    if (-not $currentStateLine) {
+        throw 'check-register 3e self-test: PROGRESS.md no longer has a ## Current state heading - re-scope the frozen zones.'
     }
-    function Test-3eExempt([int]$line, [string]$text) {
-        $sec = $pmap[$line]
-        foreach ($s in $frozenSections[$progressKey]) { if ($sec -and $sec.StartsWith($s)) { return $true } }
-        if ($text -match $frozenLineMarker) { return $true }
-        return $false
+    # Dated session-entry headings ('### 2026-...') exist only inside ## Session log; the first is real.
+    $probe = Select-String -LiteralPath $progressKey -Pattern '^### 20\d\d-' | Select-Object -First 1
+    if (-not $probe) {
+        throw 'check-register 3e self-test: PROGRESS.md has no dated session entry to probe - re-scope the frozen zones.'
     }
-    if (Test-3eExempt $currentStateLine 'a synthetic stale MASTER citation in the live narrative') {
+    if (Test-FrozenSectionExempt $progressKey $currentStateLine 'a synthetic stale MASTER citation in the live narrative') {
         throw 'check-register 3e self-test: a stale citation in ## Current state would be silently exempt - the scan is mis-scoped.'
     }
-    if (-not (Test-3eExempt $currentStateLine '- **Prior session:** a historical bullet citing the register')) {
+    if (-not (Test-FrozenSectionExempt $progressKey $currentStateLine '- **Prior session:** a historical bullet citing the register')) {
         throw 'check-register 3e self-test: a prior-session bullet is no longer exempt - the line marker drifted.'
     }
-    if (-not (Test-3eExempt $sessionLogLine 'any session-log line citing the register')) {
-        throw 'check-register 3e self-test: a session-log line is no longer exempt - the section freeze drifted.'
+    if (-not (Test-FrozenSectionExempt $probe.Path $probe.LineNumber $probe.Line)) {
+        throw ('check-register 3e self-test: a REAL session-log hit (line ' + $probe.LineNumber + ') is not exempt - ' +
+               'the section lookup diverged on this engine (finding 383''s class).')
     }
 }
 
@@ -301,13 +316,7 @@ foreach ($hit in $staleHits) {
     $inFrozenDir = $false
     foreach ($d in $frozenZoneDirs) { if ($hit.Path.StartsWith($d)) { $inFrozenDir = $true; break } }
     if ($inFrozenDir) { continue }
-    if ($frozenSections.ContainsKey($hit.Path)) {
-        $sec = $sectionAt[$hit.Path][$hit.LineNumber]
-        $inFrozenSection = $false
-        foreach ($s in $frozenSections[$hit.Path]) { if ($sec -and $sec.StartsWith($s)) { $inFrozenSection = $true; break } }
-        if ($inFrozenSection) { continue }
-        if ($hit.Line -match $frozenLineMarker) { continue }   # a prior-session bullet is history wherever it sits
-    }
+    if (Test-FrozenSectionExempt $hit.Path $hit.LineNumber $hit.Line) { continue }
     $rel = $hit.Path.Substring($repoRoot.Length + 1)
     Add-Violation '3e' ("stale register citation (MASTER " + $sect + "2) outside the frozen zones at ${rel}:" + $hit.LineNumber + " - the register lives in docs/DECISIONS_v1.9.md")
 }
