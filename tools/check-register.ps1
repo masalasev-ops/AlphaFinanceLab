@@ -312,6 +312,33 @@ foreach ($hit in $staleHits) {
     Add-Violation '3e' ("stale register citation (MASTER " + $sect + "2) outside the frozen zones at ${rel}:" + $hit.LineNumber + " - the register lives in docs/DECISIONS_v1.9.md")
 }
 
+# ---------------------------------------------------------------- 3f: the consequence field (WARNING only)
+# CLAUDE.md hard rule 26 (v1.9.91): a finding is not closed until it names the decision rows and
+# design sections its result changes, or records 'Consequences: none' explicitly. The occasion was
+# finding 370 - it re-derived what the arena can adjudicate and touched no design document.
+# WARNING, never a hard break: the field is a discipline, not an invariant, and findings 1-373
+# predate the rule (only findings >= 374 are scanned). Limitation, stated: the scan reads the
+# '### finding NNN' prose shape (the dominant style since v1.9.60); a table-row finding without
+# the field is out of its reach.
+$firstRuledFinding = 374
+$findingWarnings = @()
+if (Test-Path -LiteralPath $changelogPath) {
+    $clLines = Get-Content -LiteralPath $changelogPath -Encoding UTF8
+    $curr = 0; $currStart = 0; $hasField = $false
+    for ($i = 0; $i -le $clLines.Count; $i++) {
+        $isHeading = ($i -lt $clLines.Count) -and ($clLines[$i] -match '^###\s+finding\s+(\d+)')
+        $headNum = if ($isHeading) { [int]$Matches[1] } else { 0 }
+        if ($isHeading -or $i -eq $clLines.Count) {
+            if ($curr -ge $firstRuledFinding -and -not $hasField) {
+                $findingWarnings += ("finding $curr (CHANGELOG line $currStart) has no 'Consequences:' field (rule 26)")
+            }
+            $curr = $headNum; $currStart = $i + 1; $hasField = $false
+        }
+        elseif ($curr -gt 0 -and $clLines[$i] -match '(?i)\bconsequences\s*:') { $hasField = $true }
+    }
+}
+foreach ($w in $findingWarnings) { Write-Host ('WARNING [3f] ' + $w) -ForegroundColor Yellow }
+
 # ---------------------------------------------------------------- report
 Write-Host ('register: ' + $registerStatus.Count + ' rows, D1..D' + $maxD) -ForegroundColor Cyan
 $byStatus = $declared | Group-Object { ($registerStatus[$_] -split '\s+')[0] } | Sort-Object Name

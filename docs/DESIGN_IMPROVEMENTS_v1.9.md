@@ -147,8 +147,8 @@ A strategy with three months of track has a huge `se_i` and lands at ~equal weig
 ### 4.1 The three seats (D79)
 The AI occupies exactly three seats, and the arena prices each one the same way it prices any strategy (golden rule 32: no AI output is ever an input to a component that judges AI outputs).
 
-1. **Researcher (primary).** Reads the locally stored, D80-compressed evidence — verdicts, separation states, factor attribution, monitor statuses, regime episodes, closed journal outcomes, the trials ledger — and proposes the next pre-registered hypotheses and forks (MASTER §23.4). This is the generative step that turns the improvement loop into an actual loop: the AI proposes, the **operator** pre-registers (rule 30), and every proposal must cite parent evidence or it is refused. Ranged by a fork budget (`Research.ForkBudgetPerYear`, default 6) so self-improvement rations its own significance spend.
-2. **Contestant.** An LLM decision layer as a first-class `IModel`: a deterministic local pre-filter hands it a ≤25-name shortlist, it returns scores, and it trades its own account under every existing rail (costs, guardrails, populations, gate, monitor). It never runs without a **mechanics-identical no-LLM twin** — same pre-filter, breadth, sizing, exits, costs, seed. The paired daily difference against that twin is the headline number and the fastest honest "does the AI add alpha?" verdict the lab can produce (M.1 pairing). This is the seat that makes the LLM a stock-scorer — and it is only allowed to be one because the twin makes its edge falsifiable rather than hidden.
+1. **Researcher (primary).** Reads the arena's evidence and proposes the next pre-registered hypotheses and forks — the inputs, actions, output object and refusal set are stated once, in MASTER §23.4's scope block; this document does not restate the list. This is the generative step that turns the improvement loop into an actual loop: the AI proposes, the **operator** pre-registers (rule 30), and every proposal must cite parent evidence or it is refused. Ranged by a fork budget (`Research.ForkBudgetPerYear`, default 6) so self-improvement rations its own significance spend.
+2. **Contestant.** The seat that makes the LLM a stock-scorer — mechanics, the mandatory twin, and the paired headline number are stated once, in MASTER §23.3 and the D81 register row; the sentence this document adds and keeps is the economics one: it is only allowed to be a stock-scorer because the twin makes its edge falsifiable rather than hidden. An LLM decision layer as a first-class `IModel`: a deterministic local pre-filter (the D127 rule) hands it a bounded shortlist, it returns scores, and it trades its own account under every existing rail (costs, guardrails, populations, gate, monitor). The mandatory mechanics-identical no-LLM twin and the paired headline number are MASTER §23.3 / D81 (as amended by D125: a separate instrument with its own MDE, descriptive only) — not restated here.
 3. **Advisor (deferred, opt-in).** LLM allocation advice, evaluated as a paired A/B against the D51 allocator, never wired to applied weights until it has priced positive. Deferred because it is the weakest bet (the statistical allocator is a strong incumbent), it depends on the other two existing to be measurable, and it is the seat closest to capital, so it carries the most risk if wired in early. Nothing else in the design depends on it.
 
 The seats are separable: the researcher improves the lab even if the contestant prices at zero. The daily D46 market-level news read (the regime brief) continues unchanged and is separate from the seats; the sentiment score it once fed and the with/without-Claude A/B that priced it are retired (rule 32).
@@ -185,12 +185,12 @@ The seats are separable: the researcher improves the lab even if the contestant 
 
 The paired-test MDE (§1.2) as a function of track length and pairing tightness, at 95%/80%:
 
-| σ_LR (daily, paired) | MDE @ 6m | MDE @ 1y | MDE @ 3y | Years to detect 2%/yr |
+| σ_LR (daily, paired) | MDE @ 6m | MDE @ 1y | MDE @ 3y | Years to detect 2%/yr *(a WORKED-EXAMPLE column — the 2%/yr is illustrative, D122: expected effects are measured, never asserted)* |
 |---:|---:|---:|---:|---:|
 | 0.40% (loose pairing) | 25.1% | 17.8% | 10.3% | ~79 |
 | 0.20% (good pairing) | 12.6% | 8.9% | 5.1% | ~20 |
 | 0.10% (tight pairing — one-component difference) | 6.3% | 4.4% | 2.6% | ~5 |
-| 0.05% (near-twin accounts, e.g. the AI contestant vs its no-LLM twin — MASTER §23.3) | 3.1% | 2.2% | 1.3% | ~1.2 |
+| 0.05% (an ASSUMED σ for near-twin accounts, e.g. the AI contestant vs its no-LLM twin — MASTER §23.3; no pair has yet been measured) | 3.1% | 2.2% | 1.3% | ~1.2 |
 
 Three design consequences, restated once, here, so they are never re-litigated screen by screen:
 1. **`TooEarly` dominates by design.** The gate refusing to crown winners for years is the system working.
