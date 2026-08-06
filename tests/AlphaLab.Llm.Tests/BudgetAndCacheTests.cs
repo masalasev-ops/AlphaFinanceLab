@@ -37,6 +37,26 @@ public class BudgetAndCacheTests
     }
 
     /// <summary>
+    /// Finding 382 — the token ceiling is checked PRE-FLIGHT, like the cost ceiling, so it no longer
+    /// admits one call past its limit. The ledger is seeded just BELOW the cap: under the old
+    /// backward-looking `state.Tokens >= cap` the call was admitted (state had not yet reached the cap)
+    /// and only the NEXT one refused; under `state + estimate > cap` it is refused now, unspent.
+    /// </summary>
+    [Fact]
+    public async Task D382_TokenCeiling_IsCheckedPreflight_NoOneCallOvershoot()
+    {
+        var llm = TestOptions.Llm(maxTokens: 100);
+        llm.Tasks[AnalysisTaskNames.RegimeBrief].ExpectedOutputTokens = 700;
+        var (provider, transport, _, ledger) = Build(llm);
+        ledger.Seed(Day, new BudgetState(Calls: 0, Tokens: 99, CostUsd: 0m));   // one token below the cap
+
+        var results = await provider.RunBatchAsync([TestOptions.Request("r1")]);
+
+        Assert.Equal(AnalysisOutcome.BudgetExhausted, results[0].Outcome);
+        Assert.Equal(0, transport.CallCount);   // refused BEFORE spending, not after overshooting
+    }
+
+    /// <summary>
     /// D130 / finding 380 — the lockout fix: the pre-flight estimate's output term is the task's
     /// PRE-REGISTERED ExpectedOutputTokens seed, NOT the API ceiling. The budget here (0.05) sits
     /// BETWEEN the two estimates — seed-based ≈ 0.009 (700 out), ceiling-based ≈ 0.102 (8192 out) —

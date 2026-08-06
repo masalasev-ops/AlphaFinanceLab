@@ -40,6 +40,23 @@ public sealed class ResearcherSeatOptions
     /// FX-BudgetDerivation recomputes it.
     /// </summary>
     public decimal MonthlyBudgetUsd { get; set; } = 2.83m;
+
+    /// <summary>
+    /// The per-arm cost estimate the D113 PAIRING check spends against (finding 381, v1.9.94).
+    ///
+    /// Was a hardcoded 0.25m const in <c>ResearchJobExecutor</c> — an AUTHORED dollar figure living in
+    /// code, outside CONFIG_REFERENCE, gating a budget check. DERIVED here instead, from numbers that
+    /// already exist: the researcher's two long-form tasks each cost about
+    /// (L0+L1+L2 input × input rate + ExpectedOutputTokens × output rate) ÷ 1e6 × the batch multiplier,
+    /// and this value is that figure rounded UP to the cent with a 2× margin.
+    ///
+    /// CONSERVATIVE DELIBERATELY, and the direction matters: an UNDER-estimate produces exactly the
+    /// unpaired observation the pairing check exists to prevent (one arm proposes, the other is refused
+    /// mid-pair, and an unpaired margin observation enters the D110 series). An over-estimate only costs
+    /// an abstention. It is a CALIBRATION INPUT to D130's derived caps: until it reflects actuals from
+    /// analysis_cache, the researcher's budget binds on this number rather than on money.
+    /// </summary>
+    public decimal EstimatedArmCostUsd { get; set; } = 0.25m;
 }
 
 /// <summary>

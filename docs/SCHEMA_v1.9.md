@@ -304,7 +304,11 @@ CREATE TABLE trade_evidence (                       -- D44
 
 CREATE TABLE go_live_log (
   event_id INTEGER PRIMARY KEY, as_of TEXT NOT NULL,
-  promoted TEXT, demoted TEXT, verdict TEXT NOT NULL,  -- Promoted|Refused|TooEarly|Revert
+  promoted TEXT, demoted TEXT, verdict TEXT NOT NULL,  -- BY PRODUCER (D131/finding 384): the GATE writes
+                                                       --   Promoted|Refused|TooEarly (PromotionGate.Decide);
+                                                       --   the MONITOR writes Revert (retire path) and
+                                                       --   WouldRevert (the D100 two-pass would-be retire).
+                                                       -- No CHECK: the set grows by decision, not by DDL.
   evidence_json TEXT NOT NULL, run_kind TEXT NOT NULL DEFAULT 'live'
 );
 

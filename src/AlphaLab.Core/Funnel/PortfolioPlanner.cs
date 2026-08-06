@@ -155,7 +155,8 @@ public static class PortfolioPlanner
     ///
     /// NOT DONE HERE: continuously enforcing Sizing.PositionCapPct against drift. A position that
     /// drifts past the cap is a real exposure, but trimming it daily would reintroduce exactly the
-    /// churn above. The cap binds at sizing time; live exposure guardrails are FR-17 (Phase 7).
+    /// churn above. The cap binds at sizing time; live exposure guardrails are DESIGN_IMPROVEMENTS section 3.4,
+    /// Phase 7 (finding 376: NOT "FR-17", which is the ensemble allocator).
     /// </summary>
     private static RebalanceScope ScopeFor(ExitPolicy policy, ExitContext context) => policy switch
     {

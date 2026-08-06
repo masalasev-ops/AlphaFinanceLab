@@ -114,7 +114,7 @@ Min score · max position weight · correlation-aware heat (Σ-based) · max con
 
 This — not promotion — is the primary "improves over time" mechanism, because small reversible tilts are the honest action under §6's power reality. The v6 one-paragraph sketch is replaced by the following complete spec; every symbol is a quantity the gate already computes.
 
-**Inputs** per promotable strategy *i* at each evaluation: forward net β-adjusted alpha `α̂_i` and its Newey–West standard error `se_i` (both from the §1.1–1.2 machinery), current monitor status, current gate verdict vs Live.
+**Inputs** per promotable strategy *i* at each evaluation: forward net β-adjusted alpha `α̂_i` and its Newey–West standard error `se_i` (both from the §1.1–1.2 machinery), current monitor status, current gate verdict **against the cap-weight benchmark** (D131 — never Live: a roster-mean shrinkage needs one common opponent).
 
 **Step 1 — shrinkage (James–Stein in spirit):**
 ```
@@ -129,7 +129,7 @@ A strategy with three months of track has a huge `se_i` and lands at ~equal weig
 
 **Step 3 — clamps, applied in this order:**
 1. floor/ceiling: `WeightFloorPct ≤ t_i ≤ WeightCeilingPct` (defaults 5% / 60%);
-2. `TooEarly` vs Live ⇒ `|t_i − current_i| ≤ TooEarlyTiltCapPts`;
+2. `TooEarly` against the benchmark (D131) ⇒ `|t_i − current_i| ≤ TooEarlyTiltCapPts`;
 3. Suspect ⇒ `t_i = current_i × (1 − SuspectDecayPctPerEval)` — decay only, never a new tilt;
 4. banded movement: only move if `|t_i − current_i| > BandPts`, and then **to the band edge**, not to `t_i`;
 5. renormalize. Baselines and control populations never receive weight.

@@ -72,12 +72,13 @@ public sealed class BudgetedAnalysisProvider(
             // D130/finding 380: the estimate's output term is the task's PRE-REGISTERED expected value,
             // not the API ceiling — the ceiling (8192) as the output term made the guard refuse calls the
             // budget could afford (a lockout, since output dominates cost). Ceiling remains the fallback.
+            var expectedOut = llm.ExpectedOutputTokensFor(r.Task.Wire(), _opts.MaxOutputTokens);
             var estimate = CostModel.Estimate(
-                r.Prompt, llm.ExpectedOutputTokensFor(r.Task.Wire(), _opts.MaxOutputTokens),
-                llm.PricingFor(model), llm.BatchDiscountMultiplier,
+                r.Prompt, expectedOut, llm.PricingFor(model), llm.BatchDiscountMultiplier,
                 llm.UseBatchesApiForScheduled);
+            var estimateTokens = CostModel.EstimateTokenCount(r.Prompt, expectedOut);
 
-            if (WouldExceed(state, estimate, admitted.Count))
+            if (WouldExceed(state, estimate, estimateTokens, admitted.Count))
             {
                 results[r.CustomId] = new AnalysisResult(
                     r.CustomId, AnalysisOutcome.BudgetExhausted, "", TokenUsage.Zero, model,
@@ -128,11 +129,12 @@ public sealed class BudgetedAnalysisProvider(
         }
 
         var state = await ledger.GetAsync(day, ct).ConfigureAwait(false);
+        var expectedOut = llm.ExpectedOutputTokensFor(request.Task.Wire(), _opts.MaxOutputTokens);
         var estimate = CostModel.Estimate(
-            request.Prompt, llm.ExpectedOutputTokensFor(request.Task.Wire(), _opts.MaxOutputTokens),
-            llm.PricingFor(model), llm.BatchDiscountMultiplier, batched: false);
+            request.Prompt, expectedOut, llm.PricingFor(model), llm.BatchDiscountMultiplier, batched: false);
+        var estimateTokens = CostModel.EstimateTokenCount(request.Prompt, expectedOut);
 
-        if (WouldExceed(state, estimate, 0))
+        if (WouldExceed(state, estimate, estimateTokens, 0))
         {
             await ledger.RecordAsync(day, 0, TokenUsage.Zero, degraded: true, "budget exhausted", ct)
                 .ConfigureAwait(false);
@@ -151,16 +153,21 @@ public sealed class BudgetedAnalysisProvider(
         return result;
     }
 
-    /// <summary>Would admitting one more call at <paramref name="estimate"/> cross any of the three D24
-    /// ceilings? A zero ceiling means that dimension is not enforced.</summary>
-    private bool WouldExceed(BudgetState state, decimal estimate, int alreadyAdmitted)
+    /// <summary>Would admitting one more call at <paramref name="estimate"/> (costing
+    /// <paramref name="estimateTokens"/> tokens) cross any of the three D24 ceilings? A zero ceiling means
+    /// that dimension is not enforced.</summary>
+    private bool WouldExceed(BudgetState state, decimal estimate, int estimateTokens, int alreadyAdmitted)
     {
         var b = llm.DailyBudget;
         if (b.MaxCalls > 0 && state.Calls + alreadyAdmitted + 1 > b.MaxCalls) return true;
         if (b.MaxCostUsd > 0m && state.CostUsd + estimate > b.MaxCostUsd) return true;
-        // MaxTokens (finding 320) is checked against the estimate's input side only at pre-flight; the
-        // recorded spend below uses the API's actual counts.
-        if (b.MaxTokens > 0 && state.Tokens >= b.MaxTokens) return true;
+        // MaxTokens (finding 320), aligned to the cost guard's PRE-FLIGHT shape (finding 382, v1.9.94).
+        // It was `state.Tokens >= cap` — backward-looking, where the cost dimension above is
+        // `state + estimate > cap` — so the token ceiling admitted ONE call past its limit before
+        // refusing. The estimate's token count is the same quantity CostModel.Estimate prices: the
+        // prompt's input tokens plus the task's expected output (D130's pre-registered seed, never the
+        // API ceiling). The recorded spend below still uses the API's actual counts.
+        if (b.MaxTokens > 0 && state.Tokens + estimateTokens > b.MaxTokens) return true;
         return false;
     }
 
