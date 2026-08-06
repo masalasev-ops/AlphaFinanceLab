@@ -77,6 +77,18 @@ public static class CostModel
     }
 
     /// <summary>
+    /// The TOKEN count the pre-flight estimate prices — the same quantity <see cref="Estimate"/> costs,
+    /// exposed so the D24 token ceiling can be checked in the same pre-flight shape as the cost ceiling
+    /// (finding 382). Input tokens plus the task's expected output; <paramref name="expectedOutputTokens"/>
+    /// is D130's pre-registered seed, never the API ceiling.
+    /// </summary>
+    public static int EstimateTokenCount(PromptLayers prompt, int expectedOutputTokens)
+    {
+        ArgumentNullException.ThrowIfNull(prompt);
+        return EstimateTokens(prompt.CacheablePrefix) + EstimateTokens(prompt.Fresh) + expectedOutputTokens;
+    }
+
+    /// <summary>
     /// Characters→tokens approximation for the pre-flight estimate ONLY.
     ///
     /// **This is never used to report or bill anything.** Reported usage always comes from the API

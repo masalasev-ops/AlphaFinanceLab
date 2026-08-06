@@ -38,9 +38,13 @@ public sealed record SizingResult(
 /// SAFETY in Phase 2 is two structural constraints: Sizing.PositionCapPct (the per-name cap) and the
 /// D84 CASH CONSTRAINT — new opens are sized against AVAILABLE CASH, never total equity, and scaled to
 /// fit, so an account can only spend cash it holds (cash can never go negative) and no held position is
-/// ever sold to fund a new open (rule 7). The rest of the exposure system (heat, regime halts, cooldown,
-/// the drawdown breaker) is FR-17 in Phase 7 and is not applied here. PROGRESS records that line so a
-/// guardrail that is merely unbuilt is never mistaken for one that is broken.
+/// ever sold to fund a new open (rule 7). The rest of the exposure system (heat, regime halts, cooldown)
+/// is the GUARDRAIL family of DESIGN_IMPROVEMENTS section 3.4, Phase 7, and is not applied here.
+/// CORRECTED (finding 376, v1.9.94): this comment said "FR-17", which in BUILD_AND_PROMPTS is the
+/// ENSEMBLE ALLOCATOR, not a guardrail. The DRAWDOWN CIRCUIT BREAKER specifically was pulled FORWARD into
+/// PHASE 6 by the v1.9.91 scope amendment, because a contestant whose only exit is the crowd comparison
+/// has a RELATIVE exit and none in absolute loss. PROGRESS records the line so a guardrail that is merely
+/// unbuilt is never mistaken for one that is broken.
 /// </summary>
 public static class Sizing
 {

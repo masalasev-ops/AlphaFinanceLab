@@ -55,9 +55,8 @@ public sealed class ResearchJobExecutor(
     /// seat with no fork lifecycle): any edit to the instruction blocks below bumps this.</summary>
     public const string PromptVersion = "rs-1.1";
 
-    /// <summary>A conservative per-arm estimate for the pairing check. Conservative deliberately: an
-    /// UNDER-estimate here produces exactly the unpaired observation the check exists to prevent.</summary>
-    public const decimal EstimatedArmCostUsd = 0.25m;
+    // The per-arm pairing estimate moved to Ai.Researcher.EstimatedArmCostUsd at v1.9.94 (finding 381):
+    // an authored dollar figure gating a budget check belongs in CONFIG_REFERENCE, not in a const here.
 
     public string Kind => kind;
 
@@ -97,7 +96,7 @@ public sealed class ResearchJobExecutor(
         var today = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
         // ---- D113 pairing: both arms fit the monthly budget, or neither dispatches. ----
-        var budget = new ResearcherSeatBudget(db, ai).Assess(today, EstimatedArmCostUsd);
+        var budget = new ResearcherSeatBudget(db, ai).Assess(today, ai.Researcher.EstimatedArmCostUsd);
         if (!budget.PairFits)
         {
             // BOTH arms abstain or NEITHER does. Dispatching the treatment alone would emit an unpaired

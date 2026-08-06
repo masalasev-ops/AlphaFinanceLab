@@ -14,6 +14,14 @@ namespace AlphaLab.Evaluation.Allocator;
 /// with the overfitting_status the monitor just wrote (Suspect), plus the prior allocation for the band
 /// hysteresis. Baselines/controls are excluded by construction (only power_reports rows — candidate/live vs
 /// the benchmark — are read). Writes via the caller's transaction (D59).
+///
+/// THE TILT CLAMP READS THE BENCHMARK-PAIRED VERDICT, AND THAT IS CORRECT (D131, v1.9.94). MASTER §20.2
+/// and DESIGN_IMPROVEMENTS §3.5 described this clamp as firing on "TooEarly vs Live" until v1.9.94; the
+/// prose was pre-D51 legacy and is now corrected, not the code. The reason is §20.2 clause 1 rather than a
+/// convention: it shrinks each α̂ toward ᾱ, the CROSS-SECTIONAL MEAN over the roster, and a mean over
+/// strategies is only meaningful if every α̂ was measured against the SAME opponent. Live changes over time
+/// and differs by period, so alphas measured against it are not commensurable and the shrinkage would break
+/// silently. The cap-weight benchmark is the common yardstick that makes the roster mean well-defined.
 /// </summary>
 public sealed class AllocationStep(AlphaLabDbContext db, GateOptions gate, AllocatorOptions allocator)
 {

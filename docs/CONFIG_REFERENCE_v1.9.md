@@ -443,8 +443,17 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     },
     "Researcher": {                                // the generative seat (D82); runs weekly/on-demand
       "Model": "llm-b",                            // may differ from the contestant's; a frozen param
-      "MonthlyBudgetUsd": 2.83                      // DERIVED (D130): round(committed × 0.40 / 12, 2) = 2.83 at the authored
+      "MonthlyBudgetUsd": 2.83,                     // DERIVED (D130): round(committed × 0.40 / 12, 2) = 2.83 at the authored
                                                    // 100. On exhaustion the researcher job simply queues
+      "EstimatedArmCostUsd": 0.25                   // the per-arm estimate the D113 PAIRING check spends against. MOVED HERE
+                                                   // from a hardcoded const in ResearchJobExecutor at v1.9.94 (finding 381):
+                                                   // an authored dollar figure gating a budget check belongs in this file.
+                                                   // Derived from the researcher tasks' own layer sizes and rates, rounded up
+                                                   // to the cent with a 2× margin. CONSERVATIVE DELIBERATELY and the
+                                                   // direction matters: an UNDER-estimate produces the unpaired observation
+                                                   // the check exists to prevent; an over-estimate only costs an abstention.
+                                                   // A CALIBRATION INPUT to D130's caps — until it reflects analysis_cache
+                                                   // actuals, the researcher's budget binds on this rather than on money.
     }
   },                                               // BOUND at checkpoint 5.7 (v1.9.67) as AiOptions, by AddForwardLlmStage ONLY - the replay and reproduce compositions must stay provably seat-free, and binding this in the pipeline CORE would have made "no seat" a runtime fact instead of a structural one. Ai.Researcher.MonthlyBudgetUsd is read as a PAIR headroom check (D113): both arms propose or neither does, because exhaustion between them would emit an unpaired observation into the margin series. Per-seat spend is attributed from analysis_cache (task + cost per call), NOT from llm_budget_log, which is one row per DAY across every seat and so cannot answer a per-seat question
                                                    // NOTE: per-strategy frozen params (prompt hash, model id, shortlist size, memory option + rule R, the no-LLM twin's scoring rule — D85) live in strategies.config_json, NOT here (key rule 1). The twin's scoring rule is a FIXED FORM (equal-weight z-score blend of the pack features), not a tunable key; its feature set follows Ai.PackRecipeVersion, so a recipe change forks like any frozen-policy change.
