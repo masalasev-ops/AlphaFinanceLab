@@ -36,11 +36,19 @@ public sealed class SeedingBacktestEngine(
     public async Task<BacktestResult> RunAsync(BacktestRequest request, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (Phase2StrategyRegistry.For(request.StrategyId) is null)
+        // Resolved through the SAME seam the daily run uses (6.2), so the two can never accept different
+        // strategy sets. Still checked BEFORE the replay is spent — a short-lived probe context, because
+        // failing fast is the point: fabricating a track would be worse than refusing (fail closed).
+        var probePath = DbPathResolver.ResolvePath(connectionString, arena.Id);
+        using (var probe = new AlphaLabDbContext(
+                   new DbContextOptionsBuilder<AlphaLabDbContext>().UseSqlite(probePath).Options))
         {
-            throw new InvalidOperationException(
-                $"'{request.StrategyId}' has no registered model — only registry-known strategies can trade a " +
-                "replay day (real IModels arrive with Phase 6). Fabricating a track would be worse (fail closed).");
+            if (!StrategyRegistry.CanRun(probe, request.StrategyId))
+            {
+                throw new InvalidOperationException(
+                    $"'{request.StrategyId}' has no registered model — only registry-known strategies can trade a " +
+                    "replay day. Fabricating a track would be worse (fail closed).");
+            }
         }
 
         var outcome = await new ReplayRunner(configuration, arena, loggerFactory)
