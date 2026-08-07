@@ -39,13 +39,18 @@ public static class Selection
     ///      states the invariant for both modes, not just Threshold).
     ///   3. score ≥ <paramref name="guardrails"/>.MinScore — the system floor beneath it.
     ///
-    /// Then the breadth cap: N under TopN, MaxConcurrent under Threshold, and in both cases
-    /// Guardrails.MaxConcurrentPositions on top. Caps only ever SHORTEN the list.
+    /// Then the breadth cap: N under TopN, MaxConcurrent under Threshold and AllPositive, and in every
+    /// case Guardrails.MaxConcurrentPositions on top. Caps only ever SHORTEN the list.
+    ///
+    /// <paramref name="seed"/> is the strategy's frozen <c>Config.Seed</c> (D17), and it settles the
+    /// order among EQUAL scores per catalog §3 — see <see cref="SeededOrder"/> for why that is not a
+    /// boundary detail.
     /// </summary>
     public static SelectionResult Select(
         IReadOnlyDictionary<SecurityId, double> scores,
         SelectionRule rule,
-        GuardrailsOptions guardrails)
+        GuardrailsOptions guardrails,
+        int seed)
     {
         ArgumentNullException.ThrowIfNull(scores);
         ArgumentNullException.ThrowIfNull(rule);
@@ -76,11 +81,14 @@ public static class Selection
             passing.Add((id, score));
         }
 
-        // Best-first, ties broken by security_id so the wish list is byte-identical across runs
-        // (F-DET). Without the tiebreak, two names on the same score could swap places between runs
-        // and — at the N boundary — silently swap which one gets bought.
+        // Best-first, ties broken by the SEEDED stable order (catalog §3 / SeededOrder), then by
+        // security_id so the ordering is total even under a hash collision. Without a tiebreak two
+        // names on the same score could swap places between runs and — at the N boundary — silently
+        // swap which one gets bought; without a SEEDED one they never swap, and the strategy holds the
+        // lowest-numbered names forever, which is a fact about the security master, not the signal.
         var ranked = passing
             .OrderByDescending(x => x.Score)
+            .ThenBy(x => SeededOrder.KeyFor(seed, x.Id))
             .ThenBy(x => x.Id.Value)
             .ToList();
 
@@ -88,6 +96,11 @@ public static class Selection
         {
             SelectionMode.TopN => rule.N,
             SelectionMode.Threshold => rule.MaxConcurrent,
+            // AllPositive shares Threshold's cap and differs only in carrying no floor of its own
+            // (SelectionRule.AllPositive pins MinScore = 0.0): the three filters above already kept
+            // exactly the names that pass the invariant, so there is nothing left for the mode to do
+            // but bound breadth. A short list here is the strategy going to cash, not a bug.
+            SelectionMode.AllPositive => rule.MaxConcurrent,
             _ => throw new ArgumentOutOfRangeException(nameof(rule), rule.Mode, "Unmapped selection mode."),
         };
         cap = Math.Min(cap, guardrails.MaxConcurrentPositions);
