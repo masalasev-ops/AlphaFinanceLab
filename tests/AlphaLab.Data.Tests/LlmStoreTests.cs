@@ -148,6 +148,7 @@ public class LlmStoreTests : IDisposable
     public void Dispose()
     {
         GC.SuppressFinalize(this);
+        // P20: process-global; safe ONLY because parallelization is disabled assembly-wide.
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { if (File.Exists(_dbPath)) File.Delete(_dbPath); } catch (IOException) { }
     }

@@ -125,6 +125,7 @@ public class ProposalThresholdPinnerTests : IDisposable
     public void Dispose()
     {
         GC.SuppressFinalize(this);
+        // P20: process-global; safe ONLY because parallelization is disabled assembly-wide.
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dir, recursive: true); } catch (IOException) { /* best effort */ }
     }
