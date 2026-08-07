@@ -86,7 +86,7 @@ Stage 4 semantics: **the wish list opens/adds; only the `ExitPolicy` closes** �
 - **Threshold:** keep names with score ≥ `minScore` (default 0.60), capped at `maxConcurrent`. Preferred for sparse-signal strategies.
 - **AllPositive (v1.9.23):** keep **every** name passing the invariant, capped at `maxConcurrent` — for absolute-signal strategies where a cross-sectional rank is meaningless (time-series momentum, §6.6).
 - **Rank hysteresis:** for Top-N strategies, entries at rank ≤ N; exits governed by `RankBuffer(exitRank)` (§6.1).
-- **Deterministic tie-break (D40; v1.9.23):** equal scores at a selection boundary — routine for binary scorers (§6.4 Breakout, §6.6 in sign mode) and for any capped mode — break by a **seeded stable order derived from (`Config.Seed`, `security_id`)**, never by ingestion order, ticker sort, or dictionary/hash order. Same inputs + watermark + `Config.Seed` ⇒ the identical wish list; the rule is asserted in each affected strategy's acceptance tests.
+- **Deterministic tie-break (D134; v1.9.23, cited as D40 until v1.9.96 — D40 is versioned append-only bars and says nothing about ties):** equal scores at a selection boundary — routine for binary scorers (§6.4 Breakout, §6.6 in sign mode) and for any capped mode — break by a **seeded stable order derived from (`Config.Seed`, `security_id`)**, never by ingestion order, ticker sort, or dictionary/hash order. Same inputs + watermark + `Config.Seed` ⇒ the identical wish list; the rule is asserted in each affected strategy's acceptance tests.
 - **Mode** and parameters live in `StrategyConfig` — the selection rule is itself a dimension candidates can differ on.
 
 ---
