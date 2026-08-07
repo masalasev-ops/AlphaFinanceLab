@@ -50,8 +50,12 @@ public sealed record MembershipReconcileResult(
 /// </summary>
 public interface IMembershipReconciler
 {
+    /// <param name="observedAt">The instant the roster was actually FETCHED (UTC ISO-8601), stamped on
+    /// the audit row (6.4). NULL when the caller cannot vouch for one — honest, and what every row
+    /// written before the column existed carries; never <paramref name="asOf"/>, which is the run date.</param>
     MembershipReconcileResult Reconcile(
-        MembershipSnapshot primary, MembershipSnapshot crossCheck, string asOf, int[] countBand);
+        MembershipSnapshot primary, MembershipSnapshot crossCheck, string asOf, int[] countBand,
+        string? observedAt = null);
 }
 
 /// <summary>EF-backed <see cref="IMembershipReconciler"/>. Uses <see cref="ISecurityMaster"/> to
@@ -64,7 +68,8 @@ public sealed class MembershipReconciler(
     private const string Exchange = "US";
 
     public MembershipReconcileResult Reconcile(
-        MembershipSnapshot primary, MembershipSnapshot crossCheck, string asOf, int[] countBand)
+        MembershipSnapshot primary, MembershipSnapshot crossCheck, string asOf, int[] countBand,
+        string? observedAt = null)
     {
         ArgumentNullException.ThrowIfNull(primary);
         ArgumentNullException.ThrowIfNull(crossCheck);
@@ -85,7 +90,7 @@ public sealed class MembershipReconciler(
         if (primaryCount < min || primaryCount > max || crossCount < min || crossCount > max)
         {
             var reason = $"count sanity breach: primary={primaryCount}, crosscheck={crossCount}, band=[{min},{max}]";
-            return Hold(asOf, primaryCount, crossCount, reason);
+            return Hold(asOf, primaryCount, crossCount, reason, observedAt, primary.Source);
         }
 
         // Gate 2 — agreement: the two rosters must name exactly the same members.
@@ -96,7 +101,7 @@ public sealed class MembershipReconciler(
             var reason =
                 $"divergence: only-in-primary=[{string.Join(",", onlyPrimary)}], " +
                 $"only-in-crosscheck=[{string.Join(",", onlyCross)}]";
-            return Hold(asOf, primaryCount, crossCount, reason);
+            return Hold(asOf, primaryCount, crossCount, reason, observedAt, primary.Source);
         }
 
         // Apply — agreement path only. Resolve primary symbols → security_ids (registers new adds).
@@ -147,7 +152,12 @@ public sealed class MembershipReconciler(
             Agreed = 1,
             AddsJson = JsonSerializer.Serialize(addIds),
             DropsJson = JsonSerializer.Serialize(dropIds),
-            Note = null
+            Note = null,
+            // Per-row provenance (6.4): WHEN the roster was fetched and WHICH primary produced it.
+            // as_of is the session this reconcile ran for; observed_at is when the data arrived, and
+            // telling those apart is the whole of finding 197.
+            ObservedAt = observedAt,
+            Source = primary.Source,
         });
 
         db.SaveChanges();
@@ -157,7 +167,8 @@ public sealed class MembershipReconciler(
     private static HashSet<string> CanonicalSet(MembershipSnapshot snap) =>
         snap.Members.Select(m => m.CanonicalSymbol).ToHashSet(StringComparer.Ordinal);
 
-    private MembershipReconcileResult Hold(string asOf, int primaryCount, int crossCount, string reason)
+    private MembershipReconcileResult Hold(
+        string asOf, int primaryCount, int crossCount, string reason, string? observedAt, string source)
     {
         db.IndexMembershipLog.Add(new IndexMembershipLogRow
         {
@@ -167,7 +178,9 @@ public sealed class MembershipReconciler(
             Agreed = 0,
             AddsJson = null,
             DropsJson = null,
-            Note = reason
+            Note = reason,
+            ObservedAt = observedAt,
+            Source = source,
         });
         db.SaveChanges();
         return new MembershipReconcileResult(false, reason, primaryCount, crossCount, [], []);

@@ -32,6 +32,18 @@ public sealed class UniverseOptions
     public string[] Exclusions { get; set; } = [];
 
     public UniverseBootstrapOptions Bootstrap { get; set; } = new();
+
+    /// <summary>
+    /// The fail-closed count band for <paramref name="universe"/> — <see cref="UniverseBootstrapOptions.CountSanity"/>
+    /// for the S&amp;P 100 slice, <see cref="MembershipCountSanity"/> for the full index (6.4).
+    ///
+    /// ONE place, because the rule-22 widen is meant to be a config flip: the CLI hardcoded the band by
+    /// universe string in its arg parser, and a forward refresh that hardcoded it again would make the
+    /// widen a two-place edit where one of the places is easy to miss and fails as a data-shaped error
+    /// (~101 names against a [495,510] gate) for an unwired-code cause.
+    /// </summary>
+    public int[] CountBandFor(string universe) =>
+        string.Equals(universe, "sp100", StringComparison.Ordinal) ? Bootstrap.CountSanity : MembershipCountSanity;
 }
 
 /// <summary>The D70 S&amp;P 100 launch slice (Universe.Bootstrap): the forward universe through

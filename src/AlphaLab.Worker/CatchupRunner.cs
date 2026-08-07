@@ -34,11 +34,27 @@ public sealed class CatchupRunner(
     IServiceScopeFactory scopeFactory,
     TimeProvider clock,
     ArenaOptions arena,
-    ILogger<CatchupRunner> logger)
+    ILogger<CatchupRunner> logger,
+    MembershipRefreshStep? membershipRefresh = null)
 {
     public async Task<CatchupOutcome> RunAsync(CancellationToken cancellationToken = default)
     {
         using var arenaScope = logger.BeginArenaScope(arena);
+
+        // The current ET session date — the ONLY date a fetched roster may honestly be stamped with,
+        // because the holdings providers answer for NOW and never for a past date (INTEGRATIONS §2).
+        var todayEt = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(clock.GetUtcNow(), EasternTime.Zone).DateTime);
+
+        // ---- The forward membership refresh (finding 197), ONCE PER LAUNCH, BEFORE the loop. ----
+        // Before, so today's session trades a roster verified today. Once, because there is exactly one
+        // current roster per launch. Outside the per-day transaction, because rule 12 gives each trading
+        // day ONE atomic write and this is not part of any of them — the D72 precedent for launch-scoped
+        // work. Recovered days are unaffected by construction: membership reads are half-open
+        // [added_on, removed_on), so a row stamped today cannot change what an earlier date resolves.
+        if (membershipRefresh is not null)
+        {
+            await membershipRefresh.RunAsync(Iso(todayEt), cancellationToken).ConfigureAwait(false);
+        }
 
         IReadOnlyList<DateOnly> missed;
         using (var scope = scopeFactory.CreateScope())
@@ -56,9 +72,8 @@ public sealed class CatchupRunner(
         logger.LogInformation("Catch-up: {Count} missed session(s) to replay in order ({First}..{Last}).",
             missed.Count, Iso(missed[0]), Iso(missed[^1]));
 
-        // Same-ET-day sessions are 'live'; earlier recovered ones are 'catchup'.
-        var todayEt = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(clock.GetUtcNow(), EasternTime.Zone).DateTime);
-
+        // Same-ET-day sessions are 'live'; earlier recovered ones are 'catchup'. (todayEt is resolved
+        // once at the top, where the membership refresh also needs it.)
         var processed = 0;
         var recoveredEarlierThisLaunch = false;
         foreach (var day in missed) // ascending — one atomic transaction per day, in order (D47)

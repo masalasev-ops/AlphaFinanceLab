@@ -213,24 +213,22 @@ public sealed class BackfillRunner(
 
     public async Task<MembershipReconcileResult> RefreshMembershipStep(BackfillOptions o, CancellationToken ct = default)
     {
-        // Count each fetch the moment it succeeds — not after both — so a cross-check failure still records
-        // the primary's spent call (Stage-1 finding: usage accounting must reflect calls actually made).
-        var primary = await membershipPrimary.GetMembersAsync(o.AsOf, ct).ConfigureAwait(false);
-        Count(primary.Source);
-        var cross = await membershipCrossCheck.GetMembersAsync(o.AsOf, ct).ConfigureAwait(false);
-        Count(cross.Source);
+        // ONE definition of the refresh, shared with the Worker's launch step (6.4). Two copies would
+        // let the bootstrap and forward operation diverge on the count band, the slice maintenance or
+        // the sector application, and no test would name the divergence.
+        var refresh = new MembershipRefresh(db, membershipPrimary, membershipCrossCheck);
 
-        // The reconcile is taken against the FORWARD roster (6.4), resolved by exactly the read the
-        // Worker's funnel uses — slice-scoped once a slice snapshot exists, raw as-of before that. The
-        // CLI composes it explicitly rather than injecting, because it constructs the reconciler itself.
-        var forwardRead = new SliceScopedMembershipRead(
-            new IndexMembershipReadService(db), db, new UniverseOptions { Bootstrap = { Universe = o.Universe } });
-        var result = new MembershipReconciler(db, new SecurityMaster(db), forwardRead)
-            .Reconcile(primary, cross, o.AsOf, o.CountBand);
+        // The fetch instant, captured BEFORE the call and used verbatim on the audit row: this is what
+        // the freshness reading distinguishes from as_of, which is only the session it ran for (197).
+        var observedAt = DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
+
+        // Count each fetch the moment it succeeds - not after both - so a cross-check failure still
+        // records the primary's spent call (Stage-1 finding: usage accounting must reflect calls made).
+        var (primary, cross) = await refresh.FetchAsync(o.AsOf, source => Count(source), ct).ConfigureAwait(false);
+
+        var result = refresh.Apply(primary, cross, o.AsOf, o.CountBand, o.Universe, observedAt);
         if (result.Applied)
         {
-            ApplySectorsFrom(primary, o.AsOf);
-            MaintainSliceSnapshot(result, o.AsOf);
             Log($"[membership] applied: +{result.Adds.Count} / -{result.Drops.Count} (primary={result.PrimaryCount}, cross={result.CrosscheckCount}).");
         }
         else
@@ -240,35 +238,6 @@ public sealed class BackfillRunner(
         return result;
     }
 
-    /// <summary>Phase-4 review: the slice snapshot must FOLLOW the reconciled S&amp;P 100 roster — a
-    /// post-snapshot index ADD would otherwise be silently dropped by SliceScopedMembershipRead's
-    /// intersection until the sp500 widen (removals applied, adds vanished: an asymmetric leak). The
-    /// next version = previous slice + applied adds − applied drops; the raw MembersAsOf is unusable
-    /// here because after the historical ingest it resolves the full ~500-name as-of roster.
-    /// Append-only versioned (finding 108); the read resolves the version as-of each session date, so
-    /// reproduce-day of an earlier committed day still sees the slice THAT day traded.</summary>
-    private void MaintainSliceSnapshot(MembershipReconcileResult result, string asOf)
-    {
-        if (result.Adds.Count == 0 && result.Drops.Count == 0) return;
-        var current = db.Config.Where(c => c.Key == HistoricalBackfillRunner.SliceConfigKey).AsEnumerable()
-            .OrderByDescending(c => c.Version).FirstOrDefault();
-        if (current is null) return;   // pre-backfill store: no snapshot exists, the raw read IS the slice
-
-        var ids = System.Text.Json.JsonSerializer.Deserialize<List<long>>(current.ValueJson)?.ToHashSet() ?? [];
-        foreach (var add in result.Adds) ids.Add(add);
-        foreach (var drop in result.Drops) ids.Remove(drop);
-
-        db.Config.Add(new ConfigRow
-        {
-            Key = HistoricalBackfillRunner.SliceConfigKey,
-            ValueJson = System.Text.Json.JsonSerializer.Serialize(ids.OrderBy(x => x).ToList()),
-            Version = current.Version + 1,
-            ChangedOn = asOf,
-            Reason = $"membership reconcile: +{result.Adds.Count}/-{result.Drops.Count} applied to the forward slice (rule 22).",
-        });
-        db.SaveChanges();
-        Log($"[slice] snapshot advanced to v{current.Version + 1} (+{result.Adds.Count}/-{result.Drops.Count}).");
-    }
 
     /// <summary>Seed the fja05680 historical S&amp;P 500 roster into <c>index_membership</c> for as-of
     /// reconstruction. This is a REPLAY (Phase-4/D70) prerequisite, invoked SEPARATELY from the forward
@@ -427,16 +396,4 @@ public sealed class BackfillRunner(
     }
 
     // Apply the primary snapshot's GICS sectors to the (now-registered) members.
-    private void ApplySectorsFrom(MembershipSnapshot primary, string asOf)
-    {
-        var master = new SecurityMaster(db);
-        var assignments = new List<SectorAssignment>();
-        foreach (var m in primary.Members)
-        {
-            if (string.IsNullOrWhiteSpace(m.Sector)) continue;
-            var id = master.ResolveAsOf(m.CanonicalSymbol, Exchange, asOf);
-            if (id is { } securityId) assignments.Add(new SectorAssignment(securityId, m.Sector));
-        }
-        if (assignments.Count > 0) new SectorIngestion(db).ApplySectors(assignments, asOf);
-    }
 }
