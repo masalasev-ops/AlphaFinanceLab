@@ -1,4 +1,4 @@
-using System.Text.Json.Nodes;
+using AlphaLab.Core.Domain;
 using AlphaLab.Data;
 using AlphaLab.Data.Entities;
 
@@ -53,7 +53,7 @@ public sealed class CandidateFactory(AlphaLabDbContext db, AlphaLab.Core.Config.
     /// </summary>
     public StrategyRow CreateCandidate(
         CandidateSpec spec, long? hypothesisEntryId, bool unregistered, string createdOn,
-        string trialKind = "new", string runKind = "live")
+        string trialKind = "new", string runKind = "live", string status = "candidate")
     {
         ArgumentNullException.ThrowIfNull(spec);
         ArgumentException.ThrowIfNullOrWhiteSpace(spec.StrategyId);
@@ -71,7 +71,7 @@ public sealed class CandidateFactory(AlphaLabDbContext db, AlphaLab.Core.Config.
         }
 
         // The pre-registration gate (D52/rule 16).
-        if (hypothesisEntryId is null && !unregistered)
+        if (hypothesisEntryId is null && !unregistered && !IsControl(status))
         {
             throw new InvalidOperationException(
                 "CandidateFactory (D52/rule 16): a candidate requires a linked pre-registered hypothesis " +
@@ -109,7 +109,7 @@ public sealed class CandidateFactory(AlphaLabDbContext db, AlphaLab.Core.Config.
         // under its permanent marking; a hypothesis locked before M5 (null field) bypasses as legacy;
         // a factory constructed without GateOptions (pre-Phase-4 call sites, tests) leaves the gate
         // unassessed. Admission-only — a live strategy is never re-gated (rule 8).
-        if (gate is not null && hypothesis?.ExpectedEffectAnn is { } expectedEffectAnn)
+        if (!IsControl(status) && gate is not null && hypothesis?.ExpectedEffectAnn is { } expectedEffectAnn)
         {
             var verdict = new DetectabilityGate(db, gate).Assess(expectedEffectAnn);
 
@@ -135,17 +135,25 @@ public sealed class CandidateFactory(AlphaLabDbContext db, AlphaLab.Core.Config.
             HoldingHorizonDays = spec.HoldingHorizonDays,
             CreatedOn = createdOn,
             ParentStrategyId = spec.ParentStrategyId,
-            Status = "candidate",
+            Status = status,
         };
         db.Strategies.Add(strategy);
 
-        db.TrialsRegistry.Add(new TrialsRegistryRow
+        // A CONTROL REGISTERS NO TRIAL (D81 rule 4). The twin exists to PRICE the seat, not to compete:
+        // it is never promotable alone, so it never spends a trial. This add was unconditional, and a
+        // control passing through it would have inflated the deflated-Sharpe trials count for EVERY
+        // other strategy in the arena — raising the D89 floor for candidates that had nothing to do
+        // with it. The SignalRegistrar doctrine, applied here: "a registration is NOT a candidate".
+        if (!IsControl(status))
         {
-            StrategyId = spec.StrategyId,
-            RegisteredOn = createdOn,
-            Kind = trialKind,
-            RunKind = runKind,
-        });
+            db.TrialsRegistry.Add(new TrialsRegistryRow
+            {
+                StrategyId = spec.StrategyId,
+                RegisteredOn = createdOn,
+                Kind = trialKind,
+                RunKind = runKind,
+            });
+        }
 
         // Link the (still-unlinked) hypothesis to the strategy it now backs.
         if (hypothesis is not null && hypothesis.StrategyId is null) hypothesis.StrategyId = spec.StrategyId;
@@ -154,11 +162,29 @@ public sealed class CandidateFactory(AlphaLabDbContext db, AlphaLab.Core.Config.
         return strategy;
     }
 
-    private static string WithUnregisteredMarker(string configJson)
-    {
-        var node = (string.IsNullOrWhiteSpace(configJson) ? new JsonObject() : JsonNode.Parse(configJson) as JsonObject)
-                   ?? new JsonObject();
-        node[UnregisteredMarkerKey] = true;
-        return node.ToJsonString();
-    }
+    /// <summary>
+    /// Register the no-LLM twin (or any control) beside its treatment: a strategies row with
+    /// <c>status='control'</c>, NO trials row, and no pre-registered hypothesis of its own.
+    ///
+    /// A control has no hypothesis because it makes no claim — it is the counterfactual the claim is
+    /// measured against (D81 rule 4; the random-population precedent). It is therefore exempt from the
+    /// D52 pre-registration gate rather than smuggled past it with the `unregistered` marker, which
+    /// means something different: that a candidate was created sloppily, and renders permanently on the
+    /// card (rule 16). A control is deliberately un-preregistered, not carelessly so.
+    /// </summary>
+    public StrategyRow CreateControl(CandidateSpec spec, string createdOn) =>
+        CreateCandidate(spec, hypothesisEntryId: null, unregistered: false, createdOn, status: ControlStatus);
+
+    /// <summary>The status token SCHEMA admits for a non-competing reference row.</summary>
+    public const string ControlStatus = "control";
+
+    private static bool IsControl(string status) => string.Equals(status, ControlStatus, StringComparison.Ordinal);
+
+    // The marker now writes THROUGH the D133 shape (StrategyConfigJson), not around it. This method
+    // parsed the payload as an untyped JsonNode and re-emitted it with `ToJsonString()` — no
+    // AlphaLabJson.Options — so a config that arrived snake_case could leave in another convention, and
+    // one column carried two. D133 also settles the two-writers-one-key problem: the typed
+    // StrategyConfig.Unregistered is authoritative and this is a write through it.
+    private static string WithUnregisteredMarker(string configJson) =>
+        StrategyConfigJson.WithUnregisteredMarker(configJson);
 }

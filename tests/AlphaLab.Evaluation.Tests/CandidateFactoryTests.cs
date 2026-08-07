@@ -6,6 +6,48 @@ public class CandidateFactoryTests
 {
     private static CandidateSpec Spec(string id = "mom:L126:K21") => new(id, "momentum", "{\"lookback\":126}", "{}", 21);
 
+    /// <summary>
+    /// D81 rule 4 — the twin exists to PRICE the seat, not to compete, so it registers NO trial.
+    ///
+    /// The add was unconditional before 6.2. A control passing through it would have inflated the
+    /// deflated-Sharpe trials count for EVERY other strategy in the arena, raising the D89 admission
+    /// floor for candidates that had nothing to do with it — a control that taxes its own arena.
+    /// </summary>
+    [Fact]
+    public void D81_ControlRegistration_WritesNoTrialsRow()
+    {
+        using var arena = new EvalArena();
+        using var db = arena.Open();
+        var factory = new CandidateFactory(db);
+
+        var control = factory.CreateControl(Spec("mom:L126:K21:twin"), createdOn: "2026-03-10");
+
+        Assert.Equal("control", control.Status);
+        Assert.Empty(db.TrialsRegistry.ToList());          // the whole point
+        Assert.Single(db.Strategies.ToList());             // ...but it IS a registered row
+
+        // And it is not smuggled past pre-registration with the `unregistered` marker, which means
+        // something different (a sloppily-created CANDIDATE, rendered permanently on the card).
+        Assert.DoesNotContain("unregistered", control.ConfigJson, StringComparison.Ordinal);
+    }
+
+    /// <summary>A control alongside a real candidate: exactly one trial, the candidate's.</summary>
+    [Fact]
+    public void D81_ControlBesideItsTreatment_LeavesTheTrialsCountAtOne()
+    {
+        using var arena = new EvalArena();
+        using var db = arena.Open();
+        var factory = new CandidateFactory(db);
+
+        factory.CreateCandidate(Spec("mom:L126:K21"), hypothesisEntryId: null, unregistered: true,
+            createdOn: "2026-03-10");
+        factory.CreateControl(Spec("mom:L126:K21:twin"), createdOn: "2026-03-10");
+
+        Assert.Single(db.TrialsRegistry.ToList());
+        Assert.Equal("mom:L126:K21", db.TrialsRegistry.Single().StrategyId);
+        Assert.Equal(2, db.Strategies.Count());
+    }
+
     [Fact]
     public void FR28_Fork_WithoutHypothesisOrFlag_Fails()
     {

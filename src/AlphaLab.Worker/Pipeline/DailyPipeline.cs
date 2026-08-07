@@ -173,6 +173,14 @@ public sealed class DailyPipeline(
                 // accounts under this run kind (a replay opens its OWN accounts, D37).
                 new DummyRoster(db, ledger).Seed(asOf, runKind: ledgerKind);
 
+                // 6.2 — the other half of the lifecycle seam. CandidateFactory writes a strategies row
+                // and stops; this loop iterates ACCOUNTS, so an admitted candidate with no account was
+                // never even reached to be warned about. Forward only (a replay opens its own, D37).
+                foreach (var openedId in new StrategyRoster(db, ledger).OpenMissingAccounts(asOf, ledgerKind))
+                {
+                    logger.LogInformation("{AsOf}: opened an account for admitted strategy '{Strategy}'.", asOf, openedId);
+                }
+
                 var features = new BarFeatureView(barReads, calendar, asOfDate, watermark, costs);
                 var broker = new VirtualBroker(new CostModel(costs));
 
@@ -364,7 +372,7 @@ public sealed class DailyPipeline(
         Account account, RunKind kind, DateOnly asOfDate, string asOf, string watermark,
         BarFeatureView features, VirtualBroker broker, CancellationToken ct)
     {
-        var plan = Phase2StrategyRegistry.For(account.StrategyId);
+        var plan = StrategyRegistry.For(db, account.StrategyId);
         if (plan is null)
         {
             logger.LogWarning("{AsOf}: account {Id} runs unknown strategy '{Strategy}' — skipped (rule 10).", asOf, account.AccountId, account.StrategyId);
