@@ -1,5 +1,6 @@
 using AlphaLab.Core.Config;
 using AlphaLab.Evaluation.Monitor;
+using AlphaLab.Evaluation.Populations;
 
 namespace AlphaLab.Evaluation.Tests;
 
@@ -69,7 +70,7 @@ public class TurnoverMatchTests
         // Pre-write a scary-looking turnover_match caveat for cand:a ONLY.
         TurnoverMatch.WriteCheck(db, dates[^1], "cand:a", strategyTurnover: 0.01, populationTurnovers: [0.9, 0.95, 1.0], tolerancePct: Tol);
 
-        new OverfittingMonitor(db, new GateOptions()).Run(dates[^1], "buyhold:cw", popId);
+        new OverfittingMonitor(db, new GateOptions()).Run(dates[^1], "buyhold:cw", PopulationMatcher.Fixed(popId));
 
         var statusA = db.OverfittingStatus.Single(o => o.StrategyId == "cand:a").Status;
         var statusB = db.OverfittingStatus.Single(o => o.StrategyId == "cand:b").Status;
