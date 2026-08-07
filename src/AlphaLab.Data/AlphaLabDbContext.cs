@@ -278,6 +278,10 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
             e.Property(x => x.AddsJson).HasColumnName("adds_json");
             e.Property(x => x.DropsJson).HasColumnName("drops_json");
             e.Property(x => x.Note).HasColumnName("note");
+            // 6.4 — per-row provenance. Both NULLABLE and both without a CHECK, so the migration is
+            // ALTER ADD COLUMN and never a table rebuild (finding 324).
+            e.Property(x => x.ObservedAt).HasColumnName("observed_at");
+            e.Property(x => x.Source).HasColumnName("source");
         });
 
         // ---- index_membership ---- as-of state; PK (security_id, added_on).
