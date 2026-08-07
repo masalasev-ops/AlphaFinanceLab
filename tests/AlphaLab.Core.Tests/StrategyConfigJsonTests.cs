@@ -160,4 +160,46 @@ public class StrategyConfigJsonTests
         var plant = StrategyConfigJson.WithUnregisteredMarker("""{"plant":"edge"}""");
         Assert.Contains("\"unregistered\":true", plant.Replace(" ", ""), StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// FINDING 391 (6.3). D133 claims payloads read "TOLERANT[ly] ... whose unknown keys are PRESERVED
+    /// for round-tripping". They were not: <c>Read</c> populates only the declared members and
+    /// <c>StrategyConfig</c> has nowhere to hold anything else, so a stamp implemented as
+    /// <c>Write(Read(x) with ...)</c> silently DROPPED every unknown key. The API accepts caller-supplied
+    /// <c>config_json</c>, so a candidate created through it lost whatever it froze that the typed shape
+    /// does not name — a frozen param (D17) vanishing at the moment of freezing.
+    /// </summary>
+    [Fact]
+    public void D133_StampingAMarker_PreservesEveryUnknownKey_RatherThanRoundTrippingThemAway()
+    {
+        // Exactly CandidateSpec's shape: a caller-supplied blob whose keys the typed shape does not name.
+        const string caller = """{"lookback":126,"recipe":"cp-1.1"}""";
+
+        var marked = StrategyConfigJson.WithUnregisteredMarker(caller);
+        Assert.Contains("\"lookback\":126", marked.Replace(" ", ""), StringComparison.Ordinal);
+        Assert.Contains("\"recipe\":\"cp-1.1\"", marked.Replace(" ", ""), StringComparison.Ordinal);
+
+        var stamped = StrategyConfigJson.WithFrozen(caller, "population_family", "daily");
+        Assert.Contains("\"lookback\":126", stamped.Replace(" ", ""), StringComparison.Ordinal);
+        Assert.Equal("daily", StrategyConfigJson.Read(stamped)!.FrozenValue("population_family"));
+
+        // ...and a stamp INVENTS nothing. A blob that never mentioned the marker does not acquire it,
+        // which is what the D81 control fixture depends on: a control is exempt from pre-registration,
+        // not smuggled past it.
+        Assert.DoesNotContain("unregistered", stamped, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void D133_WithFrozen_NeverOverwritesADeclaredValue_BecauseThatWouldBeAnUnrecordedFork()
+    {
+        var declared = StrategyConfigJson.Write(new StrategyConfig
+        {
+            Seed = 1, Selection = SelectionRule.TopN(1), Sizing = SizingMode.Equal,
+            Frozen = new Dictionary<string, string> { ["population_family"] = "monthly" },
+        });
+
+        var stamped = StrategyConfigJson.WithFrozen(declared, "population_family", "daily");
+
+        Assert.Equal("monthly", StrategyConfigJson.Read(stamped)!.FrozenValue("population_family"));
+    }
 }

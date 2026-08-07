@@ -13,6 +13,12 @@ public enum SelectionMode
     /// <summary>Keep names with score ≥ MinScore, capped at MaxConcurrent. Preferred for
     /// sparse-signal strategies.</summary>
     Threshold,
+
+    /// <summary>Keep EVERY name that passes the zero-score invariant, capped at MaxConcurrent
+    /// (catalog §3; §6.6 TimeSeriesMomentum is its only declared consumer). Not a third floor —
+    /// a wrapper over the invariant, which is what makes a defensive strategy go partially to cash
+    /// in a downturn instead of padding to a fixed breadth.</summary>
+    AllPositive,
 }
 
 /// <summary>
@@ -42,4 +48,17 @@ public sealed record SelectionRule
 
     public static SelectionRule Threshold(double minScore, int maxConcurrent) =>
         new() { Mode = SelectionMode.Threshold, MinScore = minScore, MaxConcurrent = maxConcurrent };
+
+    /// <summary>
+    /// Catalog §3's AllPositive: keep every name passing the invariant, capped at
+    /// <paramref name="maxConcurrent"/>.
+    ///
+    /// <see cref="MinScore"/> is set to 0.0 EXPLICITLY and that is the whole point of the factory: the
+    /// record's default is 0.60, and <see cref="Funnel.Selection"/> applies the strategy floor in every
+    /// mode — so a rule built without this line would silently be Threshold(0.60) wearing AllPositive's
+    /// name, keeping only names above 0.60 while claiming to keep every positive one. "Every name
+    /// passing the invariant" means the invariant (score &gt; 0), not a floor on top of it.
+    /// </summary>
+    public static SelectionRule AllPositive(int maxConcurrent) =>
+        new() { Mode = SelectionMode.AllPositive, MinScore = 0.0, MaxConcurrent = maxConcurrent };
 }

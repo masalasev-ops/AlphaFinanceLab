@@ -1,6 +1,7 @@
 using AlphaLab.Core.Config;
 using AlphaLab.Data.Entities;
 using AlphaLab.Evaluation.Monitor;
+using AlphaLab.Evaluation.Populations;
 
 namespace AlphaLab.Evaluation.Tests;
 
@@ -85,7 +86,7 @@ public class OverfittingMonitorTests
         arena.SeedStrategy("cand:edge", "candidate", dates, edge);
 
         using var db = arena.Open();
-        var result = new OverfittingMonitor(db, new GateOptions()).Run(dates[^1], "buyhold:cw", popId).Single(r => r.StrategyId == "cand:edge");
+        var result = new OverfittingMonitor(db, new GateOptions()).Run(dates[^1], "buyhold:cw", PopulationMatcher.Fixed(popId)).Single(r => r.StrategyId == "cand:edge");
 
         Assert.True(result.S3.Value >= 95, $"edge S3 percentile was {result.S3.Value}");
         Assert.Equal(MonitorStatus.Healthy, result.S3.Status);
@@ -106,7 +107,7 @@ public class OverfittingMonitorTests
         arena.SeedStrategy("cand:noedge", "candidate", dates, Centroid(members, 99));
 
         using var db = arena.Open();
-        var result = new OverfittingMonitor(db, new GateOptions()).Run(dates[^1], "buyhold:cw", popId).Single(r => r.StrategyId == "cand:noedge");
+        var result = new OverfittingMonitor(db, new GateOptions()).Run(dates[^1], "buyhold:cw", PopulationMatcher.Fixed(popId)).Single(r => r.StrategyId == "cand:noedge");
 
         Assert.True(result.S3.Value >= 25, $"no-edge S3 percentile {result.S3.Value} must not be in the Suspect tail (D63)");
         Assert.True(result.S3.Value < 95, $"no-edge S3 percentile {result.S3.Value} should be in-band, not distinguishable");
@@ -132,14 +133,14 @@ public class OverfittingMonitorTests
         var monitor = new OverfittingMonitor(db, new GateOptions());
 
         // Change 3 (D63): the alpha lands in the sub-25th tail, but a SINGLE dip is a Warning, not Suspect.
-        var first = monitor.Run(dates[^3], "buyhold:cw", popId).Single(r => r.StrategyId == "cand:anti");
+        var first = monitor.Run(dates[^3], "buyhold:cw", PopulationMatcher.Fixed(popId)).Single(r => r.StrategyId == "cand:anti");
         Assert.True(first.S3.Value < 25, $"anti-predictive S3 percentile was {first.S3.Value}");
         Assert.Equal("below_anchor", first.S3.Contribution);
         Assert.Equal(MonitorStatus.Warning, first.S3.Status);
 
         // SUSTAINED (three consecutive sub-25th evals) ⇒ Suspect — the anti-predictive fast-kill channel.
-        monitor.Run(dates[^2], "buyhold:cw", popId);
-        var third = monitor.Run(dates[^1], "buyhold:cw", popId).Single(r => r.StrategyId == "cand:anti");
+        monitor.Run(dates[^2], "buyhold:cw", PopulationMatcher.Fixed(popId));
+        var third = monitor.Run(dates[^1], "buyhold:cw", PopulationMatcher.Fixed(popId)).Single(r => r.StrategyId == "cand:anti");
         Assert.Equal(MonitorStatus.Suspect, third.S3.Status);
         Assert.Equal(MonitorStatus.Suspect, third.Status);
     }
@@ -194,7 +195,7 @@ public class OverfittingMonitorTests
         }
         db.SaveChanges();
 
-        var result = new OverfittingMonitor(db, new GateOptions()).Run(dates[^1], "buyhold:cw", popId).Single(r => r.StrategyId == "cand:anti");
+        var result = new OverfittingMonitor(db, new GateOptions()).Run(dates[^1], "buyhold:cw", PopulationMatcher.Fixed(popId)).Single(r => r.StrategyId == "cand:anti");
 
         Assert.Equal(MonitorStatus.Retired, result.Status);
         Assert.Equal("retired", db.Strategies.Single(s => s.StrategyId == "cand:anti").Status);
@@ -238,7 +239,7 @@ public class OverfittingMonitorTests
         var monitor = new OverfittingMonitor(db, new GateOptions());
 
         // First eval: WOULD retire, but the plant is EXEMPT — Suspect, never Retired.
-        var r1 = monitor.Run(dates[^2], "buyhold:cw", popId, runKind: "replay").Single(r => r.StrategyId == plant);
+        var r1 = monitor.Run(dates[^2], "buyhold:cw", PopulationMatcher.Fixed(popId), runKind: "replay").Single(r => r.StrategyId == plant);
         Assert.Equal(MonitorStatus.Suspect, r1.Status);
         Assert.DoesNotContain(db.OverfittingStatus.ToList(), s => s.StrategyId == plant && s.Status == "retired");
         Assert.NotEqual("retired", db.Strategies.Single(s => s.StrategyId == plant).Status);   // forward column never flipped
@@ -251,7 +252,7 @@ public class OverfittingMonitorTests
         // No truncation: the plant stayed promotable, so a SECOND eval (after the first would-retire) still
         // evaluates it and writes an S3 row at that date (a real retire would have dropped it from
         // EffectiveStatus ⇒ no result, no S3 row on the second pass).
-        var run2 = monitor.Run(dates[^1], "buyhold:cw", popId, runKind: "replay");
+        var run2 = monitor.Run(dates[^1], "buyhold:cw", PopulationMatcher.Fixed(popId), runKind: "replay");
         Assert.Contains(run2, r => r.StrategyId == plant);
         Assert.Contains(db.OverfittingChecks.ToList(),
             c => c.StrategyId == plant && c.Signal == "S3" && c.AsOf == dates[^1] && c.RunKind == "replay");
@@ -283,7 +284,7 @@ public class OverfittingMonitorTests
         arena.SeedStrategy("cand:young", "candidate", youngDates, Enumerable.Repeat(0.0, 30).ToArray());   // flat ⇒ ~0 alpha
 
         using var db = arena.Open();
-        var result = new OverfittingMonitor(db, new GateOptions()).Run(dates[^1], "buyhold:cw", popId).Single(r => r.StrategyId == "cand:young");
+        var result = new OverfittingMonitor(db, new GateOptions()).Run(dates[^1], "buyhold:cw", PopulationMatcher.Fixed(popId)).Single(r => r.StrategyId == "cand:young");
 
         Assert.True(result.S3.Value >= 25, $"young S3 percentile {result.S3.Value} should be in-band once horizon-matched, not in the Suspect tail");
     }
@@ -299,7 +300,7 @@ public class OverfittingMonitorTests
             i => EvalArena.Noise(79, 0.01, 3000 + i), m: 30);
 
         using var db = arena.Open();
-        new OverfittingMonitor(db, new GateOptions()).Run(dates[^1], "buyhold:cw", popId);
+        new OverfittingMonitor(db, new GateOptions()).Run(dates[^1], "buyhold:cw", PopulationMatcher.Fixed(popId));
 
         var checks = db.OverfittingChecks.Where(c => c.StrategyId == "cand:a").Select(c => c.Signal).OrderBy(s => s).ToList();
         Assert.Equal(["S2", "S3", "S6"], checks);

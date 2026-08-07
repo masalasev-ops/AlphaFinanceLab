@@ -132,7 +132,7 @@ public class FunnelTests
         scores[S(7)] = 0.9;
         scores[S(23)] = 0.8;
 
-        var result = Selection.Select(scores, SelectionRule.TopN(40) with { MinScore = 0.0 }, Rails());
+        var result = Selection.Select(scores, SelectionRule.TopN(40) with { MinScore = 0.0 }, Rails(), seed: 0);
 
         Assert.Equal([S(7), S(23)], result.WishList);   // best-first
         Assert.Equal(48, result.Excluded.Count);
@@ -148,7 +148,7 @@ public class FunnelTests
         var scores = new Dictionary<SecurityId, double> { [S(1)] = score, [S(2)] = 0.7 };
 
         // MinScore floored at 0 so ONLY the zero-score invariant can be doing the work here.
-        var result = Selection.Select(scores, SelectionRule.TopN(40) with { MinScore = 0.0 }, Rails());
+        var result = Selection.Select(scores, SelectionRule.TopN(40) with { MinScore = 0.0 }, Rails(), seed: 0);
 
         Assert.Equal([S(2)], result.WishList);
         Assert.Contains(result.Excluded, e => e.Id == S(1) && e.Reason.Contains("not > 0"));
@@ -162,22 +162,65 @@ public class FunnelTests
             [S(1)] = 0.10, [S(2)] = 0.90, [S(3)] = 0.50, [S(4)] = 0.70,
         };
 
-        var result = Selection.Select(scores, SelectionRule.TopN(2) with { MinScore = 0.0 }, Rails());
+        var result = Selection.Select(scores, SelectionRule.TopN(2) with { MinScore = 0.0 }, Rails(), seed: 0);
 
         Assert.Equal([S(2), S(4)], result.WishList);
         Assert.Contains(result.Excluded, e => e.Id == S(3) && e.Reason.Contains("breadth cap"));
     }
 
-    // F-DET: two names on an identical score must not swap between runs — at the N boundary that
-    // silently swaps which one gets bought.
+    // FX-SeededTieBreak (catalog §3). REPLACES FR8_TiedScores_BreakBySecurityId_Deterministically,
+    // which asserted ascending security_id — the order the catalog names as forbidden ("never by
+    // ingestion order"). Determinism was necessary and not sufficient: the old rule was stable AND
+    // biased, and the test's expected value encoded the bias.
     [Fact]
-    public void FR8_TiedScores_BreakBySecurityId_Deterministically()
+    public void FR8_TiedScores_BreakByTheSeededStableOrder_DeterministicallyAndNotByIngestionOrder()
     {
         var scores = new Dictionary<SecurityId, double> { [S(9)] = 0.5, [S(2)] = 0.5, [S(5)] = 0.5 };
 
-        var result = Selection.Select(scores, SelectionRule.TopN(2) with { MinScore = 0.0 }, Rails());
+        var result = Selection.Select(scores, SelectionRule.TopN(2) with { MinScore = 0.0 }, Rails(), seed: 7);
 
-        Assert.Equal([S(2), S(5)], result.WishList);
+        // Deterministic: the SAME seed reproduces the same wish list, run after run (F-DET).
+        Assert.Equal(result.WishList, Selection.Select(scores, SelectionRule.TopN(2) with { MinScore = 0.0 }, Rails(), seed: 7).WishList);
+        Assert.Equal(2, result.WishList.Count);
+
+        // ...and NOT ascending security_id, which is what the shipped rule produced and what the
+        // catalog forbids. Asserted as a property rather than by pinning a hash literal: pinning one
+        // would make the fixture a restatement of the implementation instead of a check on it.
+        Assert.NotEqual([S(2), S(5)], result.WishList);
+    }
+
+    // The other half of the seeded order: two strategies differing ONLY in Config.Seed must draw
+    // differently among equals. Under the ascending-id rule the seed did nothing at all, which is why
+    // a binary scorer's book was a fact about the security master rather than about the strategy.
+    [Fact]
+    public void FR8_SeededTieBreak_DifferentSeedsDrawDifferentNamesFromTheSameTiedBlock()
+    {
+        var scores = Enumerable.Range(1, 40).ToDictionary(i => S(i), _ => 1.0);
+        var rule = SelectionRule.TopN(5) with { MinScore = 0.0 };
+
+        var a = Selection.Select(scores, rule, Rails(), seed: 1).WishList;
+        var b = Selection.Select(scores, rule, Rails(), seed: 2).WishList;
+
+        Assert.Equal(5, a.Count);
+        Assert.Equal(5, b.Count);
+        Assert.NotEqual(a, b);
+    }
+
+    // The invariant FunnelRunner.RanksOf states in prose ("the tiebreak is the same one Selection
+    // uses, and it must be") — untested until 6.3, because ascending id gave the two sites no way to
+    // disagree. A seeded order does: a name could otherwise sit inside the top N by one rule and past
+    // its RankBuffer exit by the other, opening and closing on the same day.
+    [Fact]
+    public void FR8_SeededTieBreak_SelectionAndRanksOf_AgreeOnTheSameOrder()
+    {
+        var scores = Enumerable.Range(1, 30).ToDictionary(i => S(i), i => i <= 20 ? 1.0 : 0.25);
+        const int seed = 11;
+
+        var wishList = Selection.Select(scores, SelectionRule.TopN(8) with { MinScore = 0.0 }, Rails(), seed).WishList;
+        var ranks = FunnelRunner.RanksOf(scores, seed);
+
+        // The wish list IS the first 8 of the rank order — same comparator, same result.
+        Assert.Equal(wishList, scores.Keys.OrderBy(id => ranks[id]).Take(8).ToList());
     }
 
     [Fact]
@@ -188,11 +231,72 @@ public class FunnelTests
             [S(1)] = 0.59, [S(2)] = 0.60, [S(3)] = 0.95, [S(4)] = 0.80,
         };
 
-        var result = Selection.Select(scores, SelectionRule.Threshold(0.60, maxConcurrent: 2), Rails());
+        var result = Selection.Select(scores, SelectionRule.Threshold(0.60, maxConcurrent: 2), Rails(), seed: 0);
 
         Assert.Equal([S(3), S(4)], result.WishList);                                  // 0.60 makes the floor, but the cap bites
         Assert.Contains(result.Excluded, e => e.Id == S(1) && e.Reason.Contains("strategy floor"));
         Assert.Contains(result.Excluded, e => e.Id == S(2) && e.Reason.Contains("breadth cap"));
+    }
+
+    // ---- AllPositive (catalog §3; §6.6 TimeSeriesMomentum is its only declared consumer) ----
+
+    [Fact]
+    public void FR8_AllPositive_KeepsEveryNamePassingTheInvariant_CappedAtMaxConcurrent()
+    {
+        var scores = new Dictionary<SecurityId, double>
+        {
+            [S(1)] = 0.05, [S(2)] = 0.0, [S(3)] = 0.55, [S(4)] = 0.95, [S(5)] = -0.10,
+        };
+
+        var result = Selection.Select(scores, SelectionRule.AllPositive(maxConcurrent: 10), Rails(), seed: 0);
+
+        // 0.05 and 0.55 are BELOW Threshold's 0.60 default and are kept anyway — that is the whole
+        // difference. The zero and the negative are still refused: AllPositive wraps the invariant,
+        // it does not exempt anything from it (hard rule 7).
+        Assert.Equal([S(4), S(3), S(1)], result.WishList);
+        Assert.Contains(result.Excluded, e => e.Id == S(2) && e.Reason.Contains("not > 0"));
+        Assert.Contains(result.Excluded, e => e.Id == S(5) && e.Reason.Contains("not > 0"));
+    }
+
+    // The factory must pin MinScore = 0.0 explicitly: the record's default is 0.60 and Selection
+    // applies the strategy floor in EVERY mode, so a rule built without it would be Threshold(0.60)
+    // wearing AllPositive's name — keeping only names above 0.60 while claiming to keep every
+    // positive one.
+    [Fact]
+    public void FR8_AllPositive_CarriesNoStrategyFloorOfItsOwn_NotTheRecordsDefault()
+    {
+        Assert.Equal(0.0, SelectionRule.AllPositive(50).MinScore);
+    }
+
+    // §6.6's stated behaviour: "a broadly falling fixture reduces the invested count (cash-weight
+    // rises)". This is FX-ZeroScore's shape for the new mode — going to cash is the strategy working.
+    [Fact]
+    public void FR8_AllPositive_ABroadlyFallingCrossSection_ShortensTheWishList_AndHoldsCash()
+    {
+        var bull = Enumerable.Range(1, 40).ToDictionary(i => S(i), _ => 1.0);
+        var bear = Enumerable.Range(1, 40).ToDictionary(i => S(i), i => i <= 3 ? 1.0 : 0.0);
+        var rule = SelectionRule.AllPositive(maxConcurrent: 50);
+
+        Assert.Equal(40, Selection.Select(bull, rule, new GuardrailsOptions { MaxConcurrentPositions = 100 }, seed: 0).WishList.Count);
+        Assert.Equal(3, Selection.Select(bear, rule, new GuardrailsOptions { MaxConcurrentPositions = 100 }, seed: 0).WishList.Count);
+    }
+
+    // AllPositive + a binary scorer is the case that makes the seeded tie-break load-bearing rather
+    // than a boundary detail: EVERY selected name is tied at 1.0, so the tie order IS the selection
+    // rule whenever the qualifying count exceeds the cap.
+    [Fact]
+    public void FR8_AllPositive_WithABinaryScorer_TheSeededOrderDecidesTheWholeBook()
+    {
+        var scores = Enumerable.Range(1, 80).ToDictionary(i => S(i), _ => 1.0);
+        var rule = SelectionRule.AllPositive(maxConcurrent: 10);
+
+        var a = Selection.Select(scores, rule, new GuardrailsOptions { MaxConcurrentPositions = 100 }, seed: 3).WishList;
+        var b = Selection.Select(scores, rule, new GuardrailsOptions { MaxConcurrentPositions = 100 }, seed: 4).WishList;
+
+        Assert.Equal(10, a.Count);
+        Assert.NotEqual(a, b);
+        // Not the lowest-numbered ten — the book is a fact about the strategy, not the security master.
+        Assert.NotEqual(Enumerable.Range(1, 10).Select(i => S(i)).ToList(), a);
     }
 
     [Fact]
@@ -201,7 +305,7 @@ public class FunnelTests
         var scores = new Dictionary<SecurityId, double> { [S(1)] = 0.30, [S(2)] = 0.80 };
         var rails = new GuardrailsOptions { MinScore = 0.50 };
 
-        var result = Selection.Select(scores, SelectionRule.TopN(40) with { MinScore = 0.0 }, rails);
+        var result = Selection.Select(scores, SelectionRule.TopN(40) with { MinScore = 0.0 }, rails, seed: 0);
 
         Assert.Equal([S(2)], result.WishList);
         Assert.Contains(result.Excluded, e => e.Id == S(1) && e.Reason.Contains("Guardrails.MinScore"));
@@ -213,7 +317,7 @@ public class FunnelTests
         var scores = Enumerable.Range(1, 10).ToDictionary(i => S(i), i => 1.0 - i * 0.01);
         var rails = new GuardrailsOptions { MaxConcurrentPositions = 3 };
 
-        var result = Selection.Select(scores, SelectionRule.TopN(40) with { MinScore = 0.0 }, rails);
+        var result = Selection.Select(scores, SelectionRule.TopN(40) with { MinScore = 0.0 }, rails, seed: 0);
 
         Assert.Equal(3, result.WishList.Count);
     }
@@ -228,7 +332,7 @@ public class FunnelTests
             [S(1)] = 0.0, [S(2)] = 0.30, [S(3)] = 0.95, [S(4)] = 0.90, [S(5)] = double.NaN,
         };
 
-        var result = Selection.Select(scores, SelectionRule.TopN(1), Rails());
+        var result = Selection.Select(scores, SelectionRule.TopN(1), Rails(), seed: 0);
 
         var accounted = result.WishList.Concat(result.Excluded.Select(e => e.Id)).ToList();
         Assert.Equal(scores.Count, accounted.Count);

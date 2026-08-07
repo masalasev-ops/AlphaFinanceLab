@@ -4,6 +4,7 @@ using AlphaLab.Data.Entities;
 using AlphaLab.Evaluation.Calibration;
 using AlphaLab.Evaluation.Monitor;
 using AlphaLab.Evaluation.Recompute;
+using AlphaLab.Evaluation.Populations;
 
 namespace AlphaLab.Evaluation.Tests;
 
@@ -76,7 +77,7 @@ public class RecomputeParityTests
             for (var i = evalEvery; i < dates.Count; i += evalEvery)
             {
                 gate.Run(dates[i], Bench, Replay);
-                monitor.Run(dates[i], Bench, popId, Replay);
+                monitor.Run(dates[i], Bench, PopulationMatcher.Fixed(popId), Replay);
             }
             // …and one final session ON THE LAST DATE. Not cosmetic: EvalArena seeds the whole equity curve
             // up front, so a monitor run at session i reads the FULL curve rather than the curve as it stood
@@ -84,7 +85,7 @@ public class RecomputeParityTests
             // the session IS the last date, which is the one place a derived-band recompute can be compared
             // against a stored value here (FX_DerivedBand_TStatMatchesStored_AtTheFinalSession).
             gate.Run(dates[^1], Bench, Replay);
-            monitor.Run(dates[^1], Bench, popId, Replay);
+            monitor.Run(dates[^1], Bench, PopulationMatcher.Fixed(popId), Replay);
         }
         return (arena, dates, popId);
     }

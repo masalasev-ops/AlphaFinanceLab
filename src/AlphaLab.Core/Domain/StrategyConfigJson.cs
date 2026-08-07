@@ -85,13 +85,53 @@ public static class StrategyConfigJson
     /// the typed <see cref="StrategyConfig.Unregistered"/> and a raw <c>JsonNode</c> marker both wrote
     /// this key, by different conventions). A payload that is not a readable config still gets the
     /// marker — an unregistered plant row must stay honestly marked.
+    ///
+    /// **Stamps at the NODE level, and that is the fix, not a retreat from D133's framing (6.3, finding
+    /// 391).** "Through the shape" means ONE writer under ONE convention — the canonical key order and
+    /// <see cref="AlphaLabJson.Options"/>, both applied here. It never meant a typed round-trip, and a
+    /// typed round-trip is what made this lossy: <see cref="Read"/> populates only the declared members,
+    /// <see cref="StrategyConfig"/> has nowhere to hold anything else, so <c>Write(Read(x))</c> silently
+    /// DROPPED every unknown key — the opposite of the TOLERANT property this class claims. The API
+    /// accepts caller-supplied <c>config_json</c>, so a candidate created through it lost whatever it
+    /// froze that the typed shape does not name.
     /// </summary>
-    public static string WithUnregisteredMarker(string? configJson)
-    {
-        if (Read(configJson) is { } config) return Write(config with { Unregistered = true });
+    public static string WithUnregisteredMarker(string? configJson) =>
+        Stamp(configJson, obj => obj[UnregisteredKey] = true);
 
+    /// <summary>
+    /// Stamp a FROZEN STRING into the <c>frozen</c> bag — the same one-writer-one-convention discipline
+    /// as <see cref="WithUnregisteredMarker"/>, generalised at 6.3 when the cadence-family declaration
+    /// became the second thing a factory needs to write.
+    ///
+    /// **Only ever called on a config being CREATED.** D17 forbids re-serializing over a frozen row, and
+    /// this method cannot know whether its argument is one — so the obligation sits with the caller,
+    /// exactly as it does for the unregistered marker. An EXISTING value for <paramref name="key"/> is
+    /// never overwritten: a caller that meant to change a frozen param is describing a FORK (rule 8),
+    /// and silently honouring it here would be that fork happening without the new strategy_id or the
+    /// trial it owes.
+    /// </summary>
+    public static string WithFrozen(string? configJson, string key, string value)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ArgumentNullException.ThrowIfNull(value);
+
+        return Stamp(configJson, obj =>
+        {
+            if (obj["frozen"] is not JsonObject bag)
+            {
+                bag = [];
+                obj["frozen"] = bag;
+            }
+            bag[key] ??= value;
+        });
+    }
+
+    /// <summary>Apply <paramref name="mutate"/> to the payload's object form and re-emit it canonically —
+    /// every key that was there stays there, in one key order, under one set of options.</summary>
+    private static string Stamp(string? configJson, Action<JsonObject> mutate)
+    {
         var obj = ParseObjectOrEmpty(configJson);
-        obj[UnregisteredKey] = true;
+        mutate(obj);
         return Canonicalize(obj).ToJsonString(AlphaLabJson.Options);
     }
 

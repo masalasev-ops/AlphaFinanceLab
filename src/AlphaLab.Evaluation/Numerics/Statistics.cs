@@ -26,20 +26,14 @@ public static class Statistics
 
     /// <summary>The percentile RANK (0..100) of <paramref name="x"/> within <paramref name="population"/>:
     /// the share strictly below, plus half the ties (the mid-rank convention — an unbiased estimate of the
-    /// true quantile, so a value at the exact median reads ~50, not ~100). Empty population ⇒ NaN.</summary>
-    public static double PercentileRank(IReadOnlyList<double> population, double x)
-    {
-        var n = population.Count;
-        if (n == 0) return double.NaN;
-
-        int below = 0, equal = 0;
-        foreach (var v in population)
-        {
-            if (v < x) below++;
-            else if (v == x) equal++;
-        }
-        return 100.0 * (below + 0.5 * equal) / n;
-    }
+    /// true quantile, so a value at the exact median reads ~50, not ~100). Empty population ⇒ NaN.
+    ///
+    /// DELEGATES to <see cref="AlphaLab.Core.Numerics.Ranking.PercentileRank"/> (6.3): the same notion is
+    /// needed by the strategy models, and <c>AlphaLab.Strategies</c> cannot reference this assembly — so the
+    /// definition moved to Core and this stays as the 0..100 PRESENTATION of it. Deliberately not a second
+    /// copy: a rule written twice is two definitions that drift, and S3's percentile is a verdict input.</summary>
+    public static double PercentileRank(IReadOnlyList<double> population, double x) =>
+        100.0 * AlphaLab.Core.Numerics.Ranking.PercentileRank(population, x);
 
     /// <summary>
     /// Fractional MID-RANKS (1-based) of <paramref name="values"/>, ties sharing their average rank —

@@ -126,6 +126,23 @@ public sealed class CandidateFactory(AlphaLabDbContext db, AlphaLab.Core.Config.
 
         var configJson = unregistered ? WithUnregisteredMarker(spec.ConfigJson) : spec.ConfigJson;
 
+        // THE POPULATION HOOKUP (catalog §5.2 / §13: "the factory wires every new candidate to its
+        // matched random population by cadence family"). Asserted by the catalog since v6 and
+        // implemented here at 6.3 — CandidateFactory contained no population code at all.
+        //
+        // A declared family is honoured verbatim; an ABSENT one is stamped with the compatibility
+        // default so that every row created from here on CARRIES its family explicitly. That is the
+        // point of stamping rather than resolving lazily: "absent" then means exactly one thing —
+        // frozen before the key existed — and the compatibility rule has a closed, shrinking domain
+        // instead of an open-ended one that quietly absorbs new rows.
+        //
+        // NOT REFUSED when the family has no spawned population. Populations are seeded by the daily
+        // run's Stage 2, and a candidate may legitimately be created before an arena's first run, so
+        // refusing here would couple candidate creation to pipeline state. The fail-closed point is
+        // JUDGEMENT, where catalog §5.2 puts it: no population ⇒ S3 undefined, plus the turnover caveat.
+        configJson = StrategyConfigJson.WithFrozen(
+            configJson, CadenceFamily.FrozenKey, CadenceFamily.CompatibilityDefault);
+
         var strategy = new StrategyRow
         {
             StrategyId = spec.StrategyId,

@@ -49,7 +49,7 @@ other divergence inputs all exist in Phase 6.
 |---|---|---|
 | 6.1 | This folder; **D131** (the gate's opponent) + **D132** (the features cache); the rewritten gate box + reading diet; the B8 UI ruling; findings 376/381/382; the D130 p90 item | `check-register` clean; no strategy code |
 | 6.2 | The lifecycle seam: a **readable `config_json`** (its own row), the config-driven registry, admission→running, the control path | `D132_ConfigJson_RoundTripsEveryFrozenRow`, `FX-AdmittedCandidateOpensAccount` |
-| 6.3 | Funnel primitives: `PercentileRank`, `AllPositive`, population-by-cadence-family, the seeded tie-break ruling | `PopulationHookup_MatchesByCadenceFamily`, `FX-SeededTieBreak` |
+| 6.3 | Funnel primitives: **D134** (the seeded tie-break + the `percentile_rank` convention) and **D135** (the declared cadence family); `AllPositive`; the population hookup | `PopulationHookup_MatchesByCadenceFamily`, `FX-SeededTieBreak`, `FX-PercentileRankConvention` |
 | 6.4 | Forward membership refresh + the FR-6 divergence alarm (finding 197, **authorized explicitly** — FR-6 is outside Phase 6's FR set) | `FX-ForwardMembershipRefresh` |
 | 6.5 | The **S6 remedy** + the monitor→gate consequence rails (two rows) | `FX-RecomputeParity` green + the D117 confirmation slice |
 | 6.6 | French factors + RF + the attribution panel (+ a row on attribution persistence) | `FX-FactorIngest`, `FX-AttributionLagNote` |
@@ -111,9 +111,9 @@ rather than by a number, because `tools/check-register.ps1` treats any `D<n>` in
 refuses one that resolves to no row. That refusal is correct and is not worked around: a forward-allocated
 number is a citation of something that does not exist, which is the class of defect rule 25 exists to stop.
 
-Landed at phase open: **D131** (the gate's opponent) and **D132** (no feature cache in Phase 6).
+Landed at phase open: **D131** (the gate's opponent) and **D132** (no feature cache in Phase 6). Landed at 6.2: **D133** (the readable `config_json` shape). Landed at 6.3: **D134** (the Stage-3 seeded tie-break, which also fixes STRATEGY_CATALOG §3's dangling `D40` citation and settles the `percentile_rank` convention) and **D135** (the declared cadence family).
 
-Still owed, by subject: the readable `config_json` shape · the `FX-SignalParity` scope per family · the S6
+Still owed, by subject: the `FX-SignalParity` scope per family · the S6
 behavioural remedy · the monitor→gate consequence ordering and the auto-retire reconciliation · whether
 attribution needs a durable results table · where a per-run covariance log lives *(may need no row)* ·
 where a halt persists · the `TargetOrTimeStop` exit grammar · where the sector cap binds · `ToChannelExit`

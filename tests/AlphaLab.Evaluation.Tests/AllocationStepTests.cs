@@ -3,6 +3,7 @@ using AlphaLab.Data.Entities;
 using AlphaLab.Evaluation;
 using AlphaLab.Evaluation.Allocator;
 using AlphaLab.Evaluation.Monitor;
+using AlphaLab.Evaluation.Populations;
 
 namespace AlphaLab.Evaluation.Tests;
 
@@ -23,7 +24,7 @@ public class AllocationStepTests
         using var db = arena.Open();
         var gate = new GateOptions();
         new EvaluationStep(db, gate).Run(dates[^1]);
-        new OverfittingMonitor(db, gate).Run(dates[^1], "buyhold:cw", popId);
+        new OverfittingMonitor(db, gate).Run(dates[^1], "buyhold:cw", PopulationMatcher.Fixed(popId));
         var outcome = new AllocationStep(db, gate, new AllocatorOptions()).Run(dates[^1]);
 
         // One allocation_log row for the day; both candidates allocated; weights renormalized.
@@ -90,7 +91,7 @@ public class AllocationStepTests
 
         var gate = new GateOptions();
         new EvaluationStep(db, gate).Run(dates[^1]);
-        new OverfittingMonitor(db, gate).Run(dates[^1], "buyhold:cw", popId);
+        new OverfittingMonitor(db, gate).Run(dates[^1], "buyhold:cw", PopulationMatcher.Fixed(popId));
         var outcome = new AllocationStep(db, gate, new AllocatorOptions()).Run(dates[^1]);
 
         var anti = outcome.Rows.Single(r => r.StrategyId == "cand:anti");

@@ -1,6 +1,7 @@
 using AlphaLab.Data;
 using AlphaLab.Evaluation.Monitor;
 using AlphaLab.Evaluation.Numerics;
+using AlphaLab.Evaluation.Populations;
 
 namespace AlphaLab.Evaluation.Recompute;
 
@@ -38,9 +39,18 @@ public sealed class BandInputs
 
     /// <summary>
     /// Build the inputs for a run. <paramref name="subjects"/> are the strategies being recomputed; the
-    /// matched population is resolved the SAME way the pipeline resolves it — `Family == "daily" &amp;&amp;
-    /// CostsOn` (`DailyPipeline.cs:621`, whose comment records this as the Phase-3 simplification). Resolved
-    /// by the same rule rather than guessed, and null when no such population exists.
+    /// matched population is resolved through the SAME <see cref="PopulationMatcher"/> the pipeline uses
+    /// (6.3), not by a second copy of its predicate. Until then this method carried its own
+    /// `Family == "daily" &amp;&amp; CostsOn` query under a comment asserting the two must agree — and
+    /// citing a `DailyPipeline` line number that had already moved. A shared resolver removes the
+    /// possibility of drift instead of documenting the obligation to avoid it.
+    ///
+    /// **A MIXED-FAMILY SUBJECT SET IS REFUSED.** The member band is computed once per session and shared
+    /// across subjects, which is only sound while every subject shares one null. Once subjects span two
+    /// families, one band cannot serve both — so this returns null rather than silently banding a monthly
+    /// strategy against daily members, which is the exact mismatch 6.3 exists to remove. Reachable only
+    /// after a non-daily strategy registers (6.10/6.11); the recompute harness gains per-family bands
+    /// then, and until then this is a guard that cannot fire rather than dead code.
     /// </summary>
     public static BandInputs? Build(
         AlphaLabDbContext db, IReadOnlyCollection<string> subjects, string benchmarkStrategyId, string runKind)
@@ -53,11 +63,11 @@ public sealed class BandInputs
         var benchCurve = CurveMath.Curve(db, benchAccount.AccountId, runKind);
         if (benchCurve.Count < 2) return null;
 
-        var populationId = db.ControlPopulations
-            .Where(p => p.Family == "daily" && p.CostsOn)
-            .Select(p => (long?)p.PopulationId)
-            .FirstOrDefault();
-        if (populationId is not { } pid) return null;
+        var matcher = PopulationMatcher.ByDeclaration(db);
+        var matches = subjects.Select(matcher.For).ToList();
+        if (matches.Select(m => m.Family).Distinct(StringComparer.Ordinal).Count() > 1) return null;
+
+        if (matches.Count == 0 || matches[0].PopulationId is not { } pid) return null;
 
         var inputs = new BandInputs();
 

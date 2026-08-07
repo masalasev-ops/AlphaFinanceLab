@@ -637,13 +637,13 @@ public sealed class DailyPipeline(
         {
             using var txn = db.Database.BeginTransaction();
             var evaluations = new EvaluationStep(db, gate).Run(asOf, runKind: runKindToken);
-            // The overfitting monitor (S2/S3/S6) runs in the same evaluation transaction. Phase-3: all
-            // promotable strategies are matched to the daily cost-on population (the default null).
-            var matchedPopulation = db.ControlPopulations
-                .Where(p => p.Family == "daily" && p.CostsOn)
-                .Select(p => (long?)p.PopulationId)
-                .FirstOrDefault();
-            var monitored = new OverfittingMonitor(db, gate).Run(asOf, EvaluationStep.DefaultBenchmarkStrategyId, matchedPopulation, runKindToken, watermark);
+            // The overfitting monitor (S2/S3/S6) runs in the same evaluation transaction. Each strategy
+            // is matched to the cost-on population of ITS OWN declared cadence family (6.3) — the
+            // Phase-3 simplification that sent every promotable strategy to the daily null is gone.
+            // Rows frozen before the declaration existed resolve to daily by the recorded compatibility
+            // rule, so the frozen generation is judged exactly as it was.
+            var monitored = new OverfittingMonitor(db, gate).Run(
+                asOf, EvaluationStep.DefaultBenchmarkStrategyId, PopulationMatcher.ByDeclaration(db), runKindToken, watermark);
 
             // Turnover-match verification (finding 115): re-simulate the daily population's turnover vs each
             // strategy's trades over the recent window, and persist the status-neutral caveat rows.
@@ -652,7 +652,13 @@ public sealed class DailyPipeline(
             {
                 var features = new BarFeatureView(barReads, calendar, asOfDate, watermark, costs);
                 var market = new PopulationMarket(features, membership, calendar, new CostModel(costs), costs.AdvWindowDays, dataQuality.MaxSingleDayPriceFactor);
-                var dailyFamily = PopulationFamilies.ForPhase3(populations).First(f => f is { Name: "daily", CostsOn: true });
+                // The turnover caveat (finding 115) still re-simulates ONE family's turnover for the whole
+                // roster. Left per-family rather than per-strategy deliberately: TurnoverMatchStep runs
+                // SimulateMember over 20 members × 21 sessions per family, so going per-strategy would
+                // multiply the daily cost by the number of distinct families for a status-NEUTRAL caveat.
+                // It becomes wrong only once a non-daily strategy registers, which is 6.10/6.11's gate.
+                var dailyFamily = PopulationFamilies.ForPhase3(populations)
+                    .First(f => f.Name == CadenceFamily.Daily && f.CostsOn);
                 new TurnoverMatchStep(db, populations.TurnoverMatchTolerancePct)
                     .Run(asOf, windowDates, new PopulationEngine(market), dailyFamily, EvaluationStep.DefaultBenchmarkStrategyId, runKindToken);
             }

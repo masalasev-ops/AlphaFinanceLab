@@ -99,7 +99,7 @@ public static class FunnelRunner
         }
 
         // ---- Stage 3: selection (shared) — the zero-score invariant ----
-        var selection = Selection.Select(scores, model.Config.Selection, guardrails);
+        var selection = Selection.Select(scores, model.Config.Selection, guardrails, model.Config.Seed);
         notes.AddRange(StageNote.From(3, selection.Excluded));
 
         // ---- Stage 4: portfolio (shared mechanics, per-strategy ExitPolicy) ----
@@ -107,7 +107,7 @@ public static class FunnelRunner
         var context = new ExitContext
         {
             AsOf = asOf,
-            Ranks = RanksOf(scores),
+            Ranks = RanksOf(scores, model.Config.Seed),
             WishList = wishList,
             SessionsSinceInception = inputs.SessionsSinceInception,
         };
@@ -145,7 +145,7 @@ public static class FunnelRunner
             AsOf = asOf.ToString("yyyy-MM-dd"),
             Watermark = features.Watermark,
             Stage1Eligible = eligibility.Eligible,
-            Stage2Scores = ScoredNames(scores),
+            Stage2Scores = ScoredNames(scores, model.Config.Seed),
             Stage3WishList = selection.WishList,
             Stage4 = new Stage4Snapshot(plan.Opens, plan.Holds, plan.Closes, plan.Scope),
             Stage5Targets = sized.Targets,
@@ -158,26 +158,31 @@ public static class FunnelRunner
     }
 
     /// <summary>
-    /// Cross-sectional rank over the scored universe: 1 = highest score, ties broken by security_id.
+    /// Cross-sectional rank over the scored universe: 1 = highest score, ties broken by the SEEDED
+    /// stable order (catalog §3), then by security_id.
     ///
     /// The tiebreak is the same one Selection uses, and it must be — RankBuffer's exit compares
     /// against a rank that Selection's entry produced, so two different tie orders would let a name
-    /// be simultaneously inside the top N and past the exit buffer.
+    /// be simultaneously inside the top N and past the exit buffer. That "must be" was prose until
+    /// 6.3; it is now asserted by `FX-SeededTieBreak`'s agreement fixture, because the seeded order
+    /// gave the two sites a way to disagree that ascending-id never could.
     ///
     /// Zero-scored names ARE ranked (at the bottom). They are never selectable, but they are still
     /// part of the cross-section a held name's rank is measured against — which is exactly how a
     /// held name that collapses to zero ends up past its exit buffer and gets closed.
     /// </summary>
-    private static Dictionary<SecurityId, int> RanksOf(IReadOnlyDictionary<SecurityId, double> scores) =>
+    public static Dictionary<SecurityId, int> RanksOf(
+        IReadOnlyDictionary<SecurityId, double> scores, int seed) =>
         scores
             .OrderByDescending(kv => kv.Value)
+            .ThenBy(kv => SeededOrder.KeyFor(seed, kv.Key))
             .ThenBy(kv => kv.Key.Value)
             .Select((kv, i) => (kv.Key, Rank: i + 1))
             .ToDictionary(x => x.Key, x => x.Rank);
 
-    private static List<ScoredName> ScoredNames(IReadOnlyDictionary<SecurityId, double> scores)
+    private static List<ScoredName> ScoredNames(IReadOnlyDictionary<SecurityId, double> scores, int seed)
     {
-        var ranks = RanksOf(scores);
+        var ranks = RanksOf(scores, seed);
         return scores
             .OrderBy(kv => ranks[kv.Key])
             .Select(kv => new ScoredName(kv.Key, kv.Value, ranks[kv.Key]))

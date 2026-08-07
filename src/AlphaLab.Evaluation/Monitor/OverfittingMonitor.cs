@@ -6,6 +6,7 @@ using AlphaLab.Data.Entities;
 using AlphaLab.Data.Services;
 using AlphaLab.Evaluation.Metrics;
 using AlphaLab.Evaluation.Numerics;
+using AlphaLab.Evaluation.Populations;
 
 namespace AlphaLab.Evaluation.Monitor;
 
@@ -40,17 +41,24 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
     private const string RunKindLive = "live";
 
     /// <summary>Evaluate + persist S2/S3/S6 + the aggregate status for every promotable strategy against
-    /// one matched population. <paramref name="watermark"/> resolves the CALIBRATED config rows as-of
-    /// the run (D96/D98): when the frozen D56 curves exist at that watermark, S3 judges against the
-    /// trajectory (S3Trajectory); otherwise the flat pre-calibration anchors apply — behaviour-preserving
-    /// until the Phase-4 calibration writes the rows. The S6 auto-retire patience resolves the same way.</summary>
+    /// ITS OWN matched population (<paramref name="matcher"/>; 6.3). <paramref name="watermark"/> resolves
+    /// the CALIBRATED config rows as-of the run (D96/D98): when the frozen D56 curves exist at that
+    /// watermark, S3 judges against the trajectory (S3Trajectory); otherwise the flat pre-calibration
+    /// anchors apply — behaviour-preserving until the Phase-4 calibration writes the rows. The S6
+    /// auto-retire patience resolves the same way.
+    ///
+    /// THE POPULATION AND THE CURVES MOVE TOGETHER, per strategy, and they must: the trajectory says
+    /// "at track length t a no-edge strategy's percentile within ITS OWN population is typically X", so
+    /// reading a percentile from one family's members against another family's curve compares a number
+    /// to a reference calibrated on a different distribution. Both are keyed on the family the matcher
+    /// resolves, and both are cached per family so the common all-daily roster costs one lookup each.</summary>
     public IReadOnlyList<MonitorResult> Run(
-        string asOf, string benchmarkStrategyId, long? matchedPopulationId, string runKind = RunKindLive,
+        string asOf, string benchmarkStrategyId, PopulationMatcher matcher, string runKind = RunKindLive,
         string? watermark = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(asOf);
+        ArgumentNullException.ThrowIfNull(matcher);
 
-        var (pNoise, pEdge) = LoadCurves("daily", watermark);
         var autoRetireEvals = ResolveAutoRetirePatience(watermark);
 
         var benchAccount = db.Accounts.FirstOrDefault(a => a.StrategyId == benchmarkStrategyId && a.RunKind == runKind);
@@ -58,11 +66,11 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
         var benchCurve = CurveMath.Curve(db, benchAccount.AccountId, runKind);
         if (benchCurve.Count < 2) return [];
 
-        // The matched population's per-member aligned return series (vs the benchmark). Kept as SERIES, not
-        // pre-reduced alphas, so S3 can be horizon-matched to each strategy's own track length below.
-        var memberSeries = matchedPopulationId is { } pid
-            ? PopulationReturns(pid, benchCurve, runKind)
-            : [];
+        // Per-family caches. The member series and the calibrated curves are properties of the FAMILY,
+        // not of the subject, so a roster of 40 daily strategies still loads each exactly once — the
+        // per-strategy resolution buys correctness without buying the N-times cost it looks like.
+        var seriesByFamily = new Dictionary<string, List<(List<double> Mr, List<double> Br)>>(StringComparer.Ordinal);
+        var curvesByFamily = new Dictionary<string, (Calibration.S3Curve? Noise, Calibration.S3Curve? Edge)>(StringComparer.Ordinal);
 
         // The S2 deflation uses the GLOBAL honest trials count (D23 / OVERFITTING_MONITOR §3 + App. B):
         // every fork/sibling/retrain is a new strategy_id, so "one researcher's trial spends everyone's
@@ -90,6 +98,22 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
 
             var (stratReturns, benchReturns) = CurveMath.AlignedReturns(stratCurve, benchCurve);
             if (stratReturns.Count < 2) continue;
+
+            // THIS strategy's null (6.3). A declared family with no spawned population yields an empty
+            // member set, and the memberAlphas.Count == 0 branch below renders S3 'undefined' — catalog
+            // §5.2's own answer, never a silent substitution of the daily null.
+            var match = matcher.For(strategyId);
+            if (!seriesByFamily.TryGetValue(match.Family, out var memberSeries))
+            {
+                memberSeries = match.PopulationId is { } pid ? PopulationReturns(pid, benchCurve, runKind) : [];
+                seriesByFamily[match.Family] = memberSeries;
+            }
+            if (!curvesByFamily.TryGetValue(match.Family, out var curves))
+            {
+                curves = LoadCurves(match.Family, watermark);
+                curvesByFamily[match.Family] = curves;
+            }
+            var (pNoise, pEdge) = curves;
 
             // Horizon-match S3 to THIS strategy's track: rank its alpha inside member alphas computed over
             // the SAME window length (the strategy's return count), not the members' full ~200-day tracks.

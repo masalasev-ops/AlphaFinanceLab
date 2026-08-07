@@ -1,3 +1,5 @@
+using AlphaLab.Core.Numerics;
+
 namespace AlphaLab.Evaluation.Populations;
 
 /// <summary>
@@ -16,22 +18,14 @@ public static class PopulationRng
     /// <summary>A uniform score in [0,1) for (familySeed, memberIndex, dateOrdinal, securityId).</summary>
     public static double Score(int familySeed, int memberIndex, long dateOrdinal, long securityId)
     {
-        var h = SplitMix64(unchecked((ulong)(uint)familySeed + 0x9E3779B97F4A7C15UL));
-        h = SplitMix64(h ^ unchecked((ulong)(uint)memberIndex));
-        h = SplitMix64(h ^ unchecked((ulong)dateOrdinal));
-        h = SplitMix64(h ^ unchecked((ulong)securityId));
+        // The mixer moved to AlphaLab.Core.Numerics.Mix at 6.3 (shared with the Stage-3 seeded order);
+        // the ARITHMETIC is byte-for-byte the same rounds and constants, so generation 2's member
+        // scores are unchanged. FX-PopDeterminism is what proves that, and it is why the move is safe.
+        var h = Mix.SplitMix64(unchecked((ulong)(uint)familySeed + Mix.Gamma));
+        h = Mix.SplitMix64(h ^ unchecked((ulong)(uint)memberIndex));
+        h = Mix.SplitMix64(h ^ unchecked((ulong)dateOrdinal));
+        h = Mix.SplitMix64(h ^ unchecked((ulong)securityId));
         // Top 53 bits → a double in [0,1) with full mantissa resolution.
         return (h >> 11) * (1.0 / (1UL << 53));
-    }
-
-    private static ulong SplitMix64(ulong x)
-    {
-        unchecked
-        {
-            x += 0x9E3779B97F4A7C15UL;
-            x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9UL;
-            x = (x ^ (x >> 27)) * 0x94D049BB133111EBUL;
-            return x ^ (x >> 31);
-        }
     }
 }
