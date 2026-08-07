@@ -220,7 +220,13 @@ public sealed class BackfillRunner(
         var cross = await membershipCrossCheck.GetMembersAsync(o.AsOf, ct).ConfigureAwait(false);
         Count(cross.Source);
 
-        var result = new MembershipReconciler(db, new SecurityMaster(db)).Reconcile(primary, cross, o.AsOf, o.CountBand);
+        // The reconcile is taken against the FORWARD roster (6.4), resolved by exactly the read the
+        // Worker's funnel uses — slice-scoped once a slice snapshot exists, raw as-of before that. The
+        // CLI composes it explicitly rather than injecting, because it constructs the reconciler itself.
+        var forwardRead = new SliceScopedMembershipRead(
+            new IndexMembershipReadService(db), db, new UniverseOptions { Bootstrap = { Universe = o.Universe } });
+        var result = new MembershipReconciler(db, new SecurityMaster(db), forwardRead)
+            .Reconcile(primary, cross, o.AsOf, o.CountBand);
         if (result.Applied)
         {
             ApplySectorsFrom(primary, o.AsOf);

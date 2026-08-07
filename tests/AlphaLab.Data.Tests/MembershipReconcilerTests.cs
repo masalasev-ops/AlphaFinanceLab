@@ -17,7 +17,11 @@ public class MembershipReconcilerTests
     private static MembershipSnapshot Snap(string source, params string[] canonical) =>
         new(source, canonical.Select(s => new MemberRow(s, s, null)).ToList());
 
-    private static MembershipReconciler NewReconciler(AlphaLabDbContext db) => new(db, new SecurityMaster(db));
+    // The forward roster the diff is taken against (6.4). These fixtures pre-date the historical
+    // co-mingling, so the RAW as-of read is the forward roster — which is exactly the pre-slice
+    // arena shape and keeps every assertion below unchanged.
+    private static MembershipReconciler NewReconciler(AlphaLabDbContext db) =>
+        new(db, new SecurityMaster(db), new IndexMembershipReadService(db));
 
     [Fact]
     public void FR4_Agreement_AppliesDiff_StampsDates_NothingDeleted_NoDelistCA()
