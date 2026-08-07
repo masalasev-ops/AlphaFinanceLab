@@ -46,10 +46,12 @@ public sealed record DailyRunResult(
 /// "Run row last" (D53) is honoured as FINALISATION last: the row exists as 'running' from step 2 and is
 /// only flipped to 'ok' at the end of the Stage-2 transaction.
 ///
-/// MEMBERSHIP is READ here (MembersAsOf feeds the funnel's universe); the daily OEF/Wikipedia REFRESH is
-/// a stated seam left for the catch-up/operator work — the roster is stable intraday and wiring the
-/// membership providers into the forward Worker duplicates the Backfill CLI's composition (which is the
-/// D70-widening job, finding 151). The funnel always trades the current stored roster.
+/// MEMBERSHIP is READ here (MembersAsOf feeds the funnel's universe). The OEF/Wikipedia REFRESH that
+/// keeps that roster current is NOT in this class and deliberately not per-day: it runs ONCE PER LAUNCH
+/// in `MembershipRefreshStep`, before the catch-up loop (finding 197 / 6.4). The providers answer for
+/// NOW and never for a past date, so a per-day refresh would stamp each REPLAYED session with today's
+/// roster and fabricate as-of membership. The funnel still always trades the current stored roster —
+/// what changed is that something now keeps it current.
 /// </summary>
 public sealed class DailyPipeline(
     AlphaLabDbContext db,

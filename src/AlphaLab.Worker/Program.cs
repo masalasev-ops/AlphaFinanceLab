@@ -1,4 +1,5 @@
 using AlphaLab.Core.Config;
+using AlphaLab.Data;
 using AlphaLab.Data.Http;
 using AlphaLab.Data.Providers;
 using AlphaLab.Data.Services;
@@ -89,6 +90,29 @@ builder.Services.AddScoped<IMarketDataProvider>(sp =>
     new EodhdMarketDataProvider(sp.GetRequiredService<IResilientHttpClient>(), eodhd, sp.GetService<IRawCache>()));
 builder.Services.AddScoped<IRegimeProxyProvider>(sp =>
     new EodhdGspcRegimeProxyProvider(sp.GetRequiredService<IResilientHttpClient>(), eodhd, sp.GetService<IRawCache>()));
+
+// The FORWARD membership refresh (finding 197, 6.4): the same OEF + Wikipedia pair the bootstrap CLI
+// composes (tools/Backfill/Program.cs), so the Worker refreshes the roster the same way it was seeded.
+// This is what DailyPipeline's old "the daily OEF/Wikipedia refresh is a stated seam" comment deferred.
+// The pair is UNIVERSE-DRIVEN so the rule-22 widen stays a config flip: sp500 selects IVV + the S&P 500
+// cross-check. An unknown universe registers NOTHING rather than guessing a provider - the refresh then
+// reports "no provider composition" and freshness goes stale, which is visible; a guessed roster is not.
+builder.Services.AddScoped(sp =>
+{
+    var universe = sp.GetRequiredService<UniverseOptions>();
+    var http = sp.GetRequiredService<IResilientHttpClient>();
+    var raw = sp.GetService<IRawCache>();
+    var wikiUrl = builder.Configuration["Backfill:WikipediaSp100Url"] ?? "https://en.wikipedia.org/wiki/S%26P_100";
+    return new MembershipRefresh(
+        sp.GetRequiredService<AlphaLabDbContext>(),
+        new ISharesHoldingsMembershipProvider(http, ISharesHoldingsOptions.Oef(), raw),
+        new WikipediaMembershipCrossCheck(http, new WikipediaMembershipOptions
+        {
+            Url = wikiUrl,
+            Source = universe.Bootstrap.MembershipCrossCheck,
+        }, raw));
+});
+builder.Services.AddSingleton<MembershipRefreshStep>();
 
 // TimeProvider is injectable so run timestamps are deterministic under test (never a bare UtcNow in
 // the pipeline body); the forward Worker runs on the system clock.

@@ -809,6 +809,14 @@ namespace AlphaLab.Data.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("note");
 
+                    b.Property<string>("ObservedAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("observed_at");
+
+                    b.Property<string>("Source")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("source");
+
                     b.Property<int?>("SourceCount")
                         .HasColumnType("INTEGER")
                         .HasColumnName("source_count");

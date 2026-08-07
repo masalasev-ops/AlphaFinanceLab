@@ -43,7 +43,7 @@ public class OefSliceTests
         try
         {
             using var db = TestDb.Open(path);
-            var recon = new MembershipReconciler(db, new SecurityMaster(db));
+            var recon = new MembershipReconciler(db, new SecurityMaster(db), new IndexMembershipReadService(db));
 
             var slice = Enumerable.Range(0, 101).Select(i => $"S{i:D3}").ToArray(); // 101 ∈ [99,103]
             var members = slice.Select(s => new MemberRow(s, s, null)).ToList();
@@ -66,7 +66,7 @@ public class OefSliceTests
         try
         {
             using var db = TestDb.Open(path);
-            var recon = new MembershipReconciler(db, new SecurityMaster(db));
+            var recon = new MembershipReconciler(db, new SecurityMaster(db), new IndexMembershipReadService(db));
 
             var tooMany = Enumerable.Range(0, 110).Select(i => $"S{i:D3}").ToArray(); // 110 > 103
             var members = tooMany.Select(s => new MemberRow(s, s, null)).ToList();

@@ -50,7 +50,7 @@ other divergence inputs all exist in Phase 6.
 | 6.1 | This folder; **D131** (the gate's opponent) + **D132** (the features cache); the rewritten gate box + reading diet; the B8 UI ruling; findings 376/381/382; the D130 p90 item | `check-register` clean; no strategy code |
 | 6.2 | The lifecycle seam: a **readable `config_json`** (its own row), the config-driven registry, admission→running, the control path | `D132_ConfigJson_RoundTripsEveryFrozenRow`, `FX-AdmittedCandidateOpensAccount` |
 | 6.3 | Funnel primitives: **D134** (the seeded tie-break + the `percentile_rank` convention) and **D135** (the declared cadence family); `AllPositive`; the population hookup | `PopulationHookup_MatchesByCadenceFamily`, `FX-SeededTieBreak`, `FX-PercentileRankConvention` |
-| 6.4 | Forward membership refresh + the FR-6 divergence alarm (finding 197, **authorized explicitly** — FR-6 is outside Phase 6's FR set) | `FX-ForwardMembershipRefresh` |
+| 6.4 | Forward membership refresh + the FR-6 divergence alarm (finding 197, **authorized explicitly** — FR-6/FR-12 are outside Phase 6's FR set; see the authorization note below); **D136** (reconcile scope + cadence) and **D137** (per-row provenance + the health read-model); **M11** | `FX-MembershipHealth`, `FX-ForwardReconcile*`, `M11_*` |
 | 6.5 | The **S6 remedy** + the monitor→gate consequence rails (two rows) | `FX-RecomputeParity` green + the D117 confirmation slice |
 | 6.6 | French factors + RF + the attribution panel (+ a row on attribution persistence) | `FX-FactorIngest`, `FX-AttributionLagNote` |
 | 6.7 | Ledoit–Wolf, FR-11-full inverse-vol, heat, the D43 capacity readout | `D42_LedoitWolf_MatchesHandComputedShrinkageIntensity` |
@@ -72,6 +72,21 @@ other divergence inputs all exist in Phase 6.
 | 6.5.3b | **The seat's schema, alone** — the `analysis_cache` CHECK rebuild + `ai_decisions` doc catch-up. No seat code. | The row-survival test green; the snapshot retained |
 | 6.5.4 | The contestant + its mandatory no-LLM twin, **registered** | `FX-TwinPairing`, `FX-ContestantReplayRefused`, zero API calls on re-run |
 | 6.5.5 | S8's twin input, the §3½ AI-seat handling, the phase close | `§3half_ContestantEmitsS1SkipAndS4NotApplicableRows` |
+
+## The checkpoint-6.4 authorization (FR-6 / FR-12, outside Phase 6's FR set)
+
+Phase 6's FR set is **FR-5, FR-11 full, FR-13, FR-15, FR-18 full**. The forward membership refresh is
+**FR-12** machinery and the divergence alarm is **FR-6**; neither is in that set, and CLAUDE.md's workflow
+rule forbids silently folding an out-of-phase change in. This line is the explicit authorization, and it
+names what authorizes it: **finding 197's deadline is "before go-live of daily forward operation"**, and
+go-live is checkpoint **6.10** (the first registration). There is no later checkpoint at which this could
+land and still be on time, so it is done here, deliberately and on the record, rather than deferred into
+the phase that would already be trading on a frozen roster.
+
+**Scope is bounded to that deadline.** 6.4 ships the refresh, the alarm's producer, and the health
+read-model. It does NOT build the Phase-7 Data-health grid — `UX_GUIDELINES` UX-11 owns that surface, and
+the declination is recorded here with its owning phase on the same discipline the mockup declination
+follows. The read-model is the durable artefact; the grid is a rendering of it.
 
 ## Rails that bind every checkpoint
 
@@ -111,7 +126,7 @@ rather than by a number, because `tools/check-register.ps1` treats any `D<n>` in
 refuses one that resolves to no row. That refusal is correct and is not worked around: a forward-allocated
 number is a citation of something that does not exist, which is the class of defect rule 25 exists to stop.
 
-Landed at phase open: **D131** (the gate's opponent) and **D132** (no feature cache in Phase 6). Landed at 6.2: **D133** (the readable `config_json` shape). Landed at 6.3: **D134** (the Stage-3 seeded tie-break, which also fixes STRATEGY_CATALOG §3's dangling `D40` citation and settles the `percentile_rank` convention) and **D135** (the declared cadence family).
+Landed at phase open: **D131** (the gate's opponent) and **D132** (no feature cache in Phase 6). Landed at 6.2: **D133** (the readable `config_json` shape). Landed at 6.4: **D136** (the forward reconcile's scope and cadence) and **D137** (per-row provenance + the three-state health read-model). Landed at 6.3: **D134** (the Stage-3 seeded tie-break, which also fixes STRATEGY_CATALOG §3's dangling `D40` citation and settles the `percentile_rank` convention) and **D135** (the declared cadence family).
 
 Still owed, by subject: the `FX-SignalParity` scope per family · the S6
 behavioural remedy · the monitor→gate consequence ordering and the auto-retire reconciliation · whether

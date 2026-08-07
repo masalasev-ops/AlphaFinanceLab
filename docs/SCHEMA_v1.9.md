@@ -92,7 +92,19 @@ CREATE TABLE index_membership_log (                -- D35 daily refresh audit
   source_count INTEGER, crosscheck_count INTEGER,
   agreed       INTEGER NOT NULL,                  -- 0/1
   adds_json    TEXT, drops_json TEXT,             -- applied diff (security_ids)
-  note         TEXT
+  note         TEXT,
+  observed_at  TEXT,                              -- 6.4: the instant the roster was FETCHED (UTC ISO-8601).
+                                                  -- as_of is the SESSION the reconcile ran for (the run date);
+                                                  -- finding 197 exists to tell the two apart. Per-row
+                                                  -- provenance, on the bars/corporate_actions precedent (D40/D76).
+                                                  -- NULL on every pre-migration row and NEVER backfilled: the
+                                                  -- only available value is as_of, the exact wrong number.
+                                                  -- NULL means UNKNOWN and renders as unknown, not as stale.
+  source       TEXT                               -- 6.4: which primary produced the row (oef_csv|ivv_csv|...).
+                                                  -- NO CHECK, deliberately - convention + a test, so a third
+                                                  -- source is an INSERT and not a rebuild (finding 324 applied
+                                                  -- forward). Load-bearing at the rule-22 widen, when oef_csv
+                                                  -- flips to ivv_csv and both write into this one table.
 );
 
 CREATE TABLE index_membership (                    -- as-of state (never deleted)

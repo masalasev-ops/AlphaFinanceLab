@@ -122,6 +122,36 @@ public sealed class IndexMembershipLogRow
     public string? AddsJson { get; set; }
     public string? DropsJson { get; set; }
     public string? Note { get; set; }
+
+    /// <summary>
+    /// The instant the roster was actually FETCHED (UTC ISO-8601), added at checkpoint 6.4.
+    ///
+    /// <see cref="AsOf"/> is caller-supplied — it is the session the reconcile was run FOR, i.e. the run
+    /// date — and finding 197 exists precisely to distinguish that from when the data arrived. Per-row
+    /// provenance, on the D40 (`bars.observed_at`) and D76 (`corporate_actions.observed_at`) precedent.
+    ///
+    /// NULL on every row written before the migration, and DELIBERATELY NOT BACKFILLED: the only value
+    /// available to backfill with is <see cref="AsOf"/>, the exact wrong number, and writing it would
+    /// manufacture provenance that looks authoritative and is false. NULL means UNKNOWN, and the
+    /// read-model renders unknown as unknown rather than as stale.
+    /// </summary>
+    public string? ObservedAt { get; set; }
+
+    /// <summary>
+    /// Which primary produced this row (`oef_csv`, `ivv_csv`, …), added at 6.4.
+    ///
+    /// MASTER_DESIGN §14 has listed `index_membership_log (source, cross-check result, diff applied)`
+    /// since v6 while SCHEMA's DDL had no such column — a doc-vs-doc conflict closed here in SCHEMA's
+    /// favour by adding what MASTER already promised. It becomes load-bearing at the rule-22 widen,
+    /// when `oef_csv` flips to `ivv_csv` and both write into this one table: without it a log row cannot
+    /// say which universe produced it, and RUNBOOK's "inspect index_membership_log diffs" instruction
+    /// has no way to tell an S&amp;P 100 refresh from an S&amp;P 500 one.
+    ///
+    /// NO CHECK CONSTRAINT, by design: constrained by convention and a test instead, so registering a
+    /// third source later is an INSERT rather than a table rebuild that would re-add AUTOINCREMENT
+    /// (finding 324's lesson, applied forward rather than after the fact).
+    /// </summary>
+    public string? Source { get; set; }
 }
 
 /// <summary>index_membership — as-of state, never deleted (D35/D70). PK (security_id, added_on);
