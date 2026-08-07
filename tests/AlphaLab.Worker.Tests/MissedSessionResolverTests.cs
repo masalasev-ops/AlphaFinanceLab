@@ -160,6 +160,7 @@ public sealed class MissedSessionResolverTests : IDisposable
 
     public void Dispose()
     {
+        // P20: process-global; safe ONLY because parallelization is disabled assembly-wide.
         SqliteConnection.ClearAllPools();
         foreach (var suffix in new[] { "", "-wal", "-shm" })
         {

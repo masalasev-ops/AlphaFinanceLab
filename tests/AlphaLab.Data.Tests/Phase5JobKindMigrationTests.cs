@@ -96,6 +96,7 @@ public class Phase5JobKindMigrationTests
         }
         finally
         {
+            // P20: process-global; safe ONLY because parallelization is disabled assembly-wide.
             Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
             try { File.Delete(path); } catch (IOException) { /* best effort */ }
         }

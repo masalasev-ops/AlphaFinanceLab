@@ -99,6 +99,7 @@ public class RestoreThenContinueTests
     /// the transactions the restore is discarding.</summary>
     private static void RestoreOver(string dbPath, string backupPath)
     {
+        // P20: process-global; safe ONLY because parallelization is disabled assembly-wide.
         SqliteConnection.ClearAllPools();      // "stop the app" — release the store's file handles
         File.Copy(backupPath, dbPath, overwrite: true);
         foreach (var sidecar in new[] { dbPath + "-wal", dbPath + "-shm" })

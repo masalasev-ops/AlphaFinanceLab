@@ -21,6 +21,14 @@ internal static class TestDb
 
     public static void Delete(string path)
     {
+        // P20 (finding 387): SAFE ONLY BECAUSE PARALLELIZATION IS DISABLED assembly-wide
+        // ([assembly: CollectionBehavior(DisableTestParallelization = true)], TestParallelization.cs).
+        // ClearAllPools() is PROCESS-GLOBAL - it disposes every pooled SQLite connection in the process,
+        // including ones other test classes are still using. Serialized, there are no other classes in
+        // flight and the call is harmless; re-enable parallelism and this line reintroduces a 1-in-3 flake
+        // presenting as ObjectDisposedException inside Migrate(). The correct fix is Pooling=False on the
+        // connection string, which makes the call unnecessary rather than merely safe - see PROGRESS's P20
+        // entry for its named triggers.
         SqliteConnection.ClearAllPools();
         foreach (var suffix in new[] { "", "-wal", "-shm" })
         {
