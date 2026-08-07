@@ -112,6 +112,35 @@ One line per admission cohort on the Analysis/Journal research surface: median D
 ### 18. `SignalLibraryPanel` - binds `SignalLibraryReadModel` (UX-16, D91/D108)
 One row per (signal, horizon) on the Analysis/Journal research surface. The identity column carries `signal_id` in the mono face with `family` and `code_version` as microcopy - the last of these matters, because a grade record describes the arithmetic that produced it. Each row shows BOTH rolling windows (1y, 5y) as mean rank-IC in `--cyan` with its Newey-West band as `--band` shading; the band is absent (rendered `—`, never zero-width) when the window could not be tested. **`effective_n` renders adjacent to the flag on every row, always** - it is the sample the verdict rests on, not a footnote, and the print-the-denominator discipline applies (finding 290). **`min_detectable_ic` renders immediately beneath the flag chip in `--mono` at caption size, prefixed `≥`** - it is the smallest true IC the test could have caught, and without it `gone` cannot be read at all (finding 305); a `stable` row carries `min_detectable_trend_per_year` in the same slot, suffixed `/yr`. When `detectability_reason` is set, that string renders in the slot at `MetricCell` dimming - **never an empty slot**, which would read as "nothing to report" exactly where the reader must not assume it. The flag is a chip: `stable` in `--ink`, `decaying` in `--amber`, `gone` in muted `--ink` (~72 %, inert - no colour, because no authoritative token names a neutral grey and UX_GUIDELINES forbids borrowing `--replay` for ornament), and `insufficient` in the same reduced-contrast treatment `MetricCell` (1) uses for dimming (~55 % `--ink`), with `flag_reason` as its tooltip - `insufficient` is **its own state and must never render as `stable` or as an empty cell**. `t_stat`, `level_critical` and `trend_critical` render on hover so the verdict is recomputable rather than merely readable. The `detection_context` line renders beneath the table in microcopy, never inside a row - it is reading context about a DIFFERENT quantity (a whole trading operation under costs), and placing it in a row would invite the conversion it exists to forbid. Arena-stamped; wears `PlannedBadge` (16) until the UI workstream renders it (deferred per finding 293). Reference look: `docs/mockups/signal_library_panel.html`. A `SignalLibraryPanel` that computes a flag or a band, hides `effective_n`, renders `insufficient` as blank, or converts a rank-IC into an implied arena edge is a bug.
 
+### 19. `MembershipHealthCell` - binds `MembershipHealthReadModel` (UX-11a, D137)
+
+The `membership + cross-check` cell of the Data-health grid (13), and the first of that grid's cells to
+have a read-model behind it. **THREE states, never two** - `fresh_and_agreeing` in `--ink`,
+`stale_or_diverging` in `--amber`, and `unknown` in the same reduced-contrast treatment `MetricCell` (1)
+uses for dimming (~55 % `--ink`). `unknown` is **its own state and must never render as stale**: rows
+written before the provenance columns existed carry a NULL fetch instant, deliberately un-backfilled,
+and painting them amber would send an operator chasing a divergence that does not exist. Unprovenanced
+is not old.
+
+**`fetched_at` and `last_reconcile_as_of` render as SEPARATE fields, both labelled, never merged.** The
+first is when the roster arrived; the second is the session the reconcile ran for. Finding 197 exists
+because the cell showed the run date, so a component that displays only one of them - or labels either
+one merely "updated" - reintroduces the defect it was built to close. `source` renders beside them in
+the mono face: at the rule-22 widen both `oef_csv` and `ivv_csv` write into one log table, and the cell
+is where an operator sees which universe answered.
+
+`reason` renders inline **on every state, including the absences** - UX-17's rule, and here the absences
+are the whole point. On `stale_or_diverging` the `held_reason` (the count-sanity or divergence note)
+renders beneath it in `--mono` at caption size and links to `index_membership_log`, which is what
+RUNBOOK's "inspect the diffs" instruction is looking for.
+
+**It is a VISIBLE STATE, not an alarm.** Nothing here polls, pulses, or pages; the cell is read when the
+screen is opened. The fail-closed hold in the producer is what stops a bad roster being applied - this is
+what makes the outcome legible afterwards. A component that animates, toasts, or otherwise implies an
+active alarm is claiming a capability the system does not have. Wears `PlannedBadge` (16) until the
+Phase-7 Data-health grid renders it. A `MembershipHealthCell` that collapses the three states to two,
+merges the two dates, or renders `unknown` as blank or as stale is a bug.
+
 ---
 
 ## How a builder uses this doc
