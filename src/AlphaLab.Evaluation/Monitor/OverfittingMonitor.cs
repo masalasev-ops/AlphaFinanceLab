@@ -193,8 +193,11 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
             };
         }
 
-        // S6 — rolling 63-day alpha t-stat + inside the population's central 50% band, with the
-        // Appendix-A escalation streaks (this evaluation + the persisted priors).
+        // S6 — the rolling 63-day alpha t-stat judged AGAINST THE POPULATION BAND (6.5), with the
+        // Appendix-A escalation streaks (this evaluation + the persisted priors). The band is now a
+        // three-way position rather than an inside/outside bool: below it is the anti-predictive
+        // signature (D63), above it is outperformance, and collapsing those to "not inside" is what
+        // let the negative-t arm fire on a strategy sitting at its own null's median.
         SignalOutcome s6;
         if (stratReturns.Count >= RollingWindowDays && memberWindowAlphas.Count > 0)
         {
@@ -205,7 +208,10 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
             var hi = Statistics.Percentile(memberWindowAlphas, 75);
             var priorInside = TrailingStreak(strategyId, "S6", asOf, runKind, MonitorSignals.ContinuesInsideBandStreak);
             var priorNegative = TrailingStreak(strategyId, "S6", asOf, runKind, MonitorSignals.ContinuesNegativeTStreak);
-            s6 = MonitorSignals.S6(window.T, window.Alpha >= lo && window.Alpha <= hi, priorInside, priorNegative);
+            var band = window.Alpha < lo ? MonitorSignals.BandPosition.Below
+                     : window.Alpha > hi ? MonitorSignals.BandPosition.Above
+                     : MonitorSignals.BandPosition.Inside;
+            s6 = MonitorSignals.S6(window.T, band, priorInside, priorNegative);
         }
         else
         {

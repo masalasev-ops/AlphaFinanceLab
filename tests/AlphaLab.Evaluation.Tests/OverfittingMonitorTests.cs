@@ -36,24 +36,63 @@ public class MonitorSignalsTests
         Assert.Equal(status, s.Status);
     }
 
+    private const MonitorSignals.BandPosition Below = MonitorSignals.BandPosition.Below;
+    private const MonitorSignals.BandPosition Inside = MonitorSignals.BandPosition.Inside;
+    private const MonitorSignals.BandPosition Above = MonitorSignals.BandPosition.Above;
+
     [Fact]
-    public void S6_NegAlphaSuspectOnlyWhenSustained_InsideBandCapsAtWarning()
+    public void S6_NegAlphaSuspectOnlyWhenSustained_AndOnlyBelowTheBand()
     {
-        // Negative rolling alpha (t < −1): a single 63-day window trips it ~16% of the time under the null,
-        // so it is Warning once and Suspect ONLY when SUSTAINED to FlatAnchorSustainEvals (3) — Change 3
-        // stops a within-null two-window excursion from tripping it.
-        Assert.Equal(MonitorStatus.Warning, MonitorSignals.S6(rollingAlphaT: -1.5, insideCentralBand: true).Status);
-        Assert.Equal(MonitorStatus.Warning, MonitorSignals.S6(-1.5, insideCentralBand: true, priorConsecutiveNegativeT: 1).Status);  // 2 consecutive — still Warning
-        Assert.Equal(MonitorStatus.Suspect, MonitorSignals.S6(-1.5, insideCentralBand: true, priorConsecutiveNegativeT: 2).Status);  // 3 consecutive — Suspect
+        // The anti-predictive arm: BELOW the band AND a sustained negative t. Warning once (a single
+        // 63-day window trips t < −1 at the null rate), Suspect only at FlatAnchorSustainEvals (3).
+        Assert.Equal(MonitorStatus.Warning, MonitorSignals.S6(rollingAlphaT: -1.5, band: Below).Status);
+        Assert.Equal(MonitorStatus.Warning, MonitorSignals.S6(-1.5, Below, priorConsecutiveNegativeT: 1).Status);  // 2 consecutive — still Warning
+        Assert.Equal(MonitorStatus.Suspect, MonitorSignals.S6(-1.5, Below, priorConsecutiveNegativeT: 2).Status);  // 3 consecutive — Suspect
+
         // Inside-band decay is a CAUTION (Warning) at most, NEVER Suspect — D63 scope note: "do not tune S6
-        // to catch mid-band lifers." One window normal; two consecutive elevated; and it never escalates further.
-        Assert.Equal(MonitorStatus.Healthy, MonitorSignals.S6(0.2, insideCentralBand: true).Status);
-        Assert.Equal(MonitorStatus.Warning, MonitorSignals.S6(0.2, insideCentralBand: true, priorConsecutiveInsideBand: 1).Status);
-        Assert.Equal(MonitorStatus.Warning, MonitorSignals.S6(0.2, insideCentralBand: true, priorConsecutiveInsideBand: 2).Status);  // 3 consecutive — STILL Warning
-        Assert.Equal(MonitorStatus.Warning, MonitorSignals.S6(0.2, insideCentralBand: true, priorConsecutiveInsideBand: 9).Status);  // never Suspect, however long
-        // An outside-band window is Healthy regardless of any prior streak.
-        Assert.Equal(MonitorStatus.Healthy, MonitorSignals.S6(0.2, insideCentralBand: false).Status);
-        Assert.Equal(MonitorStatus.Healthy, MonitorSignals.S6(0.2, insideCentralBand: false, priorConsecutiveInsideBand: 5).Status);
+        // to catch mid-band lifers." One window normal; two consecutive elevated; never escalates further.
+        Assert.Equal(MonitorStatus.Healthy, MonitorSignals.S6(0.2, Inside).Status);
+        Assert.Equal(MonitorStatus.Warning, MonitorSignals.S6(0.2, Inside, priorConsecutiveInsideBand: 1).Status);
+        Assert.Equal(MonitorStatus.Warning, MonitorSignals.S6(0.2, Inside, priorConsecutiveInsideBand: 2).Status);  // 3 consecutive — STILL Warning
+        Assert.Equal(MonitorStatus.Warning, MonitorSignals.S6(0.2, Inside, priorConsecutiveInsideBand: 9).Status);  // never Suspect, however long
+
+        // Above the band is Healthy regardless of any prior streak.
+        Assert.Equal(MonitorStatus.Healthy, MonitorSignals.S6(0.2, Above).Status);
+        Assert.Equal(MonitorStatus.Healthy, MonitorSignals.S6(0.2, Above, priorConsecutiveInsideBand: 5).Status);
+    }
+
+    /// <summary>
+    /// FINDING 280's REMEDY (6.5). THIS FIXTURE IS THE WHOLE CHECKPOINT IN FOUR LINES, and it is the one
+    /// that used to assert the defect: `S6(-1.5, insideCentralBand: true)` reached Suspect at three
+    /// consecutive evaluations, because the negative-t arm returned BEFORE the band was consulted.
+    ///
+    /// That is not an edge case for the D64 no-edge plants — it is their normal state. A plant is a
+    /// 40-name daily-churn COST-PAYING population member measured against a near-cost-free buy-and-hold
+    /// benchmark, so its window alpha carries the family's ~21.9 %/yr drag and t &lt; −1 lands on the large
+    /// majority of evaluations while it sits at the MEDIAN of its own cost-matched band.
+    ///
+    /// Both sources already required the band to be part of the judgement, so the remedy is CONFORMANCE:
+    /// §3 — "vs the strategy's own history **and vs its population band**"; D63 — "an edgeless strategy
+    /// is never *below* a cost-matched band." Below the band is anti-predictive; below ZERO is paying costs.
+    /// </summary>
+    [Fact]
+    public void S6_AStrategyAtItsOwnNullsMedian_IsNeverSuspect_HoweverNegativeItsTStatAgainstZero()
+    {
+        // A no-edge plant's normal state: deeply negative against zero, squarely inside its own band.
+        foreach (var t in new[] { -1.5, -2.5, -5.0, -20.0 })
+        {
+            for (var streak = 0; streak <= 10; streak++)
+            {
+                var outcome = MonitorSignals.S6(t, Inside, priorConsecutiveInsideBand: streak, priorConsecutiveNegativeT: streak);
+                Assert.NotEqual(MonitorStatus.Suspect, outcome.Status);
+                Assert.NotEqual(MonitorStatus.Retired, outcome.Status);
+            }
+        }
+
+        // ...while a genuinely anti-predictive track — BELOW its cost-matched band — still reaches Suspect
+        // on exactly the same sustain rule. The remedy narrows the arm's reference frame; it does not
+        // disarm it, which is what would have traded one false verdict for another.
+        Assert.Equal(MonitorStatus.Suspect, MonitorSignals.S6(-1.5, Below, priorConsecutiveNegativeT: 2).Status);
     }
 
     [Fact]

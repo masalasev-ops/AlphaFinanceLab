@@ -91,6 +91,27 @@ public static class MonitorSignals
     }
 
     /// <summary>
+    /// Where a strategy's rolling window alpha sits relative to its population's central band (6.5).
+    ///
+    /// Replaces the bool <c>insideCentralBand</c>, which could not express the distinction the remedy
+    /// turns on: BELOW a cost-matched band and ABOVE one are opposite findings, and collapsing them to
+    /// "not inside" is what let the anti-predictive arm fire on a strategy that was beating its null.
+    /// D63 fixes the vocabulary — "an edgeless strategy is never *below* a cost-matched band" — so
+    /// below IS the anti-predictive signature and the type now says so.
+    /// </summary>
+    public enum BandPosition
+    {
+        /// <summary>Under the band's lower percentile — the anti-predictive signature (D63).</summary>
+        Below,
+
+        /// <summary>Within the central 50 % — where an edgeless strategy sits by construction.</summary>
+        Inside,
+
+        /// <summary>Over the band's upper percentile — outperforming its own null.</summary>
+        Above,
+    }
+
+    /// <summary>
     /// S6 — rolling edge decay (OVERFITTING_MONITOR §3, Appendix-A escalation). Change 3 brings the two
     /// arms into D63 conformance:
     ///  • NEGATIVE rolling alpha (t &lt; −1) — the anti-predictive-drift arm — is Warning once (a single
@@ -104,22 +125,50 @@ public static class MonitorSignals
     ///    streak on the aggregate). S6 still catches genuine anti-predictive drift via the negative-alpha arm.
     /// </summary>
     public static SignalOutcome S6(
-        double rollingAlphaT, bool insideCentralBand,
+        double rollingAlphaT, BandPosition band,
         int priorConsecutiveInsideBand = 0, int priorConsecutiveNegativeT = 0)
     {
-        if (rollingAlphaT < S6NegativeAlphaT)
-        {
-            return priorConsecutiveNegativeT + 1 >= FlatAnchorSustainEvals
-                ? new SignalOutcome("S6", rollingAlphaT, "critical_neg_alpha", MonitorStatus.Suspect)
-                : new SignalOutcome("S6", rollingAlphaT, "elevated_neg_alpha", MonitorStatus.Warning);
-        }
-        if (insideCentralBand)
+        // THE BAND IS CONSULTED FIRST, AND THAT ORDERING IS THE REMEDY (6.5, finding 280).
+        //
+        // Until now the negative-alpha arm returned BEFORE the band was ever looked at, so a strategy
+        // sitting at the median of its own cost-matched null could still be called anti-predictive on a
+        // t-stat measured against ZERO. For the D64 no-edge plants that is not an edge case, it is the
+        // normal state: the plant is a 40-name daily-churn COST-PAYING population member measured against
+        // a near-cost-free buy-and-hold benchmark, so its window alpha carries the family's ~21.9 %/yr
+        // drag and t < −1 lands on the large majority of evaluations. The D63-conformant verdict was
+        // computed on the very same call and thrown away by the early return.
+        //
+        // Both source documents already required the band to be part of the judgement, so this is
+        // CONFORMANCE rather than a new rule:
+        //   §3  — "Rolling-window (63d) net alpha trend vs the strategy's own history **and vs its
+        //          population band**".
+        //   D63 — "an edgeless strategy sits at the MEDIAN of its band … an edgeless strategy is never
+        //          *below* a cost-matched band."
+        // BELOW THE BAND is therefore what "anti-predictive" means here; below ZERO is what "pays costs"
+        // means, and the two were being conflated.
+        //
+        // Why no threshold could have fixed it — the argument that makes this behavioural, and it cites
+        // no metric moving: the anti plant's PLANTED signal is −2 %/yr against a common-mode drag of
+        // −21.9 %/yr, a ratio of about 1:11, giving ~0.19 of expected t-separation against a noise SD of
+        // 1.0. No cut point on a statistic whose signal is a tenth of its shared offset can separate
+        // anti-predictive from no-edge. Moving the threshold only moves WHICH evaluations trip, never
+        // WHICH COHORTS do.
+        if (band == BandPosition.Inside)
         {
             // Never escalates past Warning (D63 scope note — see the summary): two consecutive inside-band
             // windows are an elevated caution, but inside-band alone is not a kill and cannot retire.
             return priorConsecutiveInsideBand + 1 >= 2
                 ? new SignalOutcome("S6", rollingAlphaT, "elevated_inband", MonitorStatus.Warning)
                 : new SignalOutcome("S6", rollingAlphaT, "inband", MonitorStatus.Healthy);
+        }
+
+        // The anti-predictive arm, now with the precondition §3 always specified: BELOW the band AND a
+        // sustained negative t. Above the band with a negative t is a cost-paying outperformer, not drift.
+        if (band == BandPosition.Below && rollingAlphaT < S6NegativeAlphaT)
+        {
+            return priorConsecutiveNegativeT + 1 >= FlatAnchorSustainEvals
+                ? new SignalOutcome("S6", rollingAlphaT, "critical_neg_alpha", MonitorStatus.Suspect)
+                : new SignalOutcome("S6", rollingAlphaT, "elevated_neg_alpha", MonitorStatus.Warning);
         }
         return new SignalOutcome("S6", rollingAlphaT, "none", MonitorStatus.Healthy);
     }
