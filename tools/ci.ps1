@@ -134,6 +134,19 @@ try {
     Assert-NoMatch -Files $codeFiles -Pattern 'DELETE\s+FROM\s+bars\b' -Message 'DELETE FROM bars is forbidden (rule 3).'
     Assert-NoMatch -Files $codeFiles -Pattern 'UPDATE\s+bars\b'         -Message 'UPDATE bars is forbidden (rule 3).'
 
+    # 1a-bis. THE RECOMPUTE HARNESS WRITES NOTHING (D117 clause 1), and the claim is now CHECKED rather
+    #     than merely asserted. RecomputeHarness's own summary says "no SaveChanges, anywhere on this
+    #     path" - a statement about the code that nothing verified, which is the shape D140 forbids: a
+    #     line may state a fact it verifies, or state that it cannot verify it, but not state a fact
+    #     whose truth it never examines. It was the last of the three such claims the 6.5 sweep found.
+    #     Cheap to enforce because the whole path lives in one directory: report-only means the operator
+    #     can point this verb at the LIVE store, so a stray write here is a write to the frozen generation.
+    #     The pattern matches a CALL (`.SaveChanges(`), not the bare word: the first draft matched the
+    #     doc comment that MAKES the claim, which is a fitting way to be wrong but still wrong.
+    $recomputeFiles = Get-ChildItem -Path (Join-Path $repoRoot 'src/AlphaLab.Evaluation/Recompute') -Recurse -File -Include *.cs -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' } | ForEach-Object { $_.FullName }
+    Assert-NoMatch -Files $recomputeFiles -Pattern '\.SaveChanges\s*\(' -Message 'The recompute harness must not write (D117 clause 1): a SaveChanges CALL is forbidden under src/AlphaLab.Evaluation/Recompute.'
+
     # 1b. corporate_actions is versioned append-only too (D76 extended rule 3 to a second table); the
     #     guard follows. A restatement INSERTs a new version — never an UPDATE/DELETE. (The always-NULL
     #     processed_on column was dropped by D94/M5, resolving P5.)
