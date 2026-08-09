@@ -35,9 +35,16 @@ public sealed class RecomputeOrchestrator(
     {
         ArgumentNullException.ThrowIfNull(spec);
 
+        // WHAT IS KNOWN BEFORE THE RUN, and nothing more (P23). This line used to render the spec's own
+        // description, which asserted WHICH GENERATION'S RULES were being applied — from the absence of
+        // overrides alone, having never looked at the generation. That is how a correct-looking label came
+        // to sit above a run that reproduced generation 2 under generation 1's arithmetic and reported 94
+        // differences as though they were findings. The arithmetic is now stated only AFTER it has been
+        // resolved, and stated AS the resolution's result.
         logger.LogInformation(
-            "replay-recompute: arena {Arena}, spec {Spec} (tier {Tier}) — report-only, no rows are written.",
-            arena.Id, spec.Describe(), spec.Tier);
+            "replay-recompute: arena {Arena}, tier {Tier} — report-only, no rows are written. Resolving the " +
+            "generation's own arithmetic before comparing.",
+            arena.Id, spec.Tier);
 
         var report = new RecomputeHarness(db, gate, runKind).Run(spec);
 
@@ -50,7 +57,8 @@ public sealed class RecomputeOrchestrator(
 
         if (report.ParityHolds)
         {
-            logger.LogInformation("replay-recompute: all three artefacts agree exactly. Report: {Path}", path);
+            logger.LogInformation("replay-recompute: {Spec}. All three artefacts agree exactly. Report: {Path}",
+                report.SpecDescription, path);
         }
         else
         {

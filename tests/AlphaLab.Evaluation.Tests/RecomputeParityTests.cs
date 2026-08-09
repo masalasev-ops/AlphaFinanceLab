@@ -488,10 +488,38 @@ public class RecomputeSpecTests
     {
         Assert.Equal(RecomputeTier.DirectRead, RecomputeSpec.Parity.Tier);
         Assert.Equal(RecomputeTier.DirectRead, Spec((RecomputeParameters.S6SustainEvals, "4")).Tier);
-        Assert.Equal(RecomputeTier.EquityDerived, Spec((RecomputeParameters.AlphaDefinition, "jensen")).Tier);
-        // max, not first: a DirectRead knob beside an EquityDerived one still needs the equity inputs.
-        Assert.Equal(RecomputeTier.EquityDerived,
-            Spec((RecomputeParameters.S6SustainEvals, "4"), (RecomputeParameters.AlphaDefinition, "jensen")).Tier);
+        Assert.Equal(RecomputeTier.DerivedBand, Spec((RecomputeParameters.S6NegativeAlphaT, "-1.5")).Tier);
+        // max, not first: a DirectRead knob beside a DerivedBand one still needs the band inputs.
+        Assert.Equal(RecomputeTier.DerivedBand,
+            Spec((RecomputeParameters.S6SustainEvals, "4"), (RecomputeParameters.S6BandLowPct, "20")).Tier);
+    }
+
+    /// <summary>
+    /// P23 — THE EFFECT DEFINITION IS NOT A KNOB A SPECIFICATION MAY SET, and a supplied one is REFUSED
+    /// rather than silently honoured.
+    ///
+    /// It used to be an accepted `EquityDerived` parameter defaulting to `raw_gap` — generation 1's
+    /// arithmetic, applied to every stored generation forever. Pointed at generation 2 (frozen under
+    /// jensen), a parity run reported **94 differing promotions** and an α* of 6.56 %/yr against a frozen
+    /// 6.95 %/yr, and archived a report that read exactly like evidence. One flag made all 94 vanish.
+    ///
+    /// The definition is a PROPERTY OF THE STORED GENERATION, so the harness resolves it from what
+    /// actually reproduces. Honouring an operator's guess is what produced a confident wrong answer, so
+    /// the guess is refused on the D139 fail-closed pattern — and the refusal is free, because an
+    /// unclassifiable parameter was already refused. Removing it from the tier map IS the fix.
+    /// </summary>
+    [Fact]
+    public void P23_ASuppliedAlphaDefinition_IsRefused_NeverSilentlyHonoured()
+    {
+        foreach (var value in new[] { "jensen", "raw_gap" })
+        {
+            var ex = Assert.Throws<RecomputeRefusedException>(
+                () => _ = Spec(("gate.alpha_definition", value)).Tier);
+            Assert.Contains("gate.alpha_definition", ex.Message, StringComparison.Ordinal);
+        }
+
+        // ...and it is gone from the accepted set entirely, so no caller can reach it by another name.
+        Assert.DoesNotContain("alpha_definition", string.Join(",", RecomputeParameters.Tiers.Keys), StringComparison.Ordinal);
     }
 
     /// <summary>

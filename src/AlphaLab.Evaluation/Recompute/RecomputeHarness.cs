@@ -1,6 +1,7 @@
 using AlphaLab.Core.Config;
 using AlphaLab.Data;
 using AlphaLab.Evaluation.Gate;
+using AlphaLab.Evaluation.Power;
 
 namespace AlphaLab.Evaluation.Recompute;
 
@@ -74,7 +75,21 @@ public sealed class RecomputeHarness(AlphaLabDbContext db, GateOptions gate, str
             : null;
 
         var statuses = new MonitorRecompute(db, spec, runKind, bands).Run(subjects);
-        var verdicts = new GateRecompute(db, spec, gate, runKind).Run(subjects, benchmarkStrategyId);
+
+        // RESOLVE THE GENERATION'S OWN ARITHMETIC, rather than accept it from the operator (P23).
+        //
+        // Nothing persists which effect definition a generation was produced under — `power_reports` has
+        // no such column, and inventing one could not honestly be back-filled for generations already
+        // frozen (the same argument that keeps `index_membership_log.observed_at` NULL on pre-M11 rows:
+        // never manufacture provenance). But the definition does not need to be STORED to be KNOWN — it is
+        // DERIVABLE, because the arithmetic an artefact was produced with is the one that REPRODUCES it.
+        //
+        // So each candidate is tried and scored against the stored promotion set, and the winner is the
+        // answer. That is not a heuristic standing in for a record; it is the definition of the thing
+        // being asked for, and it is self-validating in a way a stored column would not be — a column can
+        // be wrong, whereas a definition that reproduces 144 of 144 has demonstrated itself.
+        var resolved = ResolveDefinition(spec, subjects, benchmarkStrategyId);
+        var verdicts = new GateRecompute(db, spec, gate, runKind).Run(subjects, benchmarkStrategyId, resolved.Definition);
 
         // A strategy is promoted at most ONCE: the gate writes the row only while its effective status is
         // still 'candidate', and a promotion flips it to 'live' (EvaluationStep.cs:111). So the recomputed
@@ -88,13 +103,72 @@ public sealed class RecomputeHarness(AlphaLabDbContext db, GateOptions gate, str
         var (promotions, shape) = DiffPromotions(recomputedPromotions, subjects);
 
         return new RecomputeReportModel(
-            runKind, spec.Describe(), tier, excluded, subjects.Count,
+            // THE LABEL IS THE CHECK'S RESULT, never a parallel claim (P23). It used to be rendered from
+            // the ABSENCE OF OVERRIDES alone — "(no overrides — generation 1's rules)" — which never saw
+            // the generation being reproduced and therefore could not be wrong in a way it could detect.
+            // That is precisely how a correct-looking label sat above an incorrect run. Emitting the
+            // description and enforcing it are now ONE act, so they cannot diverge.
+            runKind, spec.Describe(resolved.Describe()), tier, excluded, subjects.Count,
             DiffStatuses(statuses, subjects),
             promotions,
             DiffWouldReverts(statuses, subjects),
             shape,
             new DetectionPowerRecompute(db, gate, runKind).Build(recomputedPromotions),
             new CohortSeparation(db, runKind).Build(statuses));
+    }
+
+    /// <summary>The generation's stored promotion set — ONE definition, used by the arithmetic resolver
+    /// and by the diff, so the two can never disagree about what was promoted.</summary>
+    private Dictionary<string, string> StoredPromotions(IReadOnlyCollection<string> subjects) =>
+        db.GoLiveLog
+            .Where(g => g.RunKind == runKind && g.Verdict == "Promoted" && g.Promoted != null)
+            .Select(g => new { Strategy = g.Promoted!, g.AsOf })
+            .AsEnumerable()
+            .Where(g => subjects.Contains(g.Strategy))
+            .ToDictionary(g => g.Strategy, g => g.AsOf, StringComparer.Ordinal);
+
+    /// <summary>Which definition reproduced the stored promotions, and how decisively.</summary>
+    private sealed record ResolvedDefinition(string Definition, int Best, int Total, bool Decisive)
+    {
+        /// <summary>The label the report carries — the OUTCOME of the resolution, so a reader cannot see a
+        /// confident description above a run that did not earn it.</summary>
+        public string Describe() => Decisive
+            ? $"arithmetic `{Definition}` (resolved from the generation: reproduces {Best}/{Total} stored promotions)"
+            : $"arithmetic `{Definition}` (**NOT RESOLVED** — best candidate reproduces only {Best}/{Total} stored " +
+              "promotions, so this generation matches no known arithmetic and the run below is not a parity claim)";
+    }
+
+    /// <summary>
+    /// Try every known effect definition and keep the one that reproduces the most stored promotions.
+    ///
+    /// The cost is one extra gate pass per candidate over equity curves already in memory — cheap beside
+    /// the `control_equity` load a band-tier run pays, and paid only to remove the failure mode where an
+    /// operator's omission silently selects the wrong estimator.
+    /// </summary>
+    private ResolvedDefinition ResolveDefinition(
+        RecomputeSpec spec, IReadOnlyCollection<string> subjects, string benchmarkStrategyId)
+    {
+        var stored = StoredPromotions(subjects);
+        string[] candidates = [PairedEffect.Jensen, PairedEffect.RawGap];
+
+        var best = (Definition: PairedEffect.Jensen, Matches: -1);
+        foreach (var candidate in candidates)
+        {
+            var promoted = new GateRecompute(db, spec, gate, runKind)
+                .Run(subjects, benchmarkStrategyId, candidate)
+                .Where(v => v.Verdict == PromotionVerdict.Promoted)
+                .GroupBy(v => v.StrategyId, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.OrderBy(v => v.AsOf, StringComparer.Ordinal).First().AsOf, StringComparer.Ordinal);
+
+            var matches = stored.Count(kv => promoted.TryGetValue(kv.Key, out var asOf) && asOf == kv.Value);
+            if (matches > best.Matches) best = (candidate, matches);
+        }
+
+        // "Decisive" means it reproduced the stored set EXACTLY. Anything less is reported as unresolved
+        // rather than rounded up to the nearest candidate — a generation that matches no known arithmetic
+        // is a finding, and presenting it as a parity run would be the false-confidence this exists to stop.
+        return new ResolvedDefinition(best.Definition, best.Matches, stored.Count,
+            stored.Count > 0 && best.Matches == stored.Count);
     }
 
     /// <summary>Everything the generation monitored or evaluated, minus the truncation-limited subjects.</summary>
@@ -162,12 +236,7 @@ public sealed class RecomputeHarness(AlphaLabDbContext db, GateOptions gate, str
     private (ArtefactDiff Diff, PromotionBreakdown Shape) DiffPromotions(
         IReadOnlyDictionary<string, string> recomputed, IReadOnlyCollection<string> subjects)
     {
-        var stored = db.GoLiveLog
-            .Where(g => g.RunKind == runKind && g.Verdict == "Promoted" && g.Promoted != null)
-            .Select(g => new { Strategy = g.Promoted!, g.AsOf })
-            .AsEnumerable()
-            .Where(g => subjects.Contains(g.Strategy))
-            .ToDictionary(g => g.Strategy, g => g.AsOf, StringComparer.Ordinal);
+        var stored = StoredPromotions(subjects);
 
         int moved = 0, gained = 0;
         var lost = new List<string>();
