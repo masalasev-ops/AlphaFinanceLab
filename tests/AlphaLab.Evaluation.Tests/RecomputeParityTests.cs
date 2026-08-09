@@ -30,6 +30,14 @@ public class RecomputeParityTests
     private const string Replay = "replay";
     private static readonly GateOptions Gate = new();
 
+    /// <summary>The generation's ONE frozen watermark (D95: one replay generation per arena, one
+    /// watermark — `ReplayRunner` resolves it once and threads the same instant through every simulated
+    /// day, so a per-session watermark here would not be the shape production runs). It is a REAL instant
+    /// well after the simulated 2020 sessions, exactly as a live replay's `MAX(observed_at)` is. Stated
+    /// explicitly since D141 made the monitor's watermark required: the seed used to fall into a
+    /// run-time-current config read, which is the branch this generation's ground truth was built on.</summary>
+    private const string GenerationWatermark = "2026-01-01T22:00:00Z";
+
     private static List<string> Dates(int n)
     {
         var start = new DateOnly(2020, 1, 1);
@@ -77,7 +85,7 @@ public class RecomputeParityTests
             for (var i = evalEvery; i < dates.Count; i += evalEvery)
             {
                 gate.Run(dates[i], Bench, Replay);
-                monitor.Run(dates[i], Bench, PopulationMatcher.Fixed(popId), Replay);
+                monitor.Run(dates[i], Bench, PopulationMatcher.Fixed(popId), Replay, GenerationWatermark);
             }
             // …and one final session ON THE LAST DATE. Not cosmetic: EvalArena seeds the whole equity curve
             // up front, so a monitor run at session i reads the FULL curve rather than the curve as it stood
@@ -85,7 +93,7 @@ public class RecomputeParityTests
             // the session IS the last date, which is the one place a derived-band recompute can be compared
             // against a stored value here (FX_DerivedBand_TStatMatchesStored_AtTheFinalSession).
             gate.Run(dates[^1], Bench, Replay);
-            monitor.Run(dates[^1], Bench, PopulationMatcher.Fixed(popId), Replay);
+            monitor.Run(dates[^1], Bench, PopulationMatcher.Fixed(popId), Replay, GenerationWatermark);
         }
         return (arena, dates, popId);
     }
@@ -139,35 +147,139 @@ public class RecomputeParityTests
     }
 
     /// <summary>
-    /// §25.3's sharpest assertion: parity must STILL hold after a new config version is inserted for a key
-    /// the recomputed rules read. Without it the fixture passes today by accident — a harness reading
-    /// CURRENT config would agree with generation 1 only while nothing had been appended since, and by the
-    /// time the harness is used for its purpose that is never true (recording a candidate threshold INSERTs
-    /// a version, rule 24 / finding 108).
+    /// Parity holds after a config version is appended for a key the LIVE monitor reads — and the name says
+    /// WHY, because the previous name (`…_StillHolds_AfterANewConfigVersionIsAppended`) claimed §25.3's
+    /// sharpest assertion and did not make it. D140 applied to a test NAME: the name is the version most
+    /// people read, so annotating the docstring alone would have left the false claim exactly where it is
+    /// seen.
+    ///
+    /// **WHAT THIS PROVES:** appending a later version of `Monitor.S6.AutoRetireEvals` does not move any of
+    /// the three artefacts. **WHY it proves it, and the reason is weaker than the old name implied:** not
+    /// because the harness resolves as-of, but because NOTHING on the recompute path reads config at all —
+    /// `MonitorRecompute` takes its patience from a compile-time constant (`MonitorRecompute.cs:57`). So this
+    /// is a REGRESSION GUARD against a future harness that starts reading config, not evidence that as-of
+    /// resolution works.
+    ///
+    /// **WHAT IT CANNOT PROVE, and the gap is recorded as P25:** because the recompute reads the constant
+    /// rather than the calibrated row, a generation produced under a RECALIBRATED patience would be
+    /// reproduced under the constant instead — D140's rule, on `WouldRevert`. It cannot be caught here while
+    /// the live default and the constant are both 4. `FX_P25_Tripwire_…` below is what fires when they part.
     /// </summary>
     [Fact]
-    public void FX_RecomputeParity_StillHolds_AfterANewConfigVersionIsAppended()
+    public void FX_RecomputeParity_HoldsAfterALaterConfigVersion_BecauseTheRecomputePathReadsNoConfig()
     {
         var (arena, dates, _) = SeedGeneration();
         using var _a = arena;
 
         using (var seed = arena.Open())
         {
-            seed.Config.Add(new ConfigRow
+            // A COMPLETE, VALID D98 curve PAIR — the key the LIVE monitor reads in `LoadCurves`, and the
+            // pair matters: `LoadCurves` needs both to switch S3 from the flat anchors to the trajectory.
+            // So if the recompute ever started reading config, this would move the S3 verdicts and the
+            // assertion below would catch it. Appending one key alone would arm nothing.
+            //
+            // NOT `S6AutoRetireEvals` (which this test used to append): that key is now P25's tripwire, and
+            // a divergent value there is refused before any row is walked. Using it here would have tested
+            // the tripwire, not the recompute's independence from config.
+            foreach (var (key, kind) in new[]
+                     {
+                         (CalibratedKeys.PNoiseCurve("daily"), "p_noise"),
+                         (CalibratedKeys.PEdgeCurve("daily"), "p_edge"),
+                     })
             {
-                Key = CalibratedKeys.S6AutoRetireEvals,
-                ValueJson = "9",
-                Version = 99,
-                ChangedOn = dates[^1],   // appended AFTER every session the generation recorded
-            });
+                var curve = new S3Curve(kind, "daily", "piecewise_linear", 2, 0.05,
+                    [new CurveKnot(21, 40.0), new CurveKnot(252, 60.0)],
+                    [new BandKnot(21, 30.0, 50.0), new BandKnot(252, 50.0, 70.0)],
+                    20.0, null);
+                seed.Config.Add(new ConfigRow
+                {
+                    Key = key,
+                    ValueJson = curve.ToJson(),
+                    Version = 99,
+                    // Stamped strictly AFTER the generation's frozen watermark, which is what "appended
+                    // after the generation" has to mean once the seed states an instant: a bare session
+                    // date would sort BEFORE that watermark and be visible to an as-of read of it.
+                    ChangedOn = "2026-06-01",
+                });
+            }
             seed.SaveChanges();
         }
 
         using var db = arena.Open();
         var report = new RecomputeHarness(db, Gate, Replay).Run(RecomputeSpec.Parity);
         Assert.True(report.ParityHolds,
-            "a config version appended after the generation changed the recomputed answer — the harness is " +
-            "reading CURRENT config where §25.1 requires as-of resolution");
+            "a config version appended after the generation changed the recomputed answer — the recompute " +
+            "path has started reading config, and it must resolve as-of the generation's watermark (§25.1)");
+    }
+
+    /// <summary>
+    /// **P25's TRIPWIRE — it fires when the divergence becomes POSSIBLE, not when it bites.**
+    ///
+    /// `MonitorRecompute` reads S6 patience from a compile-time constant while the live monitor resolves the
+    /// calibrated config row. Both are 4 today (the calibration chain only ever freezes the constant, so
+    /// parting them takes an operator raise), which is why generation 2's parity is unaffected and why P25
+    /// is a proposal rather than an emergency. The hazard is that it arms SILENTLY: the next patience
+    /// recalibration would make `WouldRevert` reproduce under a rule the generation never ran, and nothing
+    /// would say so. A recorded proposal with no trigger is a note; this is the trigger.
+    /// </summary>
+    [Fact]
+    public void FX_P25_Tripwire_RecomputeRefuses_WhenStoredPatienceDivergesFromTheConstantItReads()
+    {
+        var (arena, _, _) = SeedGeneration();
+        using var _a = arena;
+
+        using (var seed = arena.Open())
+        {
+            // The operator raise of finding-113 shape: a NEW version (rule 24), value != the constant.
+            seed.Config.Add(new ConfigRow
+            {
+                Key = CalibratedKeys.S6AutoRetireEvals,
+                ValueJson = "6",
+                Version = 1,
+                ChangedOn = "2026-06-01",
+                Reason = "operator: survival-floor recalibration",
+            });
+            seed.SaveChanges();
+        }
+
+        using var db = arena.Open();
+        var refusal = Assert.Throws<RecomputeRefusedException>(
+            () => new RecomputeHarness(db, Gate, Replay).Run(RecomputeSpec.Parity));
+
+        Assert.Contains("P25", refusal.Message, StringComparison.Ordinal);
+        Assert.Contains(CalibratedKeys.S6AutoRetireEvals, refusal.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The escape hatch the refusal names must actually work, or the tripwire is a wall. Stating the
+    /// patience explicitly puts it in the run's own description, which is the D140 property: the choice
+    /// becomes visible in the artefact rather than defaulted out of sight.
+    /// </summary>
+    [Fact]
+    public void FX_P25_Tripwire_IsSatisfiedByStatingThePatienceExplicitly()
+    {
+        var (arena, _, _) = SeedGeneration();
+        using var _a = arena;
+
+        using (var seed = arena.Open())
+        {
+            seed.Config.Add(new ConfigRow
+            {
+                Key = CalibratedKeys.S6AutoRetireEvals, ValueJson = "6", Version = 1,
+                ChangedOn = "2026-06-01", Reason = "operator: survival-floor recalibration",
+            });
+            seed.SaveChanges();
+        }
+
+        using var db = arena.Open();
+        var stated = new RecomputeSpec("patience stated", new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [RecomputeParameters.AutoRetireEvals] = "6",
+        });
+
+        // No refusal: the operator has said which patience the generation ran under.
+        var report = new RecomputeHarness(db, Gate, Replay).Run(stated);
+        Assert.NotNull(report);
     }
 
     /// <summary>D117 clause 1: report-only. The harness must not write a single row — anywhere.</summary>

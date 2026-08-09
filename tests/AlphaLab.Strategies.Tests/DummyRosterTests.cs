@@ -13,6 +13,8 @@ namespace AlphaLab.Strategies.Tests;
 public class DummyRosterTests
 {
     private const string AsOf = "2024-01-02";
+    /// <summary>The run watermark for <see cref="AsOf"/> (D141: the capital read is now as-of).</summary>
+    private const string Wm = "2024-01-02T22:00:00Z";
 
     [Fact]
     public void Seed_RegistersThreeStrategies_OpensThreeAccounts_WritesStartingCashConfig()
@@ -22,7 +24,7 @@ public class DummyRosterTests
         {
             using var db = TestDb.Open(path);
             var ledger = new LedgerStore(db);
-            var accounts = new DummyRoster(db, ledger).Seed(AsOf);
+            var accounts = new DummyRoster(db, ledger).Seed(AsOf, Wm);
 
             // Three accounts, each opened at $100,000.
             Assert.Equal(3, accounts.Count);
@@ -65,8 +67,8 @@ public class DummyRosterTests
             var ledger = new LedgerStore(db);
             var roster = new DummyRoster(db, ledger);
 
-            var first = roster.Seed(AsOf);
-            var second = roster.Seed("2024-02-01"); // a later re-run
+            var first = roster.Seed(AsOf, Wm);
+            var second = roster.Seed("2024-02-01", "2024-02-01T22:00:00Z"); // a later re-run
 
             Assert.Equal(3, db.Strategies.Count());                                   // not six
             Assert.Equal(3, ledger.GetAccounts(RunKind.Live).Count);                  // not six
@@ -83,7 +85,7 @@ public class DummyRosterTests
         try
         {
             using var db = TestDb.Open(path);
-            new DummyRoster(db, new LedgerStore(db)).Seed(AsOf);
+            new DummyRoster(db, new LedgerStore(db)).Seed(AsOf, Wm);
 
             var cwJson = db.Strategies.Single(s => s.StrategyId == "buyhold:cw").ExitPolicyJson;
             var ewJson = db.Strategies.Single(s => s.StrategyId == "buyhold:ew").ExitPolicyJson;
@@ -110,7 +112,7 @@ public class DummyRosterTests
             });
             db.SaveChanges();
 
-            var accounts = new DummyRoster(db, new LedgerStore(db)).Seed(AsOf);
+            var accounts = new DummyRoster(db, new LedgerStore(db)).Seed(AsOf, Wm);
             Assert.All(accounts, a => Assert.Equal(250_000m, a.StartingCash));
             Assert.Single(db.Config.Where(c => c.Key == DummyRoster.StartingCashConfigKey).ToList()); // unchanged
         }

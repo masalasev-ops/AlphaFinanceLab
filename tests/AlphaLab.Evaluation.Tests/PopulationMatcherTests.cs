@@ -163,7 +163,7 @@ public class PopulationMatcherTests
 
         using var read = arena.Open();
         var result = new OverfittingMonitor(read, new AlphaLab.Core.Config.GateOptions())
-            .Run(dates[^1], "buyhold:cw", PopulationMatcher.ByDeclaration(read))
+            .Run(dates[^1], "buyhold:cw", PopulationMatcher.ByDeclaration(read), "live", EvalArena.Watermark(dates[^1]))
             .Single(r => r.StrategyId == "s:quarterly");
 
         Assert.Equal("undefined", result.S3.Contribution);

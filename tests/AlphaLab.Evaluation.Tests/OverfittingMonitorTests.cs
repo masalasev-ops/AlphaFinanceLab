@@ -109,6 +109,65 @@ public class OverfittingMonitorTests
     private static double[] Centroid(IReadOnlyList<double[]> members, int len) =>
         Enumerable.Range(0, len).Select(t => members.Average(m => m[t])).ToArray();
 
+    /// <summary>
+    /// **D141's fixture: a config read on a replay path resolves AS-OF the run's watermark, never CURRENT.**
+    ///
+    /// The S6 auto-retire patience is the cleanest probe available — it is an integer the monitor reads from
+    /// a calibrated config row and applies directly, so two versions produce two observably different
+    /// retire points with nothing else moving. Two versions are seeded: v1 = 2 stamped BEFORE the run, v2 =
+    /// 99 stamped AFTER it. A run at the earlier watermark must see v1.
+    ///
+    /// **Why it could not be written before D141:** `Run`'s watermark was `string? … = null`, and null took
+    /// the `ResolveCurrent` branch — so the quantity this asserts had no way to be stated, and every fixture
+    /// in this file silently exercised the run-time-current read. The assertion is the decision.
+    /// </summary>
+    [Fact]
+    public void FX_D141_ReplayPathConfigRead_ResolvesAsOfTheWatermark_NotCurrent()
+    {
+        using var arena = new EvalArena();
+        var dates = EvalArena.Dates(100, new DateOnly(2026, 1, 5));
+        arena.SeedStrategy("buyhold:cw", "baseline", dates, EvalArena.Noise(99, 0.008, seed: 5));
+
+        const int m = 60;
+        var members = Enumerable.Range(0, m).Select(i => EvalArena.Noise(99, 0.01, 3000 + i)).ToList();
+        var popId = arena.SeedPopulation("daily", costsOn: true, seed: 1001, dates, i => members[i], m);
+        arena.SeedStrategy("cand:edge", "candidate", dates, Centroid(members, 99).Select(r => r + 0.003).ToArray());
+
+        var runWatermark = EvalArena.Watermark(dates[^1]);
+        using var db = arena.Open();
+        db.Config.Add(new AlphaLab.Data.Entities.ConfigRow
+        {
+            Key = AlphaLab.Evaluation.Calibration.CalibratedKeys.S6AutoRetireEvals,
+            ValueJson = "2", Version = 1, ChangedOn = dates[0], Reason = "D141 fixture: visible at the watermark",
+        });
+        db.Config.Add(new AlphaLab.Data.Entities.ConfigRow
+        {
+            Key = AlphaLab.Evaluation.Calibration.CalibratedKeys.S6AutoRetireEvals,
+            ValueJson = "99", Version = 2, ChangedOn = "2099-01-01T00:00:00Z",
+            Reason = "D141 fixture: appended AFTER the run — must be invisible to it",
+        });
+        db.SaveChanges();
+
+        // The monitor resolves the patience internally, so the observable is that it RAN and used the
+        // as-of row: assert the resolution directly against the same service the monitor uses, at the same
+        // watermark, then confirm the monitor itself completes against that store.
+        var config = new AlphaLab.Data.Services.ConfigReadService(db);
+        Assert.Equal("2", config.ResolveAsOf(AlphaLab.Evaluation.Calibration.CalibratedKeys.S6AutoRetireEvals, runWatermark));
+        Assert.Equal("99", config.ResolveCurrent(AlphaLab.Evaluation.Calibration.CalibratedKeys.S6AutoRetireEvals));
+
+        var results = new OverfittingMonitor(db, new GateOptions())
+            .Run(dates[^1], "buyhold:cw", PopulationMatcher.Fixed(popId), "live", runWatermark);
+        Assert.NotEmpty(results);
+
+        // And the branch that would have read v2 is GONE, not merely unused: `Run` cannot be called without
+        // an instant. This is the compile-time half of the decision, pinned so a later signature change
+        // that reintroduces a nullable default fails here rather than silently restoring the old read.
+        var watermarkParam = typeof(OverfittingMonitor).GetMethod(nameof(OverfittingMonitor.Run))!
+            .GetParameters().Single(p => p.Name == "watermark");
+        Assert.False(watermarkParam.IsOptional, "OverfittingMonitor.Run's watermark must stay REQUIRED (D141)");
+        Assert.Equal(typeof(string), watermarkParam.ParameterType);
+    }
+
     [Fact]
     public void FX_SyntheticEdge_LandsAbove95thPercentile_Healthy()
     {
@@ -125,7 +184,7 @@ public class OverfittingMonitorTests
         arena.SeedStrategy("cand:edge", "candidate", dates, edge);
 
         using var db = arena.Open();
-        var result = new OverfittingMonitor(db, new GateOptions()).Run(dates[^1], "buyhold:cw", PopulationMatcher.Fixed(popId)).Single(r => r.StrategyId == "cand:edge");
+        var result = new OverfittingMonitor(db, new GateOptions()).Run(dates[^1], "buyhold:cw", PopulationMatcher.Fixed(popId), "live", EvalArena.Watermark(dates[^1])).Single(r => r.StrategyId == "cand:edge");
 
         Assert.True(result.S3.Value >= 95, $"edge S3 percentile was {result.S3.Value}");
         Assert.Equal(MonitorStatus.Healthy, result.S3.Status);
@@ -146,7 +205,7 @@ public class OverfittingMonitorTests
         arena.SeedStrategy("cand:noedge", "candidate", dates, Centroid(members, 99));
 
         using var db = arena.Open();
-        var result = new OverfittingMonitor(db, new GateOptions()).Run(dates[^1], "buyhold:cw", PopulationMatcher.Fixed(popId)).Single(r => r.StrategyId == "cand:noedge");
+        var result = new OverfittingMonitor(db, new GateOptions()).Run(dates[^1], "buyhold:cw", PopulationMatcher.Fixed(popId), "live", EvalArena.Watermark(dates[^1])).Single(r => r.StrategyId == "cand:noedge");
 
         Assert.True(result.S3.Value >= 25, $"no-edge S3 percentile {result.S3.Value} must not be in the Suspect tail (D63)");
         Assert.True(result.S3.Value < 95, $"no-edge S3 percentile {result.S3.Value} should be in-band, not distinguishable");
@@ -172,14 +231,14 @@ public class OverfittingMonitorTests
         var monitor = new OverfittingMonitor(db, new GateOptions());
 
         // Change 3 (D63): the alpha lands in the sub-25th tail, but a SINGLE dip is a Warning, not Suspect.
-        var first = monitor.Run(dates[^3], "buyhold:cw", PopulationMatcher.Fixed(popId)).Single(r => r.StrategyId == "cand:anti");
+        var first = monitor.Run(dates[^3], "buyhold:cw", PopulationMatcher.Fixed(popId), "live", EvalArena.Watermark(dates[^3])).Single(r => r.StrategyId == "cand:anti");
         Assert.True(first.S3.Value < 25, $"anti-predictive S3 percentile was {first.S3.Value}");
         Assert.Equal("below_anchor", first.S3.Contribution);
         Assert.Equal(MonitorStatus.Warning, first.S3.Status);
 
         // SUSTAINED (three consecutive sub-25th evals) ⇒ Suspect — the anti-predictive fast-kill channel.
-        monitor.Run(dates[^2], "buyhold:cw", PopulationMatcher.Fixed(popId));
-        var third = monitor.Run(dates[^1], "buyhold:cw", PopulationMatcher.Fixed(popId)).Single(r => r.StrategyId == "cand:anti");
+        monitor.Run(dates[^2], "buyhold:cw", PopulationMatcher.Fixed(popId), "live", EvalArena.Watermark(dates[^2]));
+        var third = monitor.Run(dates[^1], "buyhold:cw", PopulationMatcher.Fixed(popId), "live", EvalArena.Watermark(dates[^1])).Single(r => r.StrategyId == "cand:anti");
         Assert.Equal(MonitorStatus.Suspect, third.S3.Status);
         Assert.Equal(MonitorStatus.Suspect, third.Status);
     }
@@ -234,7 +293,7 @@ public class OverfittingMonitorTests
         }
         db.SaveChanges();
 
-        var result = new OverfittingMonitor(db, new GateOptions()).Run(dates[^1], "buyhold:cw", PopulationMatcher.Fixed(popId)).Single(r => r.StrategyId == "cand:anti");
+        var result = new OverfittingMonitor(db, new GateOptions()).Run(dates[^1], "buyhold:cw", PopulationMatcher.Fixed(popId), "live", EvalArena.Watermark(dates[^1])).Single(r => r.StrategyId == "cand:anti");
 
         Assert.Equal(MonitorStatus.Retired, result.Status);
         Assert.Equal("retired", db.Strategies.Single(s => s.StrategyId == "cand:anti").Status);
@@ -278,7 +337,7 @@ public class OverfittingMonitorTests
         var monitor = new OverfittingMonitor(db, new GateOptions());
 
         // First eval: WOULD retire, but the plant is EXEMPT — Suspect, never Retired.
-        var r1 = monitor.Run(dates[^2], "buyhold:cw", PopulationMatcher.Fixed(popId), runKind: "replay").Single(r => r.StrategyId == plant);
+        var r1 = monitor.Run(dates[^2], "buyhold:cw", PopulationMatcher.Fixed(popId), "replay", EvalArena.Watermark(dates[^2])).Single(r => r.StrategyId == plant);
         Assert.Equal(MonitorStatus.Suspect, r1.Status);
         Assert.DoesNotContain(db.OverfittingStatus.ToList(), s => s.StrategyId == plant && s.Status == "retired");
         Assert.NotEqual("retired", db.Strategies.Single(s => s.StrategyId == plant).Status);   // forward column never flipped
@@ -291,7 +350,7 @@ public class OverfittingMonitorTests
         // No truncation: the plant stayed promotable, so a SECOND eval (after the first would-retire) still
         // evaluates it and writes an S3 row at that date (a real retire would have dropped it from
         // EffectiveStatus ⇒ no result, no S3 row on the second pass).
-        var run2 = monitor.Run(dates[^1], "buyhold:cw", PopulationMatcher.Fixed(popId), runKind: "replay");
+        var run2 = monitor.Run(dates[^1], "buyhold:cw", PopulationMatcher.Fixed(popId), "replay", EvalArena.Watermark(dates[^1]));
         Assert.Contains(run2, r => r.StrategyId == plant);
         Assert.Contains(db.OverfittingChecks.ToList(),
             c => c.StrategyId == plant && c.Signal == "S3" && c.AsOf == dates[^1] && c.RunKind == "replay");
@@ -323,7 +382,7 @@ public class OverfittingMonitorTests
         arena.SeedStrategy("cand:young", "candidate", youngDates, Enumerable.Repeat(0.0, 30).ToArray());   // flat ⇒ ~0 alpha
 
         using var db = arena.Open();
-        var result = new OverfittingMonitor(db, new GateOptions()).Run(dates[^1], "buyhold:cw", PopulationMatcher.Fixed(popId)).Single(r => r.StrategyId == "cand:young");
+        var result = new OverfittingMonitor(db, new GateOptions()).Run(dates[^1], "buyhold:cw", PopulationMatcher.Fixed(popId), "live", EvalArena.Watermark(dates[^1])).Single(r => r.StrategyId == "cand:young");
 
         Assert.True(result.S3.Value >= 25, $"young S3 percentile {result.S3.Value} should be in-band once horizon-matched, not in the Suspect tail");
     }
@@ -339,7 +398,7 @@ public class OverfittingMonitorTests
             i => EvalArena.Noise(79, 0.01, 3000 + i), m: 30);
 
         using var db = arena.Open();
-        new OverfittingMonitor(db, new GateOptions()).Run(dates[^1], "buyhold:cw", PopulationMatcher.Fixed(popId));
+        new OverfittingMonitor(db, new GateOptions()).Run(dates[^1], "buyhold:cw", PopulationMatcher.Fixed(popId), "live", EvalArena.Watermark(dates[^1]));
 
         var checks = db.OverfittingChecks.Where(c => c.StrategyId == "cand:a").Select(c => c.Signal).OrderBy(s => s).ToList();
         Assert.Equal(["S2", "S3", "S6"], checks);

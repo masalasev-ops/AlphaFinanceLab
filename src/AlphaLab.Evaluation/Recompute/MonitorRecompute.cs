@@ -55,6 +55,46 @@ public sealed class MonitorRecompute(
         }
 
         var autoRetireEvals = spec.Int(RecomputeParameters.AutoRetireEvals, OverfittingMonitor.AutoRetireConsecutiveSuspect);
+
+        // ---- P25 TRIPWIRE (D141 sweep) -----------------------------------------------------------------
+        // The live monitor resolves S6 patience from the CALIBRATED CONFIG ROW as-of the run's watermark
+        // (OverfittingMonitor.ResolveAutoRetirePatience); this class reads a COMPILE-TIME CONSTANT. While
+        // both are 4 — the chain only ever freezes the constant, so divergence takes an OPERATOR raise —
+        // the two agree and every artefact reproduces. The moment they part, `WouldRevert` would be
+        // reproduced under a patience the generation was never produced with: D140's rule, on one of the
+        // three parity artefacts.
+        //
+        // Fixing that is P25 and needs its own D-number (it changes what parity MEANS, rule 25), so this is
+        // NOT the fix — it is the trigger, and it exists because a recorded proposal with no trigger is a
+        // note that arms silently. It refuses rather than warns, on the D139 pattern: the failure mode being
+        // prevented is a confident wrong answer with a filename.
+        //
+        // Deliberately watermark-free: ANY stored version differing from the constant trips it. The
+        // generation's own watermark is not in scope here, and a conservative check that fires too often is
+        // the right error to make when the alternative is a plausible wrong artefact.
+        if (!spec.Overrides.ContainsKey(RecomputeParameters.AutoRetireEvals))
+        {
+            var divergent = db.Config
+                .Where(c => c.Key == CalibratedKeys.S6AutoRetireEvals)
+                .Select(c => new { c.Version, c.ValueJson })
+                .AsEnumerable()
+                .Where(c => int.TryParse(c.ValueJson, out var v) && v >= 2 && v != autoRetireEvals)
+                .OrderBy(c => c.Version)
+                .ToList();
+            if (divergent.Count > 0)
+            {
+                throw new RecomputeRefusedException(
+                    $"Recompute refused (P25): the store holds {CalibratedKeys.S6AutoRetireEvals} version(s) " +
+                    $"[{string.Join(", ", divergent.Select(d => $"v{d.Version}={d.ValueJson}"))}] that differ from " +
+                    $"the constant this harness reproduces with ({autoRetireEvals}). The live monitor resolves " +
+                    "that row; this class does not, so WouldRevert would be reproduced under an auto-retire " +
+                    "patience the generation was never produced with (D140's rule, D141's sweep). Resolving the " +
+                    "patience from the stored generation is P25 and takes its own decision number. Until then, " +
+                    "pass --set " + RecomputeParameters.AutoRetireEvals + "=<the generation's value> to state " +
+                    "the patience explicitly, which makes the choice visible in the run's own description.");
+            }
+        }
+
         var results = new List<RecomputedStatus>();
 
         foreach (var strategyId in subjects.OrderBy(s => s, StringComparer.Ordinal))
