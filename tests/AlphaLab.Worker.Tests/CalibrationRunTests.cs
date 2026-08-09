@@ -29,6 +29,44 @@ public class CalibrationRunTests
     private static ReplayRequest Window(PipelineHarness h) =>
         new(h.Sessions[5], h.Sessions[35], LearnThrough: h.Sessions[30]);
 
+    /// <summary>
+    /// 6.5 — a run that SIMULATES NOTHING is refused, and no report is archived.
+    ///
+    /// This is the trap D117 clause 2's confirmation slice walks into. The slice exists to validate a
+    /// CHANGED rule on re-simulated sessions ("parity exercises the unchanged path, so it structurally
+    /// cannot validate the changed one"), but the obvious command against an arena that already holds the
+    /// generation skips every session — so it would validate the new rule using outputs the OLD rule
+    /// produced, and archive a markdown file that reads exactly like a confirmation. A false negative with
+    /// a filename is worse than no report, because it is citable.
+    ///
+    /// The only flag that forces re-simulation is --reset, which deletes the whole generation. So the
+    /// operator's two obvious moves were a fake pass and a destroyed sign-off; this removes the first.
+    /// </summary>
+    [Fact]
+    public async Task FX_Calibration_AZeroSessionRun_IsRefused_AndArchivesNoReport()
+    {
+        using var h = new PipelineHarness();
+        var reportDir = Path.Combine(Path.GetTempPath(), "alphalab-cal0-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            // First run simulates the window and archives its report.
+            Assert.Equal(0, await Orchestrator(reportDir).RunAsync($"Data Source={h.DbPath}", Window(h), reportOnly: false));
+            var afterFirst = Directory.GetFiles(Path.Combine(reportDir, "sp500"), "*-calibration.md").Length;
+
+            // The SAME command again: every session is already committed, so nothing is simulated.
+            var exit = await Orchestrator(reportDir).RunAsync($"Data Source={h.DbPath}", Window(h), reportOnly: false);
+
+            Assert.Equal(1, exit);
+            // ...and it stopped BEFORE archiving: no new report, so nothing exists to be mistaken later
+            // for confirmation evidence.
+            Assert.Equal(afterFirst, Directory.GetFiles(Path.Combine(reportDir, "sp500"), "*-calibration.md").Length);
+        }
+        finally
+        {
+            try { Directory.Delete(reportDir, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
     [Fact]
     public async Task FX_Calibration_ReportGeneratedAndConfigRowsFrozen()
     {
@@ -83,8 +121,12 @@ public class CalibrationRunTests
             Assert.Contains("\"16\"", power);
 
             // A SECOND freeze appends v2 — never an UPDATE (finding 108; the CI grep guards the SQL side,
-            // this guards the semantics).
-            var exit2 = await Orchestrator(reportDir).RunAsync($"Data Source={h.DbPath}", Window(h), reportOnly: false);
+            // this guards the semantics). This is the documented RESUME path: the replay is finished, so
+            // every session skips as already-committed and only verification + freeze re-run. It must say
+            // so explicitly (6.5) — the same shape refuses by default, because a zero-session run that
+            // archives a report is a false confirmation.
+            var exit2 = await Orchestrator(reportDir).RunAsync($"Data Source={h.DbPath}", Window(h), reportOnly: false,
+                allowNoNewSessions: true);
             Assert.Equal(0, exit2);
             Assert.Equal(2, db.Config.Count(c => c.Key == CalibratedKeys.PEdgeCurve("daily")));
         }
@@ -171,7 +213,10 @@ public class CalibrationRunTests
                 db.SaveChanges();
             }
 
-            var exit2 = await Orchestrator(reportDir).RunAsync($"Data Source={h.DbPath}", Window(h), reportOnly: false);
+            // The RESUME path again (6.5): the replay is finished, so every session skips and only
+            // verification + freeze re-run. Opt-in, because the same shape refuses by default.
+            var exit2 = await Orchestrator(reportDir).RunAsync($"Data Source={h.DbPath}", Window(h), reportOnly: false,
+                allowNoNewSessions: true);
             Assert.Equal(0, exit2);
 
             using (var db = h.Open())

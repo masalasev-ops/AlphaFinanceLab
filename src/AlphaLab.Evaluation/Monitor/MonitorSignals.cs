@@ -124,9 +124,16 @@ public static class MonitorSignals
     ///    control the population channel keeps can never be RETIRED by S6 (retire is a sustained-Suspect
     ///    streak on the aggregate). S6 still catches genuine anti-predictive drift via the negative-alpha arm.
     /// </summary>
+    /// <param name="negativeAlphaT">The anti-predictive threshold. Overridable so the D106/D117 harness
+    /// can SCORE a move to it through this very method rather than through a second copy of the rule —
+    /// MonitorRecompute's own instruction ("a second copy of a rule here is a second definition that
+    /// would drift"). Defaults to the Appendix-A value.</param>
+    /// <param name="sustainEvals">The consecutive-evaluation bar for the anti arm, overridable for the
+    /// same reason.</param>
     public static SignalOutcome S6(
         double rollingAlphaT, BandPosition band,
-        int priorConsecutiveInsideBand = 0, int priorConsecutiveNegativeT = 0)
+        int priorConsecutiveInsideBand = 0, int priorConsecutiveNegativeT = 0,
+        double negativeAlphaT = S6NegativeAlphaT, int sustainEvals = FlatAnchorSustainEvals)
     {
         // THE BAND IS CONSULTED FIRST, AND THAT ORDERING IS THE REMEDY (6.5, finding 280).
         //
@@ -164,9 +171,9 @@ public static class MonitorSignals
 
         // The anti-predictive arm, now with the precondition §3 always specified: BELOW the band AND a
         // sustained negative t. Above the band with a negative t is a cost-paying outperformer, not drift.
-        if (band == BandPosition.Below && rollingAlphaT < S6NegativeAlphaT)
+        if (band == BandPosition.Below && rollingAlphaT < negativeAlphaT)
         {
-            return priorConsecutiveNegativeT + 1 >= FlatAnchorSustainEvals
+            return priorConsecutiveNegativeT + 1 >= sustainEvals
                 ? new SignalOutcome("S6", rollingAlphaT, "critical_neg_alpha", MonitorStatus.Suspect)
                 : new SignalOutcome("S6", rollingAlphaT, "elevated_neg_alpha", MonitorStatus.Warning);
         }

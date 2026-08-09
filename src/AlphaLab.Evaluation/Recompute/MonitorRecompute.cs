@@ -185,36 +185,53 @@ public sealed class MonitorRecompute(
         var sustain = spec.Int(RecomputeParameters.S6SustainEvals, MonitorSignals.FlatAnchorSustainEvals);
         var negativeT = spec.Double(RecomputeParameters.S6NegativeAlphaT, MonitorSignals.S6NegativeAlphaT);
 
-        // Band membership: DERIVED when the tier supplies the inputs (the only way a moved negative-alpha
-        // threshold can be scored — the rows that fall through recorded no band token), RECOVERED from the
-        // contribution otherwise, which is sound exactly while that threshold is unchanged.
-        bool insideBand;
+        // BAND POSITION: derived when the tier supplies the inputs, recovered from the contribution
+        // otherwise. 6.5 raised what this has to answer — the rule now needs POSITION (below / inside /
+        // above), not merely membership, because the anti arm fires only BELOW the band. So the
+        // recovery path can no longer serve an S6 rule change at all: a stored `elevated_neg_alpha` row
+        // was written by a rule that returned before the band was consulted, and therefore records
+        // nothing about which side of it the strategy was on. That is finding 340 one level deeper, and
+        // it is refused out loud rather than guessed.
+        MonitorSignals.BandPosition band;
         if (bands is not null)
         {
             var lowPct = spec.Double(RecomputeParameters.S6BandLowPct, 25.0);
             var highPct = spec.Double(RecomputeParameters.S6BandHighPct, 75.0);
-            insideBand = bands.StrategyWindow(strategyId, asOf) is { } w
-                         && bands.MemberBand(asOf, lowPct, highPct) is { } band
-                         && w.Alpha >= band.Lo && w.Alpha <= band.Hi;
+            if (bands.StrategyWindow(strategyId, asOf) is { } w && bands.MemberBand(asOf, lowPct, highPct) is { } b)
+            {
+                band = w.Alpha < b.Lo ? MonitorSignals.BandPosition.Below
+                     : w.Alpha > b.Hi ? MonitorSignals.BandPosition.Above
+                     : MonitorSignals.BandPosition.Inside;
+            }
+            else
+            {
+                // No window or no member band at this session — the monitor itself emits
+                // `insufficient_track` there, so the stored row is reproduced rather than re-derived.
+                return new SignalOutcome("S6", t, c.Contribution, StatusOf(c.Contribution, "S6"));
+            }
+        }
+        else if (MonitorSignals.ContinuesNegativeTStreak(c.Contribution))
+        {
+            // Unrecoverable by construction (see above). A spec that did not touch S6 is entitled to the
+            // stored row — its inputs are unchanged — and a spec that DID touch S6 is a DerivedBand tier,
+            // which cannot reach this branch: RecomputeMonitor refuses a band-tier spec with no
+            // BandInputs before any row is walked.
+            return new SignalOutcome("S6", t, c.Contribution, StatusOf(c.Contribution, "S6"));
         }
         else
         {
-            insideBand = MonitorSignals.ContinuesInsideBandStreak(c.Contribution);
+            band = MonitorSignals.ContinuesInsideBandStreak(c.Contribution)
+                ? MonitorSignals.BandPosition.Inside
+                : MonitorSignals.BandPosition.Above;   // "none": t was >= the threshold, so the arm
+                                                       // cannot fire and Above vs Below is immaterial.
         }
 
-        if (t < negativeT)
-        {
-            return priorNegative + 1 >= sustain
-                ? new SignalOutcome("S6", t, "critical_neg_alpha", MonitorStatus.Suspect)
-                : new SignalOutcome("S6", t, "elevated_neg_alpha", MonitorStatus.Warning);
-        }
-        if (insideBand)
-        {
-            return priorInside + 1 >= 2
-                ? new SignalOutcome("S6", t, "elevated_inband", MonitorStatus.Warning)
-                : new SignalOutcome("S6", t, "inband", MonitorStatus.Healthy);
-        }
-        return new SignalOutcome("S6", t, "none", MonitorStatus.Healthy);
+        // ONE DEFINITION. The rule is MonitorSignals.S6 itself, driven with the spec's overrides — not a
+        // second copy of its branch order kept in step by hand. This class's own instruction is that a
+        // second copy is a second definition that would drift, and the pre-6.5 code was exactly that:
+        // the branch order was duplicated here, so the remedy would have had to be applied twice and
+        // FX-RecomputeParity would have gone green either way.
+        return MonitorSignals.S6(t, band, priorInside, priorNegative, negativeT, sustain);
     }
 
     // ---- helpers ---------------------------------------------------------------------------------------

@@ -75,7 +75,12 @@ public sealed class CalibrationOrchestrator(
             .GetCustomAttribute<AssemblyConfigurationAttribute>()?.Configuration
         ?? "unknown";
 
-    public async Task<int> RunAsync(string connectionString, ReplayRequest request, bool reportOnly, CancellationToken ct = default)
+    /// <param name="allowNoNewSessions">Permit a run in which every session was already committed —
+    /// the documented RESUME path (`tools/resume-calibration.ps1`), where the replay is finished and only
+    /// verification + freeze re-run. Default FALSE, so the ordinary command fails closed: see the refusal
+    /// below for why a zero-session run must never archive a report by accident.</param>
+    public async Task<int> RunAsync(string connectionString, ReplayRequest request, bool reportOnly,
+        CancellationToken ct = default, bool allowNoNewSessions = false)
     {
         var runner = new ReplayRunner(configuration, arena, loggerFactory);
         var outcome = await runner.RunAsync(connectionString, request, ct).ConfigureAwait(false);
@@ -83,6 +88,34 @@ public sealed class CalibrationOrchestrator(
         {
             _logger.LogError("replay-calibrate: the replay stopped early ({Reason}) — no calibration on a partial window. " +
                              "Re-run the same command to resume.", outcome.StopReason);
+            return 1;
+        }
+
+        // FAIL CLOSED ON A ZERO-SESSION RUN (6.5). Every session skipping as already-committed is not a
+        // fast success — it is a run that SIMULATED NOTHING, and continuing would archive a report built
+        // entirely from the rows the previous generation left behind. That report reads exactly like a
+        // confirmation slice and confirms nothing: a false negative with a filename, which is worse than
+        // no report because it is citable.
+        //
+        // This is the trap D117 clause 2's confirmation slice walks into. The slice exists to validate a
+        // CHANGED rule on re-simulated sessions — "parity exercises the unchanged path, so it structurally
+        // cannot validate the changed one" — and the obvious command (`replay-calibrate --from/--to`
+        // against the live arena) skips every session, so it would validate the changed rule using
+        // outputs the OLD rule produced. The only flag that forces re-simulation is `--reset`, which
+        // deletes the whole generation, so the operator's two obvious moves are a fake pass and a
+        // destroyed sign-off. Refusing here removes the first; the scratch-arena procedure removes the
+        // need for the second.
+        if (outcome.SessionsCommitted == 0 && !allowNoNewSessions)
+        {
+            _logger.LogError(
+                "replay-calibrate: REFUSED — {Skipped} session(s) were already committed and ZERO were simulated, " +
+                "so this run produced no new evidence. Calibrating now would archive a report built from the " +
+                "existing generation's rows under the CURRENT rules, which reads like a confirmation and is not " +
+                "one. To re-simulate a window, copy the store to a scratch arena and run there with --reset " +
+                "--report-only; never --reset the arena holding the frozen generation. If you meant to RESUME " +
+                "a finished replay (verification + freeze only), say so explicitly — that path is opt-in " +
+                "precisely so it cannot be reached by typing the ordinary command and misreading the result.",
+                outcome.SessionsSkippedAlreadyCommitted);
             return 1;
         }
 
