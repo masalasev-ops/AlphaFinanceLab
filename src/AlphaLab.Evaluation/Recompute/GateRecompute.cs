@@ -30,13 +30,16 @@ public sealed class GateRecompute(AlphaLabDbContext db, RecomputeSpec spec, Gate
 {
     private const int DefaultHorizonDays = 21;
 
-    public IReadOnlyList<RecomputedVerdict> Run(IReadOnlyCollection<string> subjects, string benchmarkStrategyId)
+    /// <param name="definition">The arithmetic THIS GENERATION WAS PRODUCED WITH, resolved by the caller
+    /// (<see cref="RecomputeHarness"/>) rather than supplied by the operator. It used to come from the spec
+    /// and default to <c>raw_gap</c> — generation 1's arithmetic, applied to every stored generation
+    /// forever, which is how a generation-2 parity run reported 94 differing promotions that were entirely
+    /// an artefact of the wrong estimator (P23).</param>
+    public IReadOnlyList<RecomputedVerdict> Run(
+        IReadOnlyCollection<string> subjects, string benchmarkStrategyId, string definition)
     {
         ArgumentNullException.ThrowIfNull(subjects);
-
-        // The spec's definition, passed straight through to the shared estimator (D118). `raw_gap` is the
-        // default because a parity run must reproduce generation 1, which the raw gap produced.
-        var definition = spec.Text(RecomputeParameters.AlphaDefinition, RecomputeParameters.AlphaRawGap);
+        ArgumentException.ThrowIfNullOrWhiteSpace(definition);
 
         var benchAccount = db.Accounts.FirstOrDefault(a => a.StrategyId == benchmarkStrategyId && a.RunKind == runKind);
         if (benchAccount is null) return [];

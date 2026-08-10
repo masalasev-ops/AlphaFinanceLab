@@ -75,14 +75,80 @@ public sealed class CalibrationOrchestrator(
             .GetCustomAttribute<AssemblyConfigurationAttribute>()?.Configuration
         ?? "unknown";
 
-    public async Task<int> RunAsync(string connectionString, ReplayRequest request, bool reportOnly, CancellationToken ct = default)
+    /// <param name="allowNoNewSessions">Permit a run in which every session was already committed —
+    /// the documented RESUME path (`tools/resume-calibration.ps1`), where the replay is finished and only
+    /// verification + freeze re-run. Default FALSE, so the ordinary command fails closed: see the refusal
+    /// below for why a zero-session run must never archive a report by accident.</param>
+    public async Task<int> RunAsync(string connectionString, ReplayRequest request, bool reportOnly,
+        CancellationToken ct = default, bool allowNoNewSessions = false)
     {
+        // D141 (amending D139): THE CONFIRMATION SLICE'S WATERMARK IS PINNED, ENFORCED RATHER THAN
+        // REMEMBERED. `--reset --report-only` against a store that ALREADY HOLDS a committed generation is
+        // the slice's own signature — re-simulating a generation in order to confirm it. It is also the one
+        // case where ReplayRunner's watermark fallback is wrong: it resolves MAX(observed_at) OF THIS STORE
+        // RIGHT NOW, and `--reset` deletes the `runs` rows a moment later so GuardSingleGeneration returns
+        // early and never compares vintages. A byte copy taken after further ingest therefore re-simulates
+        // at a LATER watermark than the generation it is confirming, and as-of resolution (D141) then lets
+        // the monitor see D98 curve rows that generation's replay could not — S3 switches from the flat
+        // anchors to the trajectory, and the archived report does not say so.
+        //
+        // SCOPED TO THE SLICE, deliberately narrowly. A bare `--reset` is the documented "discard and start
+        // a fresh generation" flow, where there is no vintage to match and resolving from the store is
+        // CORRECT — refusing there contradicts the flag's purpose and the D95 guard's own advice, which is
+        // how the first attempt at this rule was caught (it turned six ReplayEngineTests red, and they were
+        // right). Only the report-only variant is a confirmation, and only a confirmation needs a pin.
+        if (request.Reset && reportOnly && request.Watermark is null)
+        {
+            var storePath = DbPathResolver.ResolvePath(connectionString, arena.Id);
+            using var probe = new AlphaLabDbContext(
+                new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<AlphaLabDbContext>().UseSqlite(storePath).Options);
+            if (probe.Runs.Any(r => r.RunKind == "replay" && r.Status == "ok"))
+            {
+                _logger.LogError(
+                    "replay-calibrate --reset --report-only: REFUSED — this store holds a committed replay " +
+                    "generation and no --watermark was given, so the run would resolve the store's CURRENT " +
+                    "high-water mark and re-simulate that generation at a vintage which is not its own. A " +
+                    "confirmation slice must be pinned: pass --watermark with the generation's recorded value " +
+                    "(D141's pre-flight; sp500 generation 2 is 2026-07-24T22:00:00Z). This is the slice's " +
+                    "signature, so the refusal lands exactly where the un-pinned run would have been.");
+                return 1;
+            }
+        }
+
         var runner = new ReplayRunner(configuration, arena, loggerFactory);
         var outcome = await runner.RunAsync(connectionString, request, ct).ConfigureAwait(false);
         if (outcome.StoppedEarly)
         {
             _logger.LogError("replay-calibrate: the replay stopped early ({Reason}) — no calibration on a partial window. " +
                              "Re-run the same command to resume.", outcome.StopReason);
+            return 1;
+        }
+
+        // FAIL CLOSED ON A ZERO-SESSION RUN (6.5). Every session skipping as already-committed is not a
+        // fast success — it is a run that SIMULATED NOTHING, and continuing would archive a report built
+        // entirely from the rows the previous generation left behind. That report reads exactly like a
+        // confirmation slice and confirms nothing: a false negative with a filename, which is worse than
+        // no report because it is citable.
+        //
+        // This is the trap D117 clause 2's confirmation slice walks into. The slice exists to validate a
+        // CHANGED rule on re-simulated sessions — "parity exercises the unchanged path, so it structurally
+        // cannot validate the changed one" — and the obvious command (`replay-calibrate --from/--to`
+        // against the live arena) skips every session, so it would validate the changed rule using
+        // outputs the OLD rule produced. The only flag that forces re-simulation is `--reset`, which
+        // deletes the whole generation, so the operator's two obvious moves are a fake pass and a
+        // destroyed sign-off. Refusing here removes the first; the scratch-arena procedure removes the
+        // need for the second.
+        if (outcome.SessionsCommitted == 0 && !allowNoNewSessions)
+        {
+            _logger.LogError(
+                "replay-calibrate: REFUSED — {Skipped} session(s) were already committed and ZERO were simulated, " +
+                "so this run produced no new evidence. Calibrating now would archive a report built from the " +
+                "existing generation's rows under the CURRENT rules, which reads like a confirmation and is not " +
+                "one. To re-simulate a window, copy the store to a scratch arena and run there with --reset " +
+                "--report-only; never --reset the arena holding the frozen generation. If you meant to RESUME " +
+                "a finished replay (verification + freeze only), say so explicitly — that path is opt-in " +
+                "precisely so it cannot be reached by typing the ordinary command and misreading the result.",
+                outcome.SessionsSkippedAlreadyCommitted);
             return 1;
         }
 
@@ -155,9 +221,22 @@ public sealed class CalibrationOrchestrator(
         // full-scale bar); a hard FAIL does. The report is archived either way, and frozenKeys tells
         // the truth about what this run will actually write.
         var willFreeze = !reportOnly && verification.NoFailures;
-        // The S6 patience knob is seeded ONCE (D98: "from the FIRST freeze"): a re-run must never
-        // clobber the operator's finding-113 recalibration by re-stamping the Appendix-A default —
-        // that would make the documented raise-patience-and-re-run loop unable to converge.
+        // The S6 patience knob is seeded ONCE (D98: "from the FIRST freeze"): a re-run must never clobber
+        // an operator's raise by re-stamping the Appendix-A default over it.
+        //
+        // D141 CARVE-OUT 2 — ResolveCurrent HERE IS DELIBERATE AND MUST NOT BECOME ResolveAsOf. D141
+        // converts run-time-current config reads on reproducible paths, and this site IS reproducible: the
+        // 2026-07-31 report froze this key and the 2026-08-03 report, same generation and same frozen
+        // watermark, did not — the guard genuinely returns a different answer across a reproduction. It
+        // stays latest-wins anyway, because as-of resolution CANNOT EXPRESS it: this chain stamps its own
+        // config rows with wall-clock ChangedOn (generatedAt, below), always LATER than the frozen DATA
+        // watermark, so an as-of read returns null on every run, flips this false, and re-stamps the
+        // default every pass — breaking the seed-once the line above exists to hold.
+        //
+        // Enforced by FX_D141_CarveOut2_PatienceGuardResolvesCurrent_NotAsOf, not by this comment: the
+        // prohibition is a fact this file cannot verify about itself, and a comment claiming it would be
+        // the unverified self-description D140 forbids. That fixture was proved to fail on a hand-edit
+        // probe converting this exact line.
         var patienceAlreadySet = new ConfigReadService(db).ResolveCurrent(CalibratedKeys.S6AutoRetireEvals) is not null;
 
         var frozenKeys = new List<string>();
@@ -292,10 +371,17 @@ public sealed class CalibrationOrchestrator(
         AlphaLabDbContext db, ReplayOutcome outcome, ReplayRequest request,
         CalibrationOptions calibration, PopulationsOptions populations)
     {
-        var sweep = new ConfigReadService(db).ResolveCurrent(HistoricalBackfillRunner.GateSweepConfigKey);
-        var membershipSource = sweep is null
+        // D141: this read stays CURRENT (the marker describes the STORE's ingest history, not a quantity
+        // under the run's watermark), but the archived report must SAY SO rather than leave a reader to
+        // infer it. The resolution mode and the row's own instant are printed alongside the value, so the
+        // provenance line states what it is: a property of the copy as it stands now, which on a scratch
+        // copy taken later than the generation is a different thing from the generation's own marker.
+        var sweepRow = new ConfigReadService(db).ResolveCurrentRow(HistoricalBackfillRunner.GateSweepConfigKey);
+        var membershipSource = sweepRow is not { } sweep
             ? "(no historical gate-sweep marker — a forward-store replay; see the coverage artifact requirements)"
-            : $"fja05680 community CSV (Backfill.HistoricalGateSweep: {Truncate(sweep, 160)})";
+            : $"fja05680 community CSV (Backfill.HistoricalGateSweep v{sweep.Version}, resolved CURRENT " +
+              $"as at {sweep.ChangedOn} — NOT as-of this run's watermark {outcome.Watermark}: " +
+              $"{Truncate(sweep.Value, 160)})";
         return new CurveVintage(
             arena.Id, request.From, request.To, outcome.Watermark, membershipSource,
             "realistic", calibration.Plant.SeedsPerPlant, populations.Size, request.LearnThrough,

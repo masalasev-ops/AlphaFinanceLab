@@ -55,6 +55,46 @@ public sealed class MonitorRecompute(
         }
 
         var autoRetireEvals = spec.Int(RecomputeParameters.AutoRetireEvals, OverfittingMonitor.AutoRetireConsecutiveSuspect);
+
+        // ---- P25 TRIPWIRE (D141 sweep) -----------------------------------------------------------------
+        // The live monitor resolves S6 patience from the CALIBRATED CONFIG ROW as-of the run's watermark
+        // (OverfittingMonitor.ResolveAutoRetirePatience); this class reads a COMPILE-TIME CONSTANT. While
+        // both are 4 — the chain only ever freezes the constant, so divergence takes an OPERATOR raise —
+        // the two agree and every artefact reproduces. The moment they part, `WouldRevert` would be
+        // reproduced under a patience the generation was never produced with: D140's rule, on one of the
+        // three parity artefacts.
+        //
+        // Fixing that is P25 and needs its own D-number (it changes what parity MEANS, rule 25), so this is
+        // NOT the fix — it is the trigger, and it exists because a recorded proposal with no trigger is a
+        // note that arms silently. It refuses rather than warns, on the D139 pattern: the failure mode being
+        // prevented is a confident wrong answer with a filename.
+        //
+        // Deliberately watermark-free: ANY stored version differing from the constant trips it. The
+        // generation's own watermark is not in scope here, and a conservative check that fires too often is
+        // the right error to make when the alternative is a plausible wrong artefact.
+        if (!spec.Overrides.ContainsKey(RecomputeParameters.AutoRetireEvals))
+        {
+            var divergent = db.Config
+                .Where(c => c.Key == CalibratedKeys.S6AutoRetireEvals)
+                .Select(c => new { c.Version, c.ValueJson })
+                .AsEnumerable()
+                .Where(c => int.TryParse(c.ValueJson, out var v) && v >= 2 && v != autoRetireEvals)
+                .OrderBy(c => c.Version)
+                .ToList();
+            if (divergent.Count > 0)
+            {
+                throw new RecomputeRefusedException(
+                    $"Recompute refused (P25): the store holds {CalibratedKeys.S6AutoRetireEvals} version(s) " +
+                    $"[{string.Join(", ", divergent.Select(d => $"v{d.Version}={d.ValueJson}"))}] that differ from " +
+                    $"the constant this harness reproduces with ({autoRetireEvals}). The live monitor resolves " +
+                    "that row; this class does not, so WouldRevert would be reproduced under an auto-retire " +
+                    "patience the generation was never produced with (D140's rule, D141's sweep). Resolving the " +
+                    "patience from the stored generation is P25 and takes its own decision number. Until then, " +
+                    "pass --set " + RecomputeParameters.AutoRetireEvals + "=<the generation's value> to state " +
+                    "the patience explicitly, which makes the choice visible in the run's own description.");
+            }
+        }
+
         var results = new List<RecomputedStatus>();
 
         foreach (var strategyId in subjects.OrderBy(s => s, StringComparer.Ordinal))
@@ -185,36 +225,53 @@ public sealed class MonitorRecompute(
         var sustain = spec.Int(RecomputeParameters.S6SustainEvals, MonitorSignals.FlatAnchorSustainEvals);
         var negativeT = spec.Double(RecomputeParameters.S6NegativeAlphaT, MonitorSignals.S6NegativeAlphaT);
 
-        // Band membership: DERIVED when the tier supplies the inputs (the only way a moved negative-alpha
-        // threshold can be scored — the rows that fall through recorded no band token), RECOVERED from the
-        // contribution otherwise, which is sound exactly while that threshold is unchanged.
-        bool insideBand;
+        // BAND POSITION: derived when the tier supplies the inputs, recovered from the contribution
+        // otherwise. 6.5 raised what this has to answer — the rule now needs POSITION (below / inside /
+        // above), not merely membership, because the anti arm fires only BELOW the band. So the
+        // recovery path can no longer serve an S6 rule change at all: a stored `elevated_neg_alpha` row
+        // was written by a rule that returned before the band was consulted, and therefore records
+        // nothing about which side of it the strategy was on. That is finding 340 one level deeper, and
+        // it is refused out loud rather than guessed.
+        MonitorSignals.BandPosition band;
         if (bands is not null)
         {
             var lowPct = spec.Double(RecomputeParameters.S6BandLowPct, 25.0);
             var highPct = spec.Double(RecomputeParameters.S6BandHighPct, 75.0);
-            insideBand = bands.StrategyWindow(strategyId, asOf) is { } w
-                         && bands.MemberBand(asOf, lowPct, highPct) is { } band
-                         && w.Alpha >= band.Lo && w.Alpha <= band.Hi;
+            if (bands.StrategyWindow(strategyId, asOf) is { } w && bands.MemberBand(asOf, lowPct, highPct) is { } b)
+            {
+                band = w.Alpha < b.Lo ? MonitorSignals.BandPosition.Below
+                     : w.Alpha > b.Hi ? MonitorSignals.BandPosition.Above
+                     : MonitorSignals.BandPosition.Inside;
+            }
+            else
+            {
+                // No window or no member band at this session — the monitor itself emits
+                // `insufficient_track` there, so the stored row is reproduced rather than re-derived.
+                return new SignalOutcome("S6", t, c.Contribution, StatusOf(c.Contribution, "S6"));
+            }
+        }
+        else if (MonitorSignals.ContinuesNegativeTStreak(c.Contribution))
+        {
+            // Unrecoverable by construction (see above). A spec that did not touch S6 is entitled to the
+            // stored row — its inputs are unchanged — and a spec that DID touch S6 is a DerivedBand tier,
+            // which cannot reach this branch: RecomputeMonitor refuses a band-tier spec with no
+            // BandInputs before any row is walked.
+            return new SignalOutcome("S6", t, c.Contribution, StatusOf(c.Contribution, "S6"));
         }
         else
         {
-            insideBand = MonitorSignals.ContinuesInsideBandStreak(c.Contribution);
+            band = MonitorSignals.ContinuesInsideBandStreak(c.Contribution)
+                ? MonitorSignals.BandPosition.Inside
+                : MonitorSignals.BandPosition.Above;   // "none": t was >= the threshold, so the arm
+                                                       // cannot fire and Above vs Below is immaterial.
         }
 
-        if (t < negativeT)
-        {
-            return priorNegative + 1 >= sustain
-                ? new SignalOutcome("S6", t, "critical_neg_alpha", MonitorStatus.Suspect)
-                : new SignalOutcome("S6", t, "elevated_neg_alpha", MonitorStatus.Warning);
-        }
-        if (insideBand)
-        {
-            return priorInside + 1 >= 2
-                ? new SignalOutcome("S6", t, "elevated_inband", MonitorStatus.Warning)
-                : new SignalOutcome("S6", t, "inband", MonitorStatus.Healthy);
-        }
-        return new SignalOutcome("S6", t, "none", MonitorStatus.Healthy);
+        // ONE DEFINITION. The rule is MonitorSignals.S6 itself, driven with the spec's overrides — not a
+        // second copy of its branch order kept in step by hand. This class's own instruction is that a
+        // second copy is a second definition that would drift, and the pre-6.5 code was exactly that:
+        // the branch order was duplicated here, so the remedy would have had to be applied twice and
+        // FX-RecomputeParity would have gone green either way.
+        return MonitorSignals.S6(t, band, priorInside, priorNegative, negativeT, sustain);
     }
 
     // ---- helpers ---------------------------------------------------------------------------------------

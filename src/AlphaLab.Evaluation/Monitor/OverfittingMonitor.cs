@@ -51,13 +51,23 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
     /// "at track length t a no-edge strategy's percentile within ITS OWN population is typically X", so
     /// reading a percentile from one family's members against another family's curve compares a number
     /// to a reference calibrated on a different distribution. Both are keyed on the family the matcher
-    /// resolves, and both are cached per family so the common all-daily roster costs one lookup each.</summary>
+    /// resolves, and both are cached per family so the common all-daily roster costs one lookup each.
+    ///
+    /// <paramref name="watermark"/> IS REQUIRED (D141). It was `string? … = null`, and null selected a
+    /// run-time-current config read — an input not under the watermark, on a path that IS reproduced
+    /// (reproduce-day re-executes this site; `replay-calibrate` re-simulates it). No production caller
+    /// ever passed null, so requiring it deletes that branch at compile time rather than converting a
+    /// read that never ran: the D139 fail-closed shape, at zero behavioural cost. The callers it does
+    /// bind are the fixtures — including `FX-RecomputeParity`, which was seeding its ground truth
+    /// through the removed branch and so could not have observed a divergence in the quantity it
+    /// exists to compare.</summary>
     public IReadOnlyList<MonitorResult> Run(
-        string asOf, string benchmarkStrategyId, PopulationMatcher matcher, string runKind = RunKindLive,
-        string? watermark = null)
+        string asOf, string benchmarkStrategyId, PopulationMatcher matcher, string runKind,
+        string watermark)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(asOf);
         ArgumentNullException.ThrowIfNull(matcher);
+        ArgumentException.ThrowIfNullOrWhiteSpace(watermark);
 
         var autoRetireEvals = ResolveAutoRetirePatience(watermark);
 
@@ -193,8 +203,11 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
             };
         }
 
-        // S6 — rolling 63-day alpha t-stat + inside the population's central 50% band, with the
-        // Appendix-A escalation streaks (this evaluation + the persisted priors).
+        // S6 — the rolling 63-day alpha t-stat judged AGAINST THE POPULATION BAND (6.5), with the
+        // Appendix-A escalation streaks (this evaluation + the persisted priors). The band is now a
+        // three-way position rather than an inside/outside bool: below it is the anti-predictive
+        // signature (D63), above it is outperformance, and collapsing those to "not inside" is what
+        // let the negative-t arm fire on a strategy sitting at its own null's median.
         SignalOutcome s6;
         if (stratReturns.Count >= RollingWindowDays && memberWindowAlphas.Count > 0)
         {
@@ -205,7 +218,10 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
             var hi = Statistics.Percentile(memberWindowAlphas, 75);
             var priorInside = TrailingStreak(strategyId, "S6", asOf, runKind, MonitorSignals.ContinuesInsideBandStreak);
             var priorNegative = TrailingStreak(strategyId, "S6", asOf, runKind, MonitorSignals.ContinuesNegativeTStreak);
-            s6 = MonitorSignals.S6(window.T, window.Alpha >= lo && window.Alpha <= hi, priorInside, priorNegative);
+            var band = window.Alpha < lo ? MonitorSignals.BandPosition.Below
+                     : window.Alpha > hi ? MonitorSignals.BandPosition.Above
+                     : MonitorSignals.BandPosition.Inside;
+            s6 = MonitorSignals.S6(window.T, band, priorInside, priorNegative);
         }
         else
         {
@@ -336,22 +352,18 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
     // The frozen D56 curves as-of the run's watermark (D96/D98). Both must exist to switch S3 to the
     // trajectory — a half-frozen pair falls back to the flat anchors (fail toward the pre-calibration
     // behaviour, never a curve judged against a flat opposite).
-    private (Calibration.S3Curve? Noise, Calibration.S3Curve? Edge) LoadCurves(string family, string? watermark)
+    private (Calibration.S3Curve? Noise, Calibration.S3Curve? Edge) LoadCurves(string family, string watermark)
     {
         var config = new ConfigReadService(db);
-        string? Read(string key) => watermark is null ? config.ResolveCurrent(key) : config.ResolveAsOf(key, watermark);
-        var noiseJson = Read(Calibration.CalibratedKeys.PNoiseCurve(family));
-        var edgeJson = Read(Calibration.CalibratedKeys.PEdgeCurve(family));
+        var noiseJson = config.ResolveAsOf(Calibration.CalibratedKeys.PNoiseCurve(family), watermark);
+        var edgeJson = config.ResolveAsOf(Calibration.CalibratedKeys.PEdgeCurve(family), watermark);
         if (noiseJson is null || edgeJson is null) return (null, null);
         return (Calibration.S3Curve.FromJson(noiseJson), Calibration.S3Curve.FromJson(edgeJson));
     }
 
-    private int ResolveAutoRetirePatience(string? watermark)
+    private int ResolveAutoRetirePatience(string watermark)
     {
-        var config = new ConfigReadService(db);
-        var raw = watermark is null
-            ? config.ResolveCurrent(Calibration.CalibratedKeys.S6AutoRetireEvals)
-            : config.ResolveAsOf(Calibration.CalibratedKeys.S6AutoRetireEvals, watermark);
+        var raw = new ConfigReadService(db).ResolveAsOf(Calibration.CalibratedKeys.S6AutoRetireEvals, watermark);
         return raw is not null && int.TryParse(raw, out var v) && v >= 2 ? v : AutoRetireConsecutiveSuspect;
     }
 

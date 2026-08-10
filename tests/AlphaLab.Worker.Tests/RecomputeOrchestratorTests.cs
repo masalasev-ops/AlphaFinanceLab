@@ -54,15 +54,20 @@ public class RecomputeOrchestratorTests : IDisposable
     public void Run_WithOverrides_ReportsAsARuleChange_AndNamesTheConfirmationSliceRequirement()
     {
         using var db = Open();
+        // The example rule change is a MONITOR threshold, not the alpha definition. The definition is no
+        // longer a knob a spec may set (D140): it is a property of the stored generation, resolved by the
+        // harness from what reproduces, and a supplied one is refused. Using it here would have been
+        // testing the refusal by accident rather than testing the rule-change report. A DirectRead
+        // knob is chosen so the run needs no control_equity this fixture does not seed.
         var spec = new RecomputeSpec("gen2",
-            new Dictionary<string, string>(StringComparer.Ordinal) { ["gate.alpha_definition"] = "jensen" });
+            new Dictionary<string, string>(StringComparer.Ordinal) { ["monitor.s3.sustain_evals"] = "4" });
 
         var run = Orchestrator(db).Run(spec, "2026-08-02", _reportDir);
         var text = File.ReadAllText(run.ReportPath);
 
         Assert.Contains("scored a **rule change**", text, StringComparison.Ordinal);
         Assert.Contains("confirmation slice", text, StringComparison.Ordinal);
-        Assert.Contains("EquityDerived", text, StringComparison.Ordinal);
+        Assert.Contains("DirectRead", text, StringComparison.Ordinal);
     }
 
     /// <summary>D117 clause 1, asserted at the orchestration layer too: the verb that an operator points at

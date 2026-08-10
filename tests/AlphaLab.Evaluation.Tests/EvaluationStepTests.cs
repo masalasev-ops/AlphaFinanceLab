@@ -84,6 +84,12 @@ internal sealed class EvalArena : IDisposable
         return pop.PopulationId;
     }
 
+    /// <summary>A session's run watermark in the pipeline's own shape (`{asOf}T22:00:00Z` — D92/D95, and
+    /// the instant `DailyPipeline` threads to the monitor). D141 made that watermark REQUIRED on
+    /// <c>OverfittingMonitor.Run</c>, so a fixture must now state the instant it is evaluating at instead
+    /// of falling into a run-time-current config read.</summary>
+    public static string Watermark(string asOf) => $"{asOf}T22:00:00Z";
+
     public static IReadOnlyList<string> Dates(int n, DateOnly start)
     {
         var dates = new List<string>(n);

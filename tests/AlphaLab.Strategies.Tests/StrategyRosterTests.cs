@@ -14,6 +14,8 @@ namespace AlphaLab.Strategies.Tests;
 public class StrategyRosterTests
 {
     private const string AsOf = "2024-01-02";
+    /// <summary>The run watermark for <see cref="AsOf"/> (D141: the capital read is now as-of).</summary>
+    private const string Wm = "2024-01-02T22:00:00Z";
 
     private static StrategyRow Row(string id, string status) => new()
     {
@@ -35,7 +37,7 @@ public class StrategyRosterTests
             db.SaveChanges();
             Assert.Empty(ledger.GetAccounts(RunKind.Live));
 
-            var opened = new StrategyRoster(db, ledger).OpenMissingAccounts(AsOf);
+            var opened = new StrategyRoster(db, ledger).OpenMissingAccounts(AsOf, Wm);
 
             Assert.Equal(["threshold:sma50"], opened);
             var account = Assert.Single(ledger.GetAccounts(RunKind.Live));
@@ -56,8 +58,8 @@ public class StrategyRosterTests
             db.Strategies.Add(Row("threshold:sma50", "candidate"));
             db.SaveChanges();
 
-            var first = new StrategyRoster(db, ledger).OpenMissingAccounts(AsOf);
-            var second = new StrategyRoster(db, ledger).OpenMissingAccounts(AsOf);
+            var first = new StrategyRoster(db, ledger).OpenMissingAccounts(AsOf, Wm);
+            var second = new StrategyRoster(db, ledger).OpenMissingAccounts(AsOf, Wm);
 
             Assert.Single(first);
             Assert.Empty(second);                                  // nothing to open the second time
@@ -86,7 +88,7 @@ public class StrategyRosterTests
             });
             db.SaveChanges();
 
-            Assert.Empty(new StrategyRoster(db, ledger).OpenMissingAccounts(AsOf));
+            Assert.Empty(new StrategyRoster(db, ledger).OpenMissingAccounts(AsOf, Wm));
             Assert.Empty(ledger.GetAccounts(RunKind.Live));
         }
         finally { TestDb.Delete(path); }
@@ -104,7 +106,7 @@ public class StrategyRosterTests
             db.Strategies.Add(Row("threshold:sma50", "retired"));
             db.SaveChanges();
 
-            Assert.Empty(new StrategyRoster(db, ledger).OpenMissingAccounts(AsOf));
+            Assert.Empty(new StrategyRoster(db, ledger).OpenMissingAccounts(AsOf, Wm));
         }
         finally { TestDb.Delete(path); }
     }
@@ -126,7 +128,7 @@ public class StrategyRosterTests
             db.Strategies.Add(Row("threshold:sma50", "candidate"));
             db.SaveChanges();
 
-            Assert.Empty(new StrategyRoster(db, ledger).OpenMissingAccounts(AsOf, RunKind.Replay));
+            Assert.Empty(new StrategyRoster(db, ledger).OpenMissingAccounts(AsOf, Wm, RunKind.Replay));
             Assert.Empty(ledger.GetAccounts(RunKind.Replay));
         }
         finally { TestDb.Delete(path); }

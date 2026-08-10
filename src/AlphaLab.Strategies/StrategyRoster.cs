@@ -37,13 +37,16 @@ public sealed class StrategyRoster(AlphaLabDbContext db, ILedgerStore ledger)
     /// Open an account for every admitted strategy that can be run and does not have one yet. Returns
     /// the strategy ids newly opened, so the caller can log what entered the arena today.
     /// </summary>
-    public IReadOnlyList<string> OpenMissingAccounts(string asOf, RunKind runKind = RunKind.Live)
+    public IReadOnlyList<string> OpenMissingAccounts(string asOf, string watermark, RunKind runKind = RunKind.Live)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(asOf);
+        ArgumentException.ThrowIfNullOrWhiteSpace(watermark);
         if (runKind != RunKind.Live) return [];   // forward only — see the class comment
 
+        // D141: the same as-of read the dummy roster makes — this is the second caller of that capital,
+        // and two callers resolving one value by different rules is how the pair drifts apart.
         var startingCash = new DummyRoster(db, ledger)
-            .ResolveStartingCash(asOf, DummyRoster.DefaultStartingCash);
+            .ResolveStartingCash(asOf, watermark, DummyRoster.DefaultStartingCash);
 
         var haveAccounts = ledger.GetAccounts(runKind)
             .Select(a => a.StrategyId)

@@ -37,11 +37,13 @@ public sealed class DummyRoster(AlphaLabDbContext db, ILedgerStore ledger)
     /// accounts are per kind (D37 — a replay trades its own isolated books). Returns the accounts
     /// (existing or newly opened), in seed order. Idempotent.
     /// </summary>
-    public IReadOnlyList<Account> Seed(string asOf, decimal? startingCashOverride = null, RunKind runKind = RunKind.Live)
+    public IReadOnlyList<Account> Seed(
+        string asOf, string watermark, decimal? startingCashOverride = null, RunKind runKind = RunKind.Live)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(asOf);
+        ArgumentException.ThrowIfNullOrWhiteSpace(watermark);
 
-        var startingCash = ResolveStartingCash(asOf, startingCashOverride ?? DefaultStartingCash);
+        var startingCash = ResolveStartingCash(asOf, watermark, startingCashOverride ?? DefaultStartingCash);
 
         // (model, family, status). Buy&Hold are permanent baselines (D26/D27); the trend dummy is a
         // candidate honestly flagged unregistered in its own config (rule 16).
@@ -61,20 +63,43 @@ public sealed class DummyRoster(AlphaLabDbContext db, ILedgerStore ledger)
         return accounts;
     }
 
-    /// <summary>The starting cash for new accounts: MAX(version) of the config row, writing version 1 =
-    /// <paramref name="defaultCash"/> on a fresh store (append-only; a re-resolve writes nothing).</summary>
-    public decimal ResolveStartingCash(string asOf, decimal defaultCash)
+    /// <summary>The starting cash for new accounts, resolved AS-OF the run's watermark (D141), writing
+    /// version 1 = <paramref name="defaultCash"/> on a fresh store (append-only; a re-resolve writes
+    /// nothing).
+    ///
+    /// **WHY AS-OF (D141).** This was a hand-written MAX(version) read straight against <c>db.Config</c> —
+    /// `ResolveCurrent`'s body, inlined, which is why the P24 enumeration (a grep for that method name)
+    /// could not see it. The value is not provenance or a guard: it is the accounts' OPENING CAPITAL, a
+    /// SIMULATION INPUT upstream of every equity curve, every population comparison and every S6 band. It
+    /// is normally masked because the accounts already exist, and `--reset` — which D139's confirmation-slice
+    /// procedure mandates — deletes the replay accounts (`ReplayRunner.DeleteReplayGeneration`) and re-opens
+    /// them through this read, so a version appended since the generation would silently re-simulate it at
+    /// different capital. Measured before the change: the live `sp500` store holds exactly ONE version
+    /// (v1, 2006-01-03, 100000), so as-of and latest-wins agree today and this binding is behaviourally
+    /// free — it removes a future divergence, it does not correct a present one.</summary>
+    public decimal ResolveStartingCash(string asOf, string watermark, decimal defaultCash)
     {
-        var current = db.Config
-            .Where(c => c.Key == StartingCashConfigKey)
-            .AsEnumerable()
-            .OrderByDescending(c => c.Version)
-            .FirstOrDefault();
+        ArgumentException.ThrowIfNullOrWhiteSpace(watermark);
 
-        if (current is not null &&
-            decimal.TryParse(current.ValueJson, NumberStyles.Number, CultureInfo.InvariantCulture, out var existing))
+        var raw = new ConfigReadService(db).ResolveAsOf(StartingCashConfigKey, watermark);
+        if (raw is not null &&
+            decimal.TryParse(raw, NumberStyles.Number, CultureInfo.InvariantCulture, out var existing))
         {
             return existing;
+        }
+
+        // FAIL CLOSED (rule 10) rather than write a second version 1. Reaching here with rows already in
+        // the table means either the key is unreadable at this watermark (the accounts are being opened
+        // before their capital was ever configured) or its value does not parse. The old code's next
+        // statement was an unconditional INSERT of version 1, which under either condition collides with
+        // the existing row's (key, version) primary key — a confusing failure in place of a stated one.
+        if (db.Config.Any(c => c.Key == StartingCashConfigKey))
+        {
+            throw new InvalidOperationException(
+                $"{StartingCashConfigKey} exists but does not resolve to a decimal as-of watermark {watermark} " +
+                $"(asOf {asOf}). Opening accounts would have to invent their capital, so this refuses instead: " +
+                "either the run's watermark precedes the row that configures it, or the stored value is " +
+                "unparseable. Neither is a condition a starting balance may be defaulted through (D141, rule 10).");
         }
 
         db.Config.Add(new ConfigRow

@@ -124,7 +124,7 @@ monitor:
   s4: { elevated_neighbor_loss_frac: 0.40 }
   s5: { psi_elevated: 0.10, psi_critical: 0.25 }
   s6: { window_days: 63, band_central_frac: 0.50,
-        elevated_windows: 2, critical_windows: 3,   # the escalation ladder LANDED at Phase-4 build (v1.9.39): 2 consecutive inside-band = Warning, 3 = Suspect; sustained negative-t (2) = Suspect
+        elevated_windows: 2,                        # CORRECTED v1.9.98 (D138): 2 consecutive inside-band = Warning and it CAPS there - inside-band is never Suspect (Change 3 / D63 scope note). The old `critical_windows: 3` encoded the repealed ladder and is struck; the anti arm is BELOW-BAND + t < negative_alpha_t sustained to FlatAnchorSustainEvals
         auto_retire_evals: 4 }                      # post-freeze this is the VERSIONED CONFIG ROW Monitor.S6.AutoRetireEvals (D98) — the finding-113 patience knob: a survival-floor failure recalibrates THIS, never the plant
   s7: { brier_degradation_elevated: 0.20 }
   s8: { elevated_sustain_windows: 1, critical_simultaneous: 2 }

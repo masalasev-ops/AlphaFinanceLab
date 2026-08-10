@@ -83,7 +83,12 @@ public static class RecomputeParameters
             [S6NegativeAlphaT] = RecomputeTier.DerivedBand,   // finding 340 — see the remarks above
             [S6BandLowPct] = RecomputeTier.DerivedBand,
             [S6BandHighPct] = RecomputeTier.DerivedBand,
-            [AlphaDefinition] = RecomputeTier.EquityDerived,
+            // AlphaDefinition is DELIBERATELY ABSENT (P23). It is not a knob a specification may set: it
+            // is a PROPERTY OF THE STORED GENERATION, resolved by the harness from what actually
+            // reproduces. Leaving it out of this map means `--set gate.alpha_definition=...` is refused by
+            // the unknown-parameter path below rather than silently honoured — the D139 fail-closed shape,
+            // and the reason is that honouring it is exactly what produced a confident wrong answer with an
+            // archived report that read like evidence.
         };
 }
 
@@ -136,9 +141,18 @@ public sealed record RecomputeSpec(string Name, IReadOnlyDictionary<string, stri
 
     /// <summary>A stable one-line rendering for the report header — the spec IS the experiment's identity,
     /// so it is recorded verbatim beside its result rather than summarised.</summary>
-    public string Describe() =>
-        Overrides.Count == 0
-            ? $"{Name} (no overrides — generation 1's rules)"
+    /// <param name="resolvedArithmetic">What the harness RESOLVED the generation's arithmetic to be, and
+    /// how decisively. Required, and that is the point (P23): this line used to render
+    /// "(no overrides — generation 1's rules)" from the absence of overrides alone, which never saw the
+    /// generation being reproduced and so could not be wrong in a way it could detect. A description that
+    /// states a fact nothing examined is how a correct-looking label sat above an incorrect run.</param>
+    public string Describe(string resolvedArithmetic)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(resolvedArithmetic);
+        var rules = Overrides.Count == 0
+            ? $"{Name} (no rule overrides)"
             : $"{Name}: " + string.Join(", ",
                 Overrides.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key}={kv.Value}"));
+        return $"{rules} · {resolvedArithmetic}";
+    }
 }

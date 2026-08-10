@@ -29,6 +29,19 @@ public sealed class ConfigReadService(AlphaLabDbContext db)
             .FirstOrDefault()?.ValueJson;
     }
 
+    /// <summary>The CURRENT row with its provenance — the value plus the version and <c>changed_on</c> that
+    /// produced it. For the one case a bare value cannot serve: a caller that must PRINT which row it read
+    /// (D141), so a reader of the artefact can see the resolution mode and instant rather than infer them.
+    /// Same MAX(version) semantics as <see cref="ResolveCurrent"/>; it is that read, not a third one.</summary>
+    public (string Value, int Version, string ChangedOn)? ResolveCurrentRow(string key)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        var row = db.Config.Where(c => c.Key == key).AsEnumerable()
+            .OrderByDescending(c => c.Version)
+            .FirstOrDefault();
+        return row is null ? null : (row.ValueJson, row.Version, row.ChangedOn);
+    }
+
     public string? ResolveAsOf(string key, string watermark)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);

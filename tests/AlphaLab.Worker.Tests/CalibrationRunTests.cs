@@ -29,6 +29,44 @@ public class CalibrationRunTests
     private static ReplayRequest Window(PipelineHarness h) =>
         new(h.Sessions[5], h.Sessions[35], LearnThrough: h.Sessions[30]);
 
+    /// <summary>
+    /// 6.5 — a run that SIMULATES NOTHING is refused, and no report is archived.
+    ///
+    /// This is the trap D117 clause 2's confirmation slice walks into. The slice exists to validate a
+    /// CHANGED rule on re-simulated sessions ("parity exercises the unchanged path, so it structurally
+    /// cannot validate the changed one"), but the obvious command against an arena that already holds the
+    /// generation skips every session — so it would validate the new rule using outputs the OLD rule
+    /// produced, and archive a markdown file that reads exactly like a confirmation. A false negative with
+    /// a filename is worse than no report, because it is citable.
+    ///
+    /// The only flag that forces re-simulation is --reset, which deletes the whole generation. So the
+    /// operator's two obvious moves were a fake pass and a destroyed sign-off; this removes the first.
+    /// </summary>
+    [Fact]
+    public async Task FX_Calibration_AZeroSessionRun_IsRefused_AndArchivesNoReport()
+    {
+        using var h = new PipelineHarness();
+        var reportDir = Path.Combine(Path.GetTempPath(), "alphalab-cal0-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            // First run simulates the window and archives its report.
+            Assert.Equal(0, await Orchestrator(reportDir).RunAsync($"Data Source={h.DbPath}", Window(h), reportOnly: false));
+            var afterFirst = Directory.GetFiles(Path.Combine(reportDir, "sp500"), "*-calibration.md").Length;
+
+            // The SAME command again: every session is already committed, so nothing is simulated.
+            var exit = await Orchestrator(reportDir).RunAsync($"Data Source={h.DbPath}", Window(h), reportOnly: false);
+
+            Assert.Equal(1, exit);
+            // ...and it stopped BEFORE archiving: no new report, so nothing exists to be mistaken later
+            // for confirmation evidence.
+            Assert.Equal(afterFirst, Directory.GetFiles(Path.Combine(reportDir, "sp500"), "*-calibration.md").Length);
+        }
+        finally
+        {
+            try { Directory.Delete(reportDir, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
     [Fact]
     public async Task FX_Calibration_ReportGeneratedAndConfigRowsFrozen()
     {
@@ -83,8 +121,12 @@ public class CalibrationRunTests
             Assert.Contains("\"16\"", power);
 
             // A SECOND freeze appends v2 — never an UPDATE (finding 108; the CI grep guards the SQL side,
-            // this guards the semantics).
-            var exit2 = await Orchestrator(reportDir).RunAsync($"Data Source={h.DbPath}", Window(h), reportOnly: false);
+            // this guards the semantics). This is the documented RESUME path: the replay is finished, so
+            // every session skips as already-committed and only verification + freeze re-run. It must say
+            // so explicitly (6.5) — the same shape refuses by default, because a zero-session run that
+            // archives a report is a false confirmation.
+            var exit2 = await Orchestrator(reportDir).RunAsync($"Data Source={h.DbPath}", Window(h), reportOnly: false,
+                allowNoNewSessions: true);
             Assert.Equal(0, exit2);
             Assert.Equal(2, db.Config.Count(c => c.Key == CalibratedKeys.PEdgeCurve("daily")));
         }
@@ -145,9 +187,16 @@ public class CalibrationRunTests
         }
     }
 
-    // Phase-4 review: the S6 patience knob is seeded from the FIRST freeze only. A re-run after the
-    // operator's finding-113 raise (a new version of Monitor.S6.AutoRetireEvals) must never re-stamp
-    // the Appendix-A default over it — else the documented recalibration loop can never converge.
+    // Phase-4 review: the S6 patience knob is seeded from the FIRST freeze only (D98 seed-once). A re-run
+    // after an operator raise (a new version of Monitor.S6.AutoRetireEvals) must never re-stamp the
+    // Appendix-A default over it.
+    //
+    // CITATION CORRECTED (D141 sweep): this cited "the RUNBOOK §8.4 operator move" and "the documented
+    // recalibration loop". There is no §8.4, and RUNBOOK:148 records that the "raise
+    // `Monitor.S6.AutoRetireEvals` and re-run" loop was proven NOT to converge (finding 270; it is gone).
+    // The test is still right and the mechanism unchanged — what was wrong was the reason given for it.
+    // D98's seed-once is the reason: the value is frozen from the first calibration, and a later version
+    // is the operator's, not the chain's to overwrite.
     [Fact]
     public async Task FX_Calibration_Rerun_NeverRestampsOperatorPatience()
     {
@@ -162,7 +211,7 @@ public class CalibrationRunTests
             {
                 Assert.Equal("4", db.Config.Single(c => c.Key == CalibratedKeys.S6AutoRetireEvals).ValueJson);
 
-                // The RUNBOOK §8.4 operator move: raise the patience via a NEW version (rule 24).
+                // The operator move: raise the patience via a NEW version (rule 24, append-only).
                 db.Config.Add(new Data.Entities.ConfigRow
                 {
                     Key = CalibratedKeys.S6AutoRetireEvals, ValueJson = "6", Version = 2,
@@ -171,7 +220,10 @@ public class CalibrationRunTests
                 db.SaveChanges();
             }
 
-            var exit2 = await Orchestrator(reportDir).RunAsync($"Data Source={h.DbPath}", Window(h), reportOnly: false);
+            // The RESUME path again (6.5): the replay is finished, so every session skips and only
+            // verification + freeze re-run. Opt-in, because the same shape refuses by default.
+            var exit2 = await Orchestrator(reportDir).RunAsync($"Data Source={h.DbPath}", Window(h), reportOnly: false,
+                allowNoNewSessions: true);
             Assert.Equal(0, exit2);
 
             using (var db = h.Open())
@@ -188,6 +240,95 @@ public class CalibrationRunTests
         }
     }
 
+    /// <summary>
+    /// **D141 CARVE-OUT 2, ENFORCED — `CalibrationOrchestrator:194` MUST resolve CURRENT, never as-of.**
+    ///
+    /// D141 converts run-time-current config reads on reproducible paths to `ResolveAsOf`. This site is
+    /// classified REPLAY by that decision's own criterion — the archived pair proves it was reproduced with
+    /// a differing answer (`docs/calibration/sp500/2026-07-31-calibration.md:10` freezes
+    /// `Monitor.S6.AutoRetireEvals`; the 2026-08-03 report, same generation and same frozen watermark, does
+    /// not) — and it must STILL stay latest-wins, because as-of resolution cannot express it: the chain
+    /// stamps its own config rows with wall-clock `ChangedOn = DateTime.UtcNow`
+    /// (`CalibrationOrchestrator.cs:175-176`), which is ALWAYS later than the frozen DATA watermark. An
+    /// as-of read would therefore return null on every run, flip `patienceAlreadySet` to false, and
+    /// re-stamp the Appendix-A default over the stored value on every pass — breaking D98's seed-once.
+    ///
+    /// This is a TEST and not a comment on purpose. "Conversion forbidden" written as a comment is a claim
+    /// nothing checks, which is the exact defect D140 names; the next sweep reading a REPLAY label would
+    /// convert the site and every fixture above would still pass except this one.
+    /// </summary>
+    [Fact]
+    public async Task FX_D141_CarveOut2_PatienceGuardResolvesCurrent_NotAsOf()
+    {
+        using var h = new PipelineHarness();
+        var reportDir = Path.Combine(Path.GetTempPath(), "alphalab-cal-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            // A patience row stamped strictly AFTER any watermark this run can resolve — the shape the
+            // chain's OWN writes take, since they carry a wall-clock instant while the watermark is the
+            // frozen data instant. ResolveCurrent sees it; ResolveAsOf(watermark) cannot.
+            using (var db = h.Open())
+            {
+                db.Config.Add(new Data.Entities.ConfigRow
+                {
+                    Key = CalibratedKeys.S6AutoRetireEvals, ValueJson = "7", Version = 1,
+                    ChangedOn = "2099-01-01T00:00:00Z", Reason = "D141 carve-out 2 fixture: stamped after the watermark",
+                });
+                db.SaveChanges();
+            }
+
+            var exit = await Orchestrator(reportDir).RunAsync($"Data Source={h.DbPath}", Window(h), reportOnly: false);
+            Assert.Equal(0, exit);
+
+            using (var db = h.Open())
+            {
+                // The guard SAW the row: no second version was appended over it. Under an as-of read the
+                // row is invisible, patienceAlreadySet goes false, and this becomes 2 rows with the
+                // default 4 winning — which is precisely the regression this fixture exists to catch.
+                Assert.Equal(1, db.Config.Count(c => c.Key == CalibratedKeys.S6AutoRetireEvals));
+                Assert.Equal("7", new AlphaLab.Data.Services.ConfigReadService(db)
+                    .ResolveCurrent(CalibratedKeys.S6AutoRetireEvals));
+            }
+        }
+        finally
+        {
+            try { Directory.Delete(reportDir, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
+    /// <summary>
+    /// **D141's pre-flight, ENFORCED: an unpinned confirmation slice is refused.** `--reset --report-only`
+    /// against a store that already holds a committed generation is the slice's signature, and without an
+    /// explicit `--watermark` it re-simulates that generation at the store's CURRENT high-water mark —
+    /// a different vintage from the one it is confirming, with nothing in the report to say so.
+    /// </summary>
+    [Fact]
+    public async Task FX_D141_ConfirmationSlice_RefusesUnpinnedReset_WhenAGenerationExists()
+    {
+        using var h = new PipelineHarness();
+        var reportDir = Path.Combine(Path.GetTempPath(), "alphalab-cal-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            // A committed generation to confirm.
+            Assert.Equal(0, await Orchestrator(reportDir).RunAsync($"Data Source={h.DbPath}", Window(h), reportOnly: false));
+
+            // The slice, unpinned: refused rather than run at the wrong vintage.
+            var unpinned = Window(h) with { Reset = true };
+            Assert.Equal(1, await Orchestrator(reportDir).RunAsync($"Data Source={h.DbPath}", unpinned, reportOnly: true));
+
+            // …and PINNED, it is admitted — the guard is a pin requirement, not a prohibition. (It stops at
+            // the zero-session refusal or runs on; either way it is past the D141 check, which is what this
+            // asserts: the run was not rejected for want of a watermark.)
+            var pinned = Window(h) with { Reset = true, Watermark = "2026-01-01T22:00:00Z" };
+            await Orchestrator(reportDir).RunAsync($"Data Source={h.DbPath}", pinned, reportOnly: true,
+                allowNoNewSessions: true);
+        }
+        finally
+        {
+            try { Directory.Delete(reportDir, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
     [Fact]
     public async Task FX_Calibration_ReportOnly_WritesNoConfigRows()
     {
@@ -195,6 +336,17 @@ public class CalibrationRunTests
         var reportDir = Path.Combine(Path.GetTempPath(), "alphalab-cal-" + Guid.NewGuid().ToString("N"));
         try
         {
+            // D141: snapshot the WHOLE config table, not three keys. The report renders "Config rows frozen
+            // this run: (none — report-only …)", and a per-key assertion verifies a narrower claim than the
+            // one the artefact makes — the D140 shape. Any config INSERT anywhere on the path (the roster
+            // bootstrap included) has to show up here.
+            static List<string> Snapshot(AlphaLab.Data.AlphaLabDbContext db) =>
+                [.. db.Config.Select(c => new { c.Key, c.Version }).AsEnumerable()
+                    .Select(c => c.Key + "@v" + c.Version).OrderBy(s => s, StringComparer.Ordinal)];
+
+            List<string> before;
+            using (var pre = h.Open()) before = Snapshot(pre);
+
             var exit = await Orchestrator(reportDir).RunAsync($"Data Source={h.DbPath}", Window(h), reportOnly: true);
             Assert.Equal(0, exit);
 
@@ -202,6 +354,22 @@ public class CalibrationRunTests
             using var db = h.Open();
             Assert.Empty(db.Config.Where(c => c.Key.StartsWith("Monitor.S3.")).ToList());
             Assert.Empty(db.Config.Where(c => c.Key == CalibratedKeys.ReportRef).ToList());
+
+            // THE PRECISE CLAIM, because the broad one is FALSE and measuring it is how that was found:
+            // a --report-only run writes EXACTLY ONE config row on a store that has never opened accounts,
+            // `Accounts.StartingCash@v1`, from the roster bootstrap (DummyRoster.ResolveStartingCash). That
+            // write is deliberate and stays: finding K records the opening capital so the value the accounts
+            // opened at is auditable rather than a literal only the code knew, and suppressing it under a
+            // flag the roster cannot see would reintroduce exactly that. It does NOT fire on the D139
+            // confirmation slice, whose byte copy already carries the key (live sp500: v1, 2006-01-03).
+            //
+            // So the assertion is: nothing else, ever. Any other key appearing under --report-only is the
+            // regression this guards — and "no config rows" as a blanket claim is retired here rather than
+            // left standing as a sentence the run does not honour (D140).
+            var permittedBootstrap = AlphaLab.Strategies.DummyRoster.StartingCashConfigKey + "@v1";
+            Assert.Equal(
+                before.Union([permittedBootstrap]).OrderBy(s => s, StringComparer.Ordinal).ToList(),
+                Snapshot(db));
         }
         finally
         {
