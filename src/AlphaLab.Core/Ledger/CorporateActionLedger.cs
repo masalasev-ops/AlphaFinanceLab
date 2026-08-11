@@ -210,6 +210,47 @@ public static class CorporateActionLedger
         };
     }
 
+    /// <summary>
+    /// Did this effect END the line — leaving nothing for a pending order in that security to act on?
+    ///
+    /// The counterpart to <see cref="UnitRestatementRatio"/>, and deliberately shaped differently. A
+    /// unit restatement is a property of the ACTION (a pending order in an unheld name still needs the
+    /// factor); a TERMINATION is a property of what happened to THIS account's book, so it is asked of
+    /// the EFFECT, which is what <c>CorporateActionOutcome.Applied</c> now carries.
+    ///
+    /// EVERY case is listed, including the false ones, rather than falling through a discard pattern.
+    /// That is the point: a new effect added to the hierarchy fails to compile here and forces someone
+    /// to decide whether it ends a line, instead of silently inheriting "no" and letting a stale order
+    /// fill into a position that no longer exists.
+    ///
+    /// A SPIN-OFF IS NOT A TERMINATION and the distinction is easy to get backwards: the parent keeps
+    /// trading and keeps its share count — only basis moves — so a pending order in the parent is still
+    /// perfectly valid. The same reasoning `StoppageFreezeReason` uses to refuse a spin-off as an
+    /// explanation for a missing bar.
+    /// </summary>
+    public static bool TerminatesPosition(CorporateActionEffect effect)
+    {
+        ArgumentNullException.ThrowIfNull(effect);
+
+        return effect switch
+        {
+            // The line is gone: force-closed (cash merger / delist), or converted away into the acquirer.
+            CorporateActionEffect.PositionForceClosed => true,
+            CorporateActionEffect.StockMergerConverted => true,
+            CorporateActionEffect.MixedMergerApplied => true,
+
+            // The line survives, in the same security, tradable today.
+            CorporateActionEffect.DividendCredited => false,
+            CorporateActionEffect.PositionRestated => false,
+            CorporateActionEffect.TickerRenamedNoLedgerEffect => false,
+            CorporateActionEffect.SpinoffReceived => false,
+
+            _ => throw new ArgumentOutOfRangeException(nameof(effect), effect,
+                "Unmapped corporate-action effect: decide whether it ends a line before a stale order can " +
+                "fill into one that no longer exists (D143)."),
+        };
+    }
+
     private static double RequireRatio(CorporateAction action) =>
         action.Ratio is { } r && double.IsFinite(r) && r > 0
             ? r

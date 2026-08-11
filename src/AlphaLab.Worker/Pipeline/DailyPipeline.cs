@@ -392,12 +392,20 @@ public sealed class DailyPipeline(
         // (a) Corporate actions effective since the prior session — the (prev, asOf] window, finding 192,
         // so a weekend/holiday effective date applies on the next session — BEFORE fills/funnel (D53 order).
         var caPrevSession = calendar.PreviousSession(asOfDate);
-        caApplier.ApplyForAccount(account.AccountId, kind, asOf, watermark,
+        var caOutcome = caApplier.ApplyForAccount(account.AccountId, kind, asOf, watermark,
             caPrevSession is { } cps ? Iso(cps) : null);
 
+        // (a2) Which of THIS account's lines ceased to exist this morning (D143). A per-ACCOUNT fact —
+        // it depends on the book — so it comes off the outcome, unlike the D142 restatement ratios, which
+        // are a property of the security and are resolved over the day's orders instead.
+        var terminated = caOutcome.Applied
+            .Where(a => CorporateActionLedger.TerminatesPosition(a.Effect))
+            .Select(a => a.Id)
+            .ToHashSet();
+
         // (b) Fill the orders decided on the PRIOR session at today's open (the T+1 half of decide-at-close-T),
-        // in the share units (a) just restated the book into (D142).
-        FillPriorOrders(account.AccountId, kind, asOfDate, asOf, features, broker, restatements);
+        // in the share units (a) just restated the book into (D142), and never into a line (a) just closed (D143).
+        FillPriorOrders(account.AccountId, kind, asOfDate, asOf, features, broker, restatements, terminated);
 
         // (c) The book post-CA/post-fill, and its equity at today's close.
         var held = ledger.GetPositions(account.AccountId);
@@ -441,7 +449,8 @@ public sealed class DailyPipeline(
 
     private void FillPriorOrders(
         long accountId, RunKind kind, DateOnly asOfDate, string asOf,
-        BarFeatureView features, VirtualBroker broker, ShareUnitRestatements restatements)
+        BarFeatureView features, VirtualBroker broker, ShareUnitRestatements restatements,
+        IReadOnlySet<SecurityId> terminatedToday)
     {
         var prevSession = calendar.PreviousSession(asOfDate);
         if (prevSession is null) return;
@@ -453,6 +462,27 @@ public sealed class DailyPipeline(
         foreach (var stored in snapshot.Stage6Orders)
         {
             if (stored.FillOn != asOf) continue; // only today's fills (consecutive-session processing keeps these aligned)
+
+            // D143: §13.6 already resolved this line this morning — a delist force-exit, a cash merger, or
+            // a conversion into the acquirer. The order refers to a position that no longer exists, and
+            // there is no ratio that converts it into one that does. CANCEL, with a reason.
+            //
+            // Both arms were defects, and the quieter one was worse. A stale SELL reached PostFill's
+            // `existing is null` throw and rolled the WHOLE day back — every account, every population row —
+            // blaming the funnel for something the funnel did correctly. A stale BUY had no existence check
+            // at all: it FABRICATED a position in a delisted or merged-out security, which then froze
+            // forever on the next session's stoppage check. Silent, permanent, indistinguishable from a
+            // real holding. A cash merger only failed accidentally-safe, because a merged-out target
+            // usually has no bar and the broker rejects on a missing price — and "usually" is not a
+            // mechanism.
+            if (terminatedToday.Contains(stored.SecurityId))
+            {
+                logger.LogInformation(
+                    "{AsOf}: order for {Security} ({Side} {Shares} sh) CANCELLED — a corporate action closed " +
+                    "the line before the open. The §13.6 event is the disposal; the funnel's order is void.",
+                    asOf, stored.SecurityId, stored.Side, stored.Shares);
+                continue;
+            }
 
             // D142: the stored order is denominated in the share units of close T. If a corporate action
             // restated this security between T and now — step (a), minutes ago — convert it, so the

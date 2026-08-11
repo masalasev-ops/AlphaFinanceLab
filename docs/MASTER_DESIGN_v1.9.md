@@ -312,6 +312,11 @@ Unchanged in shape: **backfill once** (full daily history per universe security 
       named in the day's **orders**, not over the account's book — a pending buy into a name not yet held
       needs the same conversion. The stored `stage_json` is never rewritten; the conversion is local to
       the fill. A sale that still exceeds the restated holding is **refused**, not absorbed as a close.
+    - An event that **ENDS** a line instead of re-denominating it — a delist force-exit, a cash merger, a
+      conversion into the acquirer — **CANCELS** that security's pending T+1 orders with a logged reason
+      (**D143**). There is no ratio that converts an order into a line that no longer exists, and the
+      §13.6 event is itself the disposal. A spin-off is **not** such an event: the parent keeps its share
+      count and stays tradable, so its pending orders stand.
   - **Ticker change** → alias update only; position, history, and identity continuous.
   - **Cash merger** → position closed at deal cash per share on effective date (standard costs waived — corporate action, not a trade).
   - **Stock merger** → shares converted at the exchange ratio into the acquirer's `security_id`; cost basis carries.
