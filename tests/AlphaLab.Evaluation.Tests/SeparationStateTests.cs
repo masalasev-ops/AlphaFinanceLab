@@ -43,6 +43,49 @@ public class SeparationStateTests
         Assert.True(sep.IsIndistinguishable);                        // renders the IndistinguishableFromRandom chip
     }
 
+    /// <summary>
+    /// D146's consequence at the read-model, which is why the gate boundary mattered beyond the gate.
+    /// `SeparationState` treats ANY non-TooEarly verdict as decisive, so the `Refused` a degenerate pair
+    /// used to earn suppressed the IndistinguishableFromRandom chip for precisely the strategy most
+    /// indistinguishable from random (rule 21). This pins the mechanism from both sides: `Refused`
+    /// suppresses it, `TooEarly` does not — so the gate fix genuinely restores the chip rather than
+    /// merely relabelling a verdict nobody reads.
+    /// </summary>
+    [Fact]
+    public void D146_ATooEarlyVerdictKeepsTheChip_WhileARefusedOneSuppressesIt()
+    {
+        using var arena = new EvalArena();
+        var dates = EvalArena.Dates(30, new DateOnly(2026, 1, 5));
+        arena.SeedStrategy("degenerate", "candidate", dates, Enumerable.Repeat(0.0, 29).ToArray());
+
+        using var db = arena.Open();
+        SeedS3Path(db, "degenerate", 50, 51, 49);          // squarely inside the band — no separation
+
+        // No verdict at all: the chip renders, which is the baseline this compares against.
+        Assert.True(SeparationState.Resolve(db, "degenerate", Verdicts, "live").IsIndistinguishable);
+
+        // The PRE-D146 verdict for a never-traded pair (gap 0, MDE 0 under a strict `<`).
+        SeedVerdict(db, "degenerate", "2026-06-01", "Refused");
+        Assert.Equal(SeparationInfo.Distinguishable,
+            SeparationState.Resolve(db, "degenerate", Verdicts, "live").State);
+        Assert.False(SeparationState.Resolve(db, "degenerate", Verdicts, "live").IsIndistinguishable);
+
+        // The POST-D146 verdict for the same pair. Later AsOf, so it is the latest.
+        SeedVerdict(db, "degenerate", "2026-07-01", "TooEarly");
+        Assert.True(SeparationState.Resolve(db, "degenerate", Verdicts, "live").IsIndistinguishable);
+    }
+
+    private static void SeedVerdict(AlphaLabDbContext db, string strategyId, string asOf, string verdict)
+    {
+        db.PowerReports.Add(new PowerReportRow
+        {
+            AsOf = asOf, StrategyA = strategyId, StrategyB = "buyhold:cw", TDays = 100,
+            SigmaLr = 0.0, NwLag = 21, MdeAnn = 0.0, ObservedGapAnn = 0.0,
+            Verdict = verdict, RunKind = "live",
+        });
+        db.SaveChanges();
+    }
+
     [Fact]
     public void FX_SeparationChip_EdgePlant_Transitions_None_Emerging_Distinguishable()
     {
