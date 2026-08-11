@@ -151,6 +151,60 @@ public class CorporateActionApplierTests
         finally { TestDb.Delete(path); }
     }
 
+    /// <summary>
+    /// D142: the outcome carries the split's RATIO as data, not as a substring of an English sentence.
+    /// This is what makes the order restatement possible at all — before it, the only machine-readable
+    /// record of the ratio a caller could reach was `Detail`.
+    /// </summary>
+    [Fact]
+    public void FR9_D142_FxSplit_TheOutcomeCarriesTheRatioStructurally_NotOnlyInProse()
+    {
+        var path = TestDb.CreateMigrated();
+        try
+        {
+            using var db = TestDb.Open(path);
+            var account = Seed(db, shares: 100, basis: 10_000m);
+            new CorporateActionIngestion(db).IngestSplits(Aapl,
+                [new SplitEvent(AsOf, Ratio: 2.0, RawRatio: "2/1")], ObservedEarly);
+
+            var outcome = Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark, PrevSession);
+
+            var applied = Assert.Single(outcome.Applied, a => a.Type == CorporateActionType.Split);
+            var restated = Assert.IsType<CorporateActionEffect.PositionRestated>(applied.Effect);
+
+            Assert.Equal(2.0, restated.Ratio);
+            // Read the relationship off the RECORD rather than restating the literal: this asserts the
+            // effect is internally coherent, not that someone typed 200 twice.
+            Assert.Equal(restated.Before.Shares * restated.Ratio, restated.After.Shares);
+        }
+        finally { TestDb.Delete(path); }
+    }
+
+    /// <summary>
+    /// D142: `Detail` is DERIVED from the effect. Two actions of the same type whose effects differ must
+    /// render different prose — the property the old positional `Detail` claimed in a comment and nothing
+    /// checked. It is also the one thing a computed property can still get wrong: a `FormatDetail` that
+    /// returned a constant would compile, satisfy every other test here, and say nothing.
+    /// </summary>
+    [Fact]
+    public void FR9_D142_TheDetailIsDerivedFromTheEffect_NotSuppliedBesideIt()
+    {
+        var before = new Position
+        {
+            AccountId = 1, SecurityId = AaplId, Shares = 100, CostBasis = 10_000m, OpenedOn = "2026-01-02",
+        };
+
+        var twoForOne = new AppliedCorporateAction(1, AaplId, CorporateActionType.Split,
+            new CorporateActionEffect.PositionRestated(before, before with { Shares = 200 }, 2.0));
+        var threeForOne = new AppliedCorporateAction(1, AaplId, CorporateActionType.Split,
+            new CorporateActionEffect.PositionRestated(before, before with { Shares = 300 }, 3.0));
+
+        Assert.NotEqual(twoForOne.Detail, threeForOne.Detail);
+        Assert.Contains("×2", twoForOne.Detail, StringComparison.Ordinal);
+        Assert.Contains("×3", threeForOne.Detail, StringComparison.Ordinal);
+        Assert.Contains("200", twoForOne.Detail, StringComparison.Ordinal);
+    }
+
     // ============================ Ticker change — the D39 non-event ============================
 
     /// <summary>A ticker change causes ZERO ledger churn: no trade, no position change. The alias
@@ -409,6 +463,45 @@ public class CorporateActionApplierTests
             // parent value = 100×150 = 15,000; spinoff value = 100×15 = 1,500; fraction = 1,500/16,500 ≈ 0.0909.
             Assert.Equal(454.55m, spin.CostBasis);                       // 5,000 × 0.0909, rounded to cents
             Assert.Equal(5_000m, store.GetPosition(account, AaplId)!.CostBasis + spin.CostBasis);
+        }
+        finally { TestDb.Delete(path); }
+    }
+
+    /// <summary>
+    /// D142: an action that had nothing to act on is reported as SKIPPED, never as applied.
+    ///
+    /// The geometry: a delist and a dividend both effective today. The read service orders by
+    /// (effective_date, type) and 'delist' sorts before 'dividend', so the delist force-closes the line
+    /// and the dividend then finds no position. It is still recorded — the day's audit must be complete —
+    /// but in its own list, because a row in `Applied` describing something the ledger did not do is the
+    /// same class of unexamined claim as a ratio that lives only in prose.
+    /// </summary>
+    [Fact]
+    public void FR9_D142_AnActionSkippedBecauseTheLineClosed_IsNotReportedAsApplied()
+    {
+        var path = TestDb.CreateMigrated();
+        try
+        {
+            using var db = TestDb.Open(path);
+            var account = Seed(db, shares: 100, basis: 4_000m);
+            AddAction(db, "delist");
+            db.SaveChanges();
+            new CorporateActionIngestion(db).IngestDividends(Aapl,
+                [new DividendEvent(AsOf, 1.50m, 1.50m)], ObservedEarly);
+
+            var outcome = Applier(db).ApplyForAccount(account, RunKind.Live, AsOf, Watermark, PrevSession);
+
+            var applied = Assert.Single(outcome.Applied);
+            Assert.Equal(CorporateActionType.Delist, applied.Type);
+            Assert.IsType<CorporateActionEffect.PositionForceClosed>(applied.Effect);
+
+            var skipped = Assert.Single(outcome.Skipped);
+            Assert.Equal(CorporateActionType.Dividend, skipped.Type);
+            Assert.Contains("closed earlier in the day", skipped.Reason, StringComparison.Ordinal);
+
+            // And the audit is COMPLETE: both actions are accounted for, in the list that describes what
+            // actually happened to each.
+            Assert.Equal(2, outcome.Applied.Count + outcome.Skipped.Count);
         }
         finally { TestDb.Delete(path); }
     }

@@ -5,8 +5,71 @@ using AlphaLab.Data.Entities;
 
 namespace AlphaLab.Data.Services;
 
-/// <summary>One action the applier acted on, for the day's audit / the pipeline's log.</summary>
-public sealed record AppliedCorporateAction(long ActionId, SecurityId Id, CorporateActionType Type, string Detail);
+/// <summary>
+/// One action the applier ACTED ON, for the day's audit / the pipeline's log.
+///
+/// <see cref="Effect"/> is the structured result — the same closed hierarchy the pure engine returned —
+/// and it is load-bearing rather than decorative: the pipeline reads <c>PositionRestated.Ratio</c> off it
+/// to restate that security's pending orders (D142). It used to be interpolated into a <c>Detail</c>
+/// STRING and thrown away, which left the only machine-readable record of a split's ratio as a substring
+/// of an English sentence.
+///
+/// <see cref="Detail"/> is now DERIVED from <see cref="Effect"/> rather than supplied beside it. As a
+/// positional parameter it was whatever the caller passed, so "the prose and the data cannot drift"
+/// would have been a claim nothing examined — the shape D140 forbids, in the very change made to satisfy
+/// it. As a computed property the compiler is the enforcement, and no grep is needed (nor could one ever
+/// go red).
+/// </summary>
+public sealed record AppliedCorporateAction(
+    long ActionId, SecurityId Id, CorporateActionType Type, CorporateActionEffect Effect)
+{
+    /// <summary>The audit line, rendered from the effect. Every fact in it comes off
+    /// <see cref="Effect"/>, so it cannot describe something the ledger did not do.</summary>
+    public string Detail => FormatDetail(Effect);
+
+    private static string FormatDetail(CorporateActionEffect effect) => effect switch
+    {
+        CorporateActionEffect.DividendCredited d =>
+            $"dividend: {d.Shares} sh × {d.PerShare} = {d.Cash.Amount} credited on ex-date {d.Cash.AsOf}.",
+
+        CorporateActionEffect.PositionRestated r =>
+            $"split ×{r.Ratio}: {r.Before.Shares} → {r.After.Shares} sh, basis {r.After.CostBasis} unchanged.",
+
+        CorporateActionEffect.TickerRenamedNoLedgerEffect t =>
+            $"ticker change → '{t.NewSymbol}': no ledger effect (identity is security_id, D39).",
+
+        CorporateActionEffect.PositionForceClosed f =>
+            $"force-closed: sell {f.Sell.Shares} sh @ {f.Sell.RawFillPrice} (costs waived), position removed.",
+
+        // The pre-D142 wording opened with the target's PRE-merger share count, which lives on the
+        // position rather than on the effect. Rendering it here would mean passing it in beside the
+        // effect — reintroducing exactly the supplied-not-derived shape this record exists to remove.
+        // The count is dropped deliberately, and said so rather than quietly reworded: SharesConverted
+        // and the acquirer are the substantive facts, and `trades` carries the history either way.
+        CorporateActionEffect.StockMergerConverted s =>
+            $"stock merger: converted into {s.SharesConverted} sh of {s.AcquirerAfter.SecurityId}, basis carried.",
+
+        CorporateActionEffect.MixedMergerApplied m =>
+            $"mixed merger: {m.Cash.Amount} cash + {m.SharesConverted} sh of {m.AcquirerAfter.SecurityId}.",
+
+        CorporateActionEffect.SpinoffReceived sp =>
+            $"spin-off: new {sp.SpinoffPosition.Shares} sh of {sp.SpinoffPosition.SecurityId}, " +
+            $"basis {sp.SpinoffPosition.CostBasis} moved from parent (now {sp.ParentAfter.CostBasis}).",
+
+        _ => throw new ArgumentOutOfRangeException(nameof(effect), effect, "Unmapped corporate-action effect."),
+    };
+}
+
+/// <summary>
+/// An action that was DUE but had nothing to act on — the position was closed earlier the same day by a
+/// terminal event, so the engine never ran and there is no effect.
+///
+/// Its own list rather than an <c>Effect</c>-less <see cref="AppliedCorporateAction"/>: a nullable field
+/// that carries "nothing happened" makes every reader handle a case the type says is normal, and it let
+/// <see cref="CorporateActionOutcome.Applied"/> report actions that were not applied. The audit stays
+/// complete; the name stops overstating.
+/// </summary>
+public sealed record SkippedCorporateAction(long ActionId, SecurityId Id, CorporateActionType Type, string Reason);
 
 /// <summary>A position frozen by the fail-closed stoppage check, with its reason.</summary>
 public sealed record FrozenByStoppage(SecurityId Id, string Reason);
@@ -14,6 +77,7 @@ public sealed record FrozenByStoppage(SecurityId Id, string Reason);
 /// <summary>What one account's corporate-action pass did on one day.</summary>
 public sealed record CorporateActionOutcome(
     IReadOnlyList<AppliedCorporateAction> Applied,
+    IReadOnlyList<SkippedCorporateAction> Skipped,
     IReadOnlyList<FrozenByStoppage> Frozen);
 
 /// <summary>
@@ -61,6 +125,7 @@ public sealed class CorporateActionApplier(
         ArgumentException.ThrowIfNullOrWhiteSpace(watermark);
 
         var applied = new List<AppliedCorporateAction>();
+        var skipped = new List<SkippedCorporateAction>();
         var frozen = new List<FrozenByStoppage>();
 
         // Snapshot the held set up front. A split re-writes a position row (via UpsertPosition), so we
@@ -76,8 +141,7 @@ public sealed class CorporateActionApplier(
             // of record, which is the correct order.
             var todays = actions.GetActionsAsOf(securityId.Value, watermark)
                 .Select(ToDomain)
-                .Where(a => string.CompareOrdinal(a.AppliedOn, asOf) <= 0
-                            && (previousSession is null || string.CompareOrdinal(a.AppliedOn, previousSession) > 0))
+                .Where(a => CorporateActionWindow.Contains(a.AppliedOn, previousSession, asOf))
                 .ToList();
 
             var hasTerminalToday = todays.Any(IsTerminal);
@@ -89,9 +153,11 @@ public sealed class CorporateActionApplier(
                 if (position is null)
                 {
                     // The account stopped holding it mid-day (a delist/merger close). Nothing left to
-                    // apply — but record the skip so the day's audit is complete rather than silent.
-                    applied.Add(new AppliedCorporateAction(action.ActionId, securityId, action.Type,
-                        "skipped: the position was closed earlier in the day."));
+                    // apply — but record the skip so the day's audit is complete rather than silent. It
+                    // goes in `skipped`, not `applied`: nothing was applied, and a list that says
+                    // otherwise is a claim the row itself contradicts.
+                    skipped.Add(new SkippedCorporateAction(action.ActionId, securityId, action.Type,
+                        "the position was closed earlier in the day."));
                     continue;
                 }
 
@@ -114,7 +180,7 @@ public sealed class CorporateActionApplier(
             }
         }
 
-        return new CorporateActionOutcome(applied, frozen);
+        return new CorporateActionOutcome(applied, skipped, frozen);
     }
 
     /// <summary>Assemble the extra facts a part-2 kind needs. Part-1 kinds ignore all of it, so this is
@@ -178,57 +244,58 @@ public sealed class CorporateActionApplier(
         return SpinoffAllocation.ByFirstPrint(parent.Shares, parent.CostBasis, pp, sp);
     }
 
+    /// <summary>Write the effect down. It no longer composes an audit string — the effect IS the record,
+    /// and <see cref="AppliedCorporateAction.Detail"/> renders it. This method's whole job is the ledger
+    /// writes, which is why every arm now differs only in those.</summary>
     private AppliedCorporateAction Persist(CorporateActionEffect effect, Position current, CorporateAction action)
     {
         switch (effect)
         {
             case CorporateActionEffect.DividendCredited d:
                 ledger.RecordCashEvent(d.Cash);
-                return Note(action, $"dividend: {d.Shares} sh × {d.PerShare} = {d.Cash.Amount} credited on ex-date {d.Cash.AsOf}.");
+                break;
 
             case CorporateActionEffect.PositionRestated r:
                 ledger.UpsertPosition(r.After);
-                return Note(action, $"split ×{r.Ratio}: {r.Before.Shares} → {r.After.Shares} sh, basis {r.After.CostBasis} unchanged.");
+                break;
 
-            case CorporateActionEffect.TickerRenamedNoLedgerEffect t:
+            case CorporateActionEffect.TickerRenamedNoLedgerEffect:
                 // D39: nothing to persist. The alias was updated in ticker_history at ingestion; the
                 // position keeps its security_id. Recorded so the audit shows the non-event explicitly.
-                return Note(action, $"ticker change → '{t.NewSymbol}': no ledger effect (identity is security_id, D39).");
+                break;
 
             case CorporateActionEffect.PositionForceClosed f:
                 // Cash merger / delist: a forced sell with costs waived, then the position is removed.
                 ledger.RecordTrade(f.Sell);
                 Remove(current);
-                return Note(action, $"force-closed: sell {f.Sell.Shares} sh @ {f.Sell.RawFillPrice} (costs waived), position removed.");
+                break;
 
             case CorporateActionEffect.StockMergerConverted s:
-                Remove(current);                      // target gone
+                Remove(current);                        // target gone
                 ledger.UpsertPosition(s.AcquirerAfter); // converted into the acquirer, basis carried
-                return Note(action, $"stock merger: {current.Shares} sh → {s.SharesConverted} sh of {s.AcquirerAfter.SecurityId}, basis carried.");
+                break;
 
             case CorporateActionEffect.MixedMergerApplied m:
-                ledger.RecordCashEvent(m.Cash);       // cash leg
-                Remove(current);                      // target gone
+                ledger.RecordCashEvent(m.Cash);         // cash leg
+                Remove(current);                        // target gone
                 ledger.UpsertPosition(m.AcquirerAfter); // stock leg
-                return Note(action, $"mixed merger: {m.Cash.Amount} cash + {m.SharesConverted} sh of {m.AcquirerAfter.SecurityId}.");
+                break;
 
             case CorporateActionEffect.SpinoffReceived sp:
                 ledger.UpsertPosition(sp.ParentAfter);      // parent basis reduced, shares unchanged
                 ledger.UpsertPosition(sp.SpinoffPosition);  // new receipt, enters even if not in-index
-                return Note(action, $"spin-off: new {sp.SpinoffPosition.Shares} sh of {sp.SpinoffPosition.SecurityId}, " +
-                    $"basis {sp.SpinoffPosition.CostBasis} moved from parent (now {sp.ParentAfter.CostBasis}).");
+                break;
 
             default:
                 throw new ArgumentOutOfRangeException(nameof(effect), effect, "Unmapped corporate-action effect.");
         }
+
+        return new AppliedCorporateAction(action.ActionId, action.SecurityId, action.Type, effect);
     }
 
     /// <summary>Remove a position by upserting it to zero shares (which deletes the row — positions is
     /// current state, not a log; the trades log keeps the history).</summary>
     private void Remove(Position position) => ledger.UpsertPosition(position with { Shares = 0 });
-
-    private static AppliedCorporateAction Note(CorporateAction action, string detail) =>
-        new(action.ActionId, action.SecurityId, action.Type, detail);
 
     /// <summary>Does a corporate action explain why a HELD name has no bar today? Only the events that
     /// STOP the name trading do — a cash/stock/mixed merger (the target is absorbed) or a delist. A
