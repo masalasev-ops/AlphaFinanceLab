@@ -209,6 +209,57 @@ public class OrderRestatementTests
         ActionId = 1, SecurityId = Aapl, Type = type, EffectiveDate = "2026-07-16",
     };
 
+    /// <summary>
+    /// D143's counterpart closure. `TerminatesPosition` decides whether a pending order in that security
+    /// still has anything to act on; getting it wrong in one direction fills into a line that no longer
+    /// exists, and in the other silently drops a valid order. Iterated over the enum for the same reason
+    /// as the ratio closure — a new action kind must fail here before it can ship.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(EveryActionType))]
+    public void FR9_D143_TerminatesPosition_MatchesWhatApplyActuallyDidToTheLine(CorporateActionType type)
+    {
+        var position = new Position
+        {
+            AccountId = 1, SecurityId = Aapl, Shares = 100, CostBasis = 10_000m, OpenedOn = "2026-01-02",
+        };
+        var context = new CorporateActionContext
+        {
+            LastPrintPrice = 150m, BankruptcyHaircut = 0.0,
+            SpinoffShares = 5.0, SpinoffBasisAllocated = 500m, ExistingCounterpartyPosition = null,
+        };
+
+        var effect = CorporateActionLedger.Apply(position, ValidActionFor(type), RunKind.Live, context);
+
+        // The line ends exactly when the effect removes it from THIS security: a force-close, or a
+        // conversion away into the acquirer. Expressed against the effect hierarchy rather than against a
+        // list of type names, so the two cannot disagree.
+        var expected = effect is CorporateActionEffect.PositionForceClosed
+            or CorporateActionEffect.StockMergerConverted
+            or CorporateActionEffect.MixedMergerApplied;
+
+        Assert.Equal(expected, CorporateActionLedger.TerminatesPosition(effect));
+    }
+
+    [Fact]
+    public void FR9_D143_ASpinoffIsNotATermination_TheParentKeepsItsSharesAndStaysTradable()
+    {
+        // The case most likely to be flipped by someone reasoning from "a new security appeared". The
+        // parent's share count is untouched — only basis moves — so a pending order in the parent is
+        // still valid, and cancelling it would drop a good order.
+        var position = new Position
+        {
+            AccountId = 1, SecurityId = Aapl, Shares = 100, CostBasis = 10_000m, OpenedOn = "2026-01-02",
+        };
+        var effect = CorporateActionLedger.Apply(
+            position, ValidActionFor(CorporateActionType.Spinoff), RunKind.Live,
+            new CorporateActionContext { SpinoffShares = 5.0, SpinoffBasisAllocated = 500m });
+
+        var spinoff = Assert.IsType<CorporateActionEffect.SpinoffReceived>(effect);
+        Assert.Equal(position.Shares, spinoff.ParentAfter.Shares);
+        Assert.False(CorporateActionLedger.TerminatesPosition(effect));
+    }
+
     [Fact]
     public void FR9_D142_ASplitWithNoUsableRatio_IsRefusedRatherThanTreatedAsNoRestatement()
     {
