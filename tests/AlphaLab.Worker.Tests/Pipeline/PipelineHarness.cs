@@ -1,5 +1,7 @@
 using System.Globalization;
 using AlphaLab.Core.Config;
+using AlphaLab.Core.Funnel;
+using AlphaLab.Core.Ledger;
 using AlphaLab.Data;
 using AlphaLab.Data.Entities;
 using AlphaLab.Data.Providers;
@@ -173,6 +175,73 @@ public sealed class PipelineHarness : IDisposable
         using var scope = _provider.CreateScope();
         var pipeline = scope.ServiceProvider.GetRequiredService<DailyPipeline>();
         return await pipeline.RunDayAsync(asOf, runKind);
+    }
+
+    // ---- levers for the D142 pending-order fixtures ----
+
+    /// <summary>
+    /// Overwrite an account's stored decision for <paramref name="decidedOn"/> with a snapshot carrying
+    /// exactly <paramref name="orders"/>, so the next session's <c>FillPriorOrders</c> has something to
+    /// fill. Every other stage list is empty: this is the T+1 CARRIER, not a funnel result.
+    ///
+    /// WHY A TEST NEEDS THIS AT ALL. None of the three seeded strategies emits a sell inside the
+    /// harness's window — <c>buyhold:cw</c> never exits, and the two rebalancing strategies would need
+    /// session 21 past the pre-seed boundary, which a 50-session calendar does not reach. Without a lever
+    /// the whole sell-side of the fill path is untestable end to end, which is a fair part of why the
+    /// oversell hole survived to be found by review rather than by a fixture.
+    ///
+    /// <c>RecordDecision</c> upserts on (account, as_of, run_kind), so this REPLACES the day's real
+    /// snapshot rather than racing it.
+    /// </summary>
+    public void PlantPriorOrder(long accountId, string strategyId, string decidedOn, params PlannedOrder[] orders)
+    {
+        using var db = Open();
+        var snapshot = new DecisionSnapshot
+        {
+            StrategyId = strategyId,
+            AsOf = decidedOn,
+            Watermark = $"{decidedOn}T22:00:00Z",
+            Stage1Eligible = [],
+            Stage2Scores = [],
+            Stage3WishList = [],
+            Stage4 = new Stage4Snapshot([], [], [], RebalanceScope.OpensOnly),
+            Stage5Targets = [],
+            Stage5UninvestedCash = 0m,
+            Stage6Orders = orders,
+            Notes = [],
+        };
+        new LedgerStore(db).RecordDecision(accountId, decidedOn, snapshot.ToJson(), RunKind.Live);
+    }
+
+    /// <summary>
+    /// Re-price the fake feed from <paramref name="fromSession"/> onward by <paramref name="priceFactor"/>
+    /// (and volume by its reciprocal), so a planted split is economically coherent and the money
+    /// assertions mean something: a 2-for-1 that leaves the quoted price unchanged would let a wrong
+    /// share count still produce the right notional, and the fixture would pass for the wrong reason.
+    ///
+    /// Keep factors modest (0.25–2). A ≥10× step with a revert trips
+    /// <c>DataQualityGate.CheckImpossibleSpikeReverts</c> and the day would abort for an unrelated
+    /// reason; a one-way step of this size is only a robust-z Warn, which rides along without aborting.
+    /// </summary>
+    public void RescaleBarsFrom(string symbol, string fromSession, double priceFactor)
+    {
+        for (var i = 0; i < Sessions.Count; i++)
+        {
+            if (string.CompareOrdinal(Sessions[i], fromSession) < 0) continue;
+            var (open, high, low, close) = Ramp(i);
+            Market.SetBar(symbol, new EodBar(
+                Sessions[i],
+                open * priceFactor, high * priceFactor, low * priceFactor,
+                close * priceFactor, close * priceFactor,
+                (long)(10_000_000 / priceFactor)));
+        }
+    }
+
+    /// <summary>The account id an already-run harness opened for <paramref name="strategyId"/>.</summary>
+    public long AccountIdFor(string strategyId)
+    {
+        using var db = Open();
+        return db.Accounts.Single(a => a.StrategyId == strategyId && a.RunKind == "live").AccountId;
     }
 
     // ---- scenario seeding ----

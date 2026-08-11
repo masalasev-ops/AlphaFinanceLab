@@ -501,19 +501,11 @@ public sealed class DailyPipeline(
                 $"Fill sells {trade.Shares} of security {trade.SecurityId} in account {accountId} but the position is not held — " +
                 "the funnel planned a close/trim against a book the ledger disagrees with.");
         }
-        var newShares = existing.Shares - trade.Shares;
-        if (newShares <= 1e-9)
-        {
-            ledger.UpsertPosition(existing with { Shares = 0 }); // deletes the row (positions is state, not a log)
-        }
-        else
-        {
-            ledger.UpsertPosition(existing with
-            {
-                Shares = newShares,
-                CostBasis = BasisMath.ReduceForSale(existing.CostBasis, newShares, existing.Shares),
-            });
-        }
+
+        // The arithmetic — and the oversell refusal that used to be missing here — live in Core, where a
+        // unit test can falsify them without standing up a pipeline. Sibling of the throw above: that one
+        // refuses a sell against no position, this one refuses a sell LARGER than the position.
+        ledger.UpsertPosition(PositionMath.ApplySell(existing, trade.Shares));
     }
 
     // The random control populations (D36 / STRATEGY_CATALOG §5.2). Members are lightweight ledger-only
