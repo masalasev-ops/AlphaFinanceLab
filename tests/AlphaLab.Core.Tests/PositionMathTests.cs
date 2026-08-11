@@ -90,6 +90,35 @@ public class PositionMathTests
     }
 
     [Fact]
+    public void FR9_D147_ABuyIntoAFrozenLine_DoesNotClearTheFreeze()
+    {
+        // THE SILENT UNFREEZE. The buy leg used to rebuild the row from four fields, so Frozen and
+        // FrozenReason were dropped and an ordinary fill performed D55's AUDITED unfreeze with no admin
+        // action, no audit row and no operator. The sell leg always preserved them, so the asymmetry was
+        // unintentional — which is exactly why it survived: nothing in either leg looked wrong alone.
+        var frozen = Held(50.0) with { Frozen = true, FrozenReason = "unmapped corporate action" };
+
+        var after = PositionMath.ApplyBuy(frozen, 7, new SecurityId(42), 10.0, 20m, "2026-02-01");
+
+        Assert.True(after.Frozen);
+        Assert.Equal("unmapped corporate action", after.FrozenReason);
+        Assert.Equal(60.0, after.Shares);
+        Assert.Equal("2026-01-05", after.OpenedOn);   // an add is not a new position
+    }
+
+    [Fact]
+    public void FR9_D147_ABuyThatOpensALine_StartsUnfrozen_AtTheFillDate()
+    {
+        var after = PositionMath.ApplyBuy(null, 7, new SecurityId(42), 10.0, 20m, "2026-02-01");
+
+        Assert.False(after.Frozen);
+        Assert.Null(after.FrozenReason);
+        Assert.Equal(10.0, after.Shares);
+        Assert.Equal(200m, after.CostBasis);
+        Assert.Equal("2026-02-01", after.OpenedOn);
+    }
+
+    [Fact]
     public void FR9_D142_TheShareToleranceIsOneNumber_SharedWithTheFunnel()
     {
         // OrderBuilder reads this constant for its smallest routable delta. If the two ever diverge, an

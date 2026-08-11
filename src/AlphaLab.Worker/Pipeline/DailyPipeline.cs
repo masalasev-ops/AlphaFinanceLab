@@ -548,14 +548,10 @@ public sealed class DailyPipeline(
 
         if (trade.Side == TradeSide.Buy)
         {
-            ledger.UpsertPosition(new Position
-            {
-                AccountId = accountId,
-                SecurityId = trade.SecurityId,
-                Shares = (existing?.Shares ?? 0) + trade.Shares,
-                CostBasis = BasisMath.AddBuy(existing?.CostBasis ?? 0m, trade.RawFillPrice, trade.Shares),
-                OpenedOn = existing?.OpenedOn ?? trade.FilledOn,
-            });
+            // Both legs now go through Core, and symmetrically: the buy leg used to rebuild the row from
+            // four fields and drop Frozen/FrozenReason on the floor (D147).
+            ledger.UpsertPosition(PositionMath.ApplyBuy(
+                existing, accountId, trade.SecurityId, trade.Shares, trade.RawFillPrice, trade.FilledOn));
             return;
         }
 

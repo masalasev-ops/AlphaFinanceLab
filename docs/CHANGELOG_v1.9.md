@@ -239,3 +239,37 @@ D142 recorded that generation 2 must be regenerated **whole or not at all**, bec
 **D146 — a gap equal to its MDE is inside it, and an unestimable MDE adjudicates nothing.** The row carries the degenerate-pair case, the asymmetric-guard defect, the read-model consequence via `SeparationState`'s `decisive` shortcut, and the explicit statement of what was left alone and why.
 
 *Verification: `check-register` green at **146 rows, D1..D146**; `ci.ps1` green — **1,285 tests** (from 1,280), seven projects, zero skipped, all nine guard greps.*
+
+---
+
+## v1.9.106 — Phase 6.5a (review remediation, PR 6): the freeze rail (2026-08-11)
+
+*Recorded 2026-08-11. **Phase 6 checkpoint 6.5a, PR 6 — the last of the queue D142's review opened.** Decision **D147** new; findings **409—410**, each with the rule-26 Consequences field. Ledger arithmetic bumps `la-2` → `la-3` (D144). No migration, no schema change, no config key. Full suite green at 1,291 tests across seven projects. Next-free finding after this entry: **411**.*
+
+### finding 409 — a frozen position was re-sized and traded on every rebalance day, beneath a comment saying it was held untouched
+
+§13.6 / rule 10 freeze a position when an unmapped corporate action or a bar stoppage makes it unpriceable: its valuation is pinned and the ExitPolicy is never consulted on it. `PortfolioPlanner` put the frozen name into **`Holds`** — and `PortfolioPlan.ToSize` unions `Holds` with `Opens` on a WHOLE-BOOK rebalance. So Stage 5 re-sized it and Stage 6 traded it, **priced at the very number the freeze had declared untrustworthy**, on every rebalance day, indefinitely. The comment three lines above said "held untouched".
+
+A freeze exists to say *we do not trust this price*. Trading the position at that price is not a weaker version of the rule; it is the rule inverted, on a schedule.
+
+**Why nothing caught it: there were NO `PortfolioPlanner` tests at all.** Not thin ones — none. So the comment and the behaviour drifted apart with no failing test between them. It was also invisible on ordinary days, because `OpensOnly` sizes only `Opens`; it took a 21st session to appear, which is why a code reading found it and three phases of running did not.
+**Consequences:** `PortfolioPlan` gains a `Frozen` list and the planner fills it instead of `Holds` — a separate collection is what makes "untouched" structural rather than documentary, since `ToSize` then cannot reach it by construction. `Stage4Snapshot` gains `Frozen` as an **optional, defaulted** member and `snapshot_version` is deliberately **not** bumped: `FromJson` refuses any version but the current one, so a bump would make every stored `ds-1.0` row unreadable at the moment of deploy — including the row a run reads to fill YESTERDAY's orders and every row `reproduce-day` replays. Additive-and-tolerant is the discipline D133 applied to `config_json`. New file `PortfolioPlannerFreezeTests` — the planner's first — including an anti-vacuity case so a planner that sized nothing could not satisfy the rest.
+
+### finding 410 — an ordinary buy performed D55's audited unfreeze, with no admin action and no audit row
+
+`PostFill`'s buy leg rebuilt the position from four fields, so `Frozen` and `FrozenReason` were dropped on every buy. A fill into a frozen name therefore **cleared the freeze** — the same state change D55 makes typed, confirmed and audited, produced silently by the funnel with no `admin_actions` row and no operator. The sell leg two lines below used `existing with { … }` and preserved the flags, so the asymmetry was plainly unintentional: nothing in either leg looked wrong when read alone, and nothing compared them.
+
+The unfreeze half is worse in kind than the sizing half. D55 exists precisely so that state changes of this weight leave a record; a fill that clears the flag produces the change with no record at all, and the position rejoins the tradable book as though an operator had resolved it.
+**Consequences:** `PositionMath.ApplyBuy` (new) joins `ApplySell`, so both legs are expressed the same way in Core and are unit-testable without a pipeline — which is what stops the asymmetry recurring. `DailyPipeline.PostFill` delegates both. Fixtures pin that a buy into a frozen line keeps the flag and its reason, and that a buy which OPENS a line starts unfrozen at the fill date.
+
+### The decision
+
+**D147 — a frozen position is not sized, not traded, and a fill never clears the freeze.** The row carries both defeat sites, the snapshot-compatibility reasoning, and the arithmetic bump.
+
+**This is a ledger arithmetic change.** A rebalance day's stored trades differ given identical inputs, so `LedgerArithmetic.Version` bumps **`la-2` → `la-3`** — the first bump driven by a decision that is not about corporate actions, and exactly the case D144's rule was written for. Generation 2's stored rows are unaffected and it remains subject to D144's whole-or-nothing constraint; a partial re-run against it was already refused (it is unstamped) and now would be refused on the version too.
+
+*Verification: `check-register` green at **147 rows, D1..D147**; `ci.ps1` green — **1,291 tests** (from 1,285), seven projects, zero skipped, all nine guard greps. Falsifier run: restoring the frozen name to `Holds` turns two of the four planner fixtures red while the anti-vacuity and OpensOnly cases stay green.*
+
+---
+
+**The 6.5a queue that D142's review opened is now closed** — F1, F26, F27, F4, F23 and F5, six PRs, decisions D142—D147. The remaining review findings (F3+F10, F6, F9, F12+F17+F24, F13+F15, F16, F18+F21, F25) stay listed in PROGRESS with their evidence.

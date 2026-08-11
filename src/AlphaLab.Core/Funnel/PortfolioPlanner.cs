@@ -26,8 +26,20 @@ public sealed record PortfolioPlan
     /// <summary>On the wish list and not currently held — new positions.</summary>
     public required IReadOnlyList<SecurityId> Opens { get; init; }
 
-    /// <summary>Held and surviving the ExitPolicy.</summary>
+    /// <summary>Held, tradable, and surviving the ExitPolicy.</summary>
     public required IReadOnlyList<SecurityId> Holds { get; init; }
+
+    /// <summary>
+    /// Held but FROZEN (§13.6 / rule 10) — kept out of <see cref="Holds"/> deliberately (D147).
+    ///
+    /// A frozen position is unpriceable: an unmapped corporate action or a bar stoppage pinned its
+    /// valuation, and the ExitPolicy is never consulted on it. Before this list existed, a frozen name
+    /// was placed in <see cref="Holds"/> beneath a comment saying it was "held untouched" — and
+    /// <see cref="ToSize"/> unions Holds with Opens on a whole-book rebalance, so it was re-sized and
+    /// TRADED on every rebalance day, priced at the number the freeze had already declared
+    /// untrustworthy. Being a separate list is what makes "untouched" true rather than intended.
+    /// </summary>
+    public required IReadOnlyList<SecurityId> Frozen { get; init; }
 
     /// <summary>Held and closed by the ExitPolicy.</summary>
     public required IReadOnlyList<PlannedClose> Closes { get; init; }
@@ -37,8 +49,9 @@ public sealed record PortfolioPlan
     /// <summary>Every hold/close/skip decision, with its reason — bound for stage_json.</summary>
     public required IReadOnlyList<FunnelNote> Notes { get; init; }
 
-    /// <summary>The names Stage 5 sizes today: the new opens, plus the surviving book on a
-    /// rebalance day. Never includes a close — a closed name is sold in full, not sized.</summary>
+    /// <summary>The names Stage 5 sizes today: the new opens, plus the surviving TRADABLE book on a
+    /// rebalance day. Never includes a close — a closed name is sold in full, not sized — and never a
+    /// frozen name, which is not sized at all until an operator resolves the freeze (D147).</summary>
     public IReadOnlyList<SecurityId> ToSize => Scope == RebalanceScope.WholeBook
         ? Holds.Concat(Opens).Distinct().OrderBy(x => x.Value).ToList()
         : Opens;
@@ -80,6 +93,7 @@ public static class PortfolioPlanner
         ArgumentNullException.ThrowIfNull(context);
 
         var holds = new List<SecurityId>();
+        var frozen = new List<SecurityId>();
         var closes = new List<PlannedClose>();
         var notes = new List<FunnelNote>();
 
@@ -92,10 +106,15 @@ public static class PortfolioPlanner
             // resolves the freeze. Not an exit decision at all — the policy is never consulted.
             if (position.Frozen)
             {
-                holds.Add(position.SecurityId);
+                // Its OWN list, not Holds (D147). Holds feeds ToSize, which a whole-book rebalance
+                // re-sizes — so a frozen name placed there was traded on every rebalance day at the very
+                // price the freeze declared untrustworthy, directly beneath a comment promising it was
+                // held untouched.
+                frozen.Add(position.SecurityId);
                 notes.Add(new FunnelNote(position.SecurityId,
-                    $"frozen ({position.FrozenReason}) — held untouched; the ExitPolicy is not consulted on a " +
-                    "position whose price we have already declared untrustworthy."));
+                    $"frozen ({position.FrozenReason}) — held untouched: not sized, not traded, and the " +
+                    "ExitPolicy is not consulted on a position whose price we have already declared " +
+                    "untrustworthy. It leaves this state only through an operator's audited action (D55)."));
                 continue;
             }
 
@@ -127,6 +146,7 @@ public static class PortfolioPlanner
         {
             Opens = opens,
             Holds = holds,
+            Frozen = frozen,
             Closes = closes,
             Scope = ScopeFor(policy, context),
             Notes = notes,

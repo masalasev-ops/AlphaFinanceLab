@@ -13,7 +13,13 @@ public sealed record Stage4Snapshot(
     IReadOnlyList<SecurityId> Opens,
     IReadOnlyList<SecurityId> Holds,
     IReadOnlyList<PlannedClose> Closes,
-    RebalanceScope Scope);
+    RebalanceScope Scope,
+    /// <summary>Held but frozen — never sized, never traded (D147). ADDITIVE and OPTIONAL on purpose:
+    /// a snapshot written before D147 has no such property, and this read path is how a run fills
+    /// YESTERDAY's orders. Making it required would have made every stored ds-1.0 row unreadable at the
+    /// moment of deploy, which is a far worse failure than the one being fixed — and bumping
+    /// snapshot_version would do the same, since FromJson refuses anything but the current version.</summary>
+    IReadOnlyList<SecurityId>? Frozen = null);
 
 /// <summary>
 /// The funnel's stage-1..6 snapshot for ONE strategy-day — the thing that becomes
