@@ -90,11 +90,11 @@ public class CalibratedCurveTests
         var noise = 20.0;
         var edge = 60.0;
         // First evaluation below P_noise: WARNING (sustain not yet met) — a single dip never kills.
-        var first = MonitorSignals.S3Trajectory(15.0, 21, noise, edge, priorConsecutiveBelowNoise: 0, sustainEvals: 2);
+        var first = MonitorSignals.S3Trajectory(15.0, 21, noise, edge, priorConsecutiveBelowNoise: 0, sustainEvals: 2, priorConsecutiveAboveEdge: 0);
         Assert.Equal(MonitorStatus.Warning, first.Status);
         Assert.Equal("below_noise", first.Contribution);
         // Second consecutive below: SUSPECT — the anti-predictive fast-kill channel (D63).
-        var second = MonitorSignals.S3Trajectory(12.0, 42, noise, edge, priorConsecutiveBelowNoise: 1, sustainEvals: 2);
+        var second = MonitorSignals.S3Trajectory(12.0, 42, noise, edge, priorConsecutiveBelowNoise: 1, sustainEvals: 2, priorConsecutiveAboveEdge: 0);
         Assert.Equal(MonitorStatus.Suspect, second.Status);
         Assert.Equal("suspect", second.Contribution);
     }
@@ -106,20 +106,42 @@ public class CalibratedCurveTests
         // indistinguishability is the D63 separation state's job, not a monitor kill.
         for (var evaluation = 0; evaluation < 20; evaluation++)
         {
-            var s = MonitorSignals.S3Trajectory(50.0, (evaluation + 1) * 21, 20.0, 90.0, 0, 2);
+            var s = MonitorSignals.S3Trajectory(50.0, (evaluation + 1) * 21, 20.0, 90.0, 0, 2, 0);
             Assert.Equal("between", s.Contribution);
             Assert.Equal(MonitorStatus.Warning, s.Status);
         }
     }
 
     [Fact]
-    public void FX_S3Trajectory_EdgePlant_ReadsAboveTheCurve()
+    public void FX_S3Trajectory_EdgePlant_ReadsAboveTheCurve_ONCE_SUSTAINED()
     {
-        var s = MonitorSignals.S3Trajectory(95.0, 84, 20.0, 90.0, 0, 2);
-        Assert.Equal("above_edge", s.Contribution);
-        Assert.Equal(MonitorStatus.Healthy, s.Status);
+        // D148: Healthy is SUSTAINED too. OVERFITTING_MONITOR §3 states the band as "Suspect below
+        // P_noise(t) sustained · Healthy above P_edge(t) sustained · Warning between", and only the
+        // Suspect arm had it — so one lucky print above the edge curve read Healthy while one unlucky
+        // print below the noise curve correctly read only Warning. A signal whose adverse arm demands
+        // persistence and whose favourable arm does not is biased by construction.
+        var first = MonitorSignals.S3Trajectory(95.0, 84, 20.0, 90.0, 0, 2, priorConsecutiveAboveEdge: 0);
+        Assert.Equal("approaching_edge", first.Contribution);
+        Assert.Equal(MonitorStatus.Warning, first.Status);
+
+        var second = MonitorSignals.S3Trajectory(95.0, 105, 20.0, 90.0, 0, 2, priorConsecutiveAboveEdge: 1);
+        Assert.Equal("above_edge", second.Contribution);
+        Assert.Equal(MonitorStatus.Healthy, second.Status);
+
         // And it is NEVER Suspect at any horizon while above the noise envelope (≥ Warning, FX text).
-        Assert.NotEqual(MonitorStatus.Suspect, MonitorSignals.S3Trajectory(40.0, 84, 20.0, 90.0, 0, 2).Status);
+        Assert.NotEqual(MonitorStatus.Suspect, MonitorSignals.S3Trajectory(40.0, 84, 20.0, 90.0, 0, 2, 0).Status);
+    }
+
+    [Fact]
+    public void D148_AnAboveEdgeStreakBreaksWhenThePathDropsBackUnderTheCurve()
+    {
+        // The streak is not cumulative-ever: a path that falls back to "between" starts counting again,
+        // which is what makes "sustained" mean consecutive rather than merely frequent.
+        Assert.True(MonitorSignals.ContinuesAboveEdgeStreak("approaching_edge"));
+        Assert.True(MonitorSignals.ContinuesAboveEdgeStreak("above_edge"));
+        Assert.False(MonitorSignals.ContinuesAboveEdgeStreak("between"));
+        Assert.False(MonitorSignals.ContinuesAboveEdgeStreak("below_noise"));
+        Assert.False(MonitorSignals.ContinuesAboveEdgeStreak("suspect"));
     }
 
     [Fact]

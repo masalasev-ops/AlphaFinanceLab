@@ -273,3 +273,36 @@ The unfreeze half is worse in kind than the sizing half. D55 exists precisely so
 ---
 
 **The 6.5a queue that D142's review opened is now closed** — F1, F26, F27, F4, F23 and F5, six PRs, decisions D142—D147. The remaining review findings (F3+F10, F6, F9, F12+F17+F24, F13+F15, F16, F18+F21, F25) stay listed in PROGRESS with their evidence.
+
+---
+
+## v1.9.107 — Phase 6.5a (review remediation, PR 7): "sustained" means sustained (2026-08-11)
+
+*Recorded 2026-08-11. **Phase 6 checkpoint 6.5a, PR 7.** Decision **D148** new; findings **411—413**, each with the rule-26 Consequences field. D136 gains its missing amendment naming; D47 and D53 Status cells corrected. No migration, no schema change, no config key; **no D144 arithmetic bump** (see finding 412). Full suite green at 1,297 tests across seven projects. Next-free finding after this entry: **414**.*
+
+### finding 411 — the register carried two live specifications for how membership refreshes, and check-register structurally cannot see that
+
+D136 (v1.9.97) ruled the membership reconcile runs **once per launch, against the forward roster, outside every daily write transaction** — and named neither of the rows it replaced. **D47** still carried "membership refresh (as-of, reconstructed from EODHD historical constituents)" inside its per-day chain; **D53** still listed `membership` inside the Stage-2 atomic transaction. Both readings were live, both quotable in good faith, for three versions.
+
+This is precisely the **D87/D109 shape rule 25 was written after**, and the reason it is a rule rather than a convention is on display: `check-register`'s 3b/3c relational checks validate only rows that **declare** a relationship, so an *undeclared* amendment is invisible to them by construction. Three sweeps passed over it. Membership is the universe every strategy trades and every population is matched against; a corpus carrying two live specifications for how it refreshes cannot be the authority rule 25 claims it is.
+**Consequences:** D136 gains an explicit "**AMENDS D47 AND D53**" clause with the reason it should have been there at v1.9.97; both stale clauses are struck inline (the surrounding rulings of D47 and D53 are unchanged and still govern); both Status cells become `amended-by D136` in the same commit. `check-register` now reports 19 amended-by rows and stays green — which is the point: it could not have caught this, so the fix is the naming, not a new check.
+
+### finding 412 — every arm of the separation state was a single-point test, and the second one was found only because the enumeration was required
+
+MASTER §20.8 defines the D63 separation state in three clauses, two of which say **sustained**: `distinguishable` — "the percentile path has been SUSTAINED above `P_edge(t)` (mirroring S3 Healthy)"; `emerging` — "the path is SUSTAINED outside the population's central band". `SeparationState` tested `s3Path[^1]` — one point — for both, and compared it against a literal `95.0`.
+
+**The literal was not a rounding of the curve; it was a different rule, and the conservative one.** `P_edge(t)` is calibrated and track-length-dependent, and sp500 generation 2's frozen curve runs **71.0 at t=252** rising to ~83 — *below* 95. So reading the real bar ADMITS more paths, and fixing that arm alone would have raised the false-positive rate. The sustain requirement is not a separable improvement; it is the other half of the same correction, which is why the plan insisted the two land together.
+
+**The `emerging` arm was not in the finding.** The review named only `distinguishable`'s hardcoded 95. `emerging` surfaced because this PR was required to enumerate every path that can set or clear the chip *before* claiming the rail settled — and the enumeration is the only reason it did not ship still broken, in the PR that said it was fixed.
+**Consequences:** `SeparationState` reads the bar off the row the monitor wrote (`threshold_json.p_edge_at`, else `healthy_anchor`) rather than re-resolving config — the monitor and the read-model previously judged the same strategy on the same day against different numbers, and reading the persisted bar makes that impossible rather than unlikely. §20.8's "mirroring S3 Healthy" settles which sustain applies: the monitor's own `sustain_evals` from the same row, deliberately not a second knob. **D148** is the decision. The enumeration is committed at `docs/calibration/2026-08-11-separation-state-path-enumeration.md`; it states its closure argument for the producing side and records that the CONSUMING side is unguarded — no D91-style reflection closure exists for the D63 family — as a proposal rather than a claim. **No D144 bump:** this changes monitor thresholds and a read-model, never the values a day writes to `trades`/`positions`/`cash_events`/`equity_curve`, which is D144's own stated test. **But `replay-recompute --verify-parity` against generation 2 WILL now report differences** on any session whose stored S3 contribution was `above_edge` from an unsustained print — the harness re-derives under current rules and compares to what was stored, so a changed rule is exactly what it surfaces. That is the fingerprint, not a failure, and it is the shape D142 recorded for `reproduce-day`.
+
+### finding 413 — S3's adverse arm demanded persistence and its favourable arm did not
+
+OVERFITTING_MONITOR §3 states the calibrated band as "**Suspect** below `P_noise(t)` **sustained** · **Healthy** above `P_edge(t)` **sustained** · **Warning** between". Only the Suspect arm had it. So one unlucky print below the noise curve correctly read Warning, while one lucky print above the edge curve read **Healthy** — a signal biased by construction, in the flattering direction, and the signal §20.8 defines the separation state to mirror.
+**Consequences:** new contribution token `approaching_edge` (above the curve, not yet sustained) and `MonitorSignals.ContinuesAboveEdgeStreak`; `OverfittingMonitor` carries the streak; **`MonitorRecompute` threads it in lockstep, which the COMPILER enforced** — the required parameter broke the build at the harness's own call site, which is the D117 seam working rather than a reviewer noticing. `FX_S3Trajectory_EdgePlant_ReadsAboveTheCurve` is renamed `..._ONCE_SUSTAINED` and now shows the two-step transition; it previously asserted the single-print behaviour as correct. Also in this entry: **F25** — PROGRESS's gate boxes for 6.3/6.4 ticked with their register rows, **6.5 recorded as legitimately OPEN with the three items PR 2 owes** (gate reorder so this evaluation's status feeds this evaluation's gate; Warning acknowledgment; auto-retire reconciliation) and the `suspect_vetoed` chip explicitly scoped OUT; and the **Phase** field corrected from "4.5 — Signal Library" to Phase 6 stage 6.5a, three phases stale.
+
+### The decision
+
+**D148 — "sustained" means sustained on both arms and in both places.** The row carries why the literal 95 was the conservative error, why the two halves could not ship separately, the read-the-persisted-bar argument, and the parity consequence.
+
+*Verification: `check-register` green at **148 rows, D1..D148** (19 amended-by); `ci.ps1` green — **1,297 tests** (from 1,291), seven projects, zero skipped, all nine guard greps.*

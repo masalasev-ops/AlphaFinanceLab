@@ -77,7 +77,7 @@ public static class MonitorSignals
     /// </summary>
     public static SignalOutcome S3Trajectory(
         double percentile, int trackDays, double pNoiseAt, double pEdgeAt,
-        int priorConsecutiveBelowNoise, int sustainEvals)
+        int priorConsecutiveBelowNoise, int sustainEvals, int priorConsecutiveAboveEdge)
     {
         if (percentile < pNoiseAt)
         {
@@ -85,9 +85,18 @@ public static class MonitorSignals
                 ? new SignalOutcome("S3", percentile, "suspect", MonitorStatus.Suspect)
                 : new SignalOutcome("S3", percentile, "below_noise", MonitorStatus.Warning);
         }
-        return percentile >= pEdgeAt
+
+        if (percentile < pEdgeAt) return new SignalOutcome("S3", percentile, "between", MonitorStatus.Warning);
+
+        // HEALTHY REQUIRES SUSTAIN TOO (D148). OVERFITTING_MONITOR §3 states the band as
+        // "Suspect below P_noise(t) SUSTAINED · Healthy above P_edge(t) SUSTAINED · Warning between",
+        // and only the Suspect arm had it. The asymmetry ran the flattering way: one lucky print above the
+        // edge curve read Healthy, while one unlucky print below the noise curve correctly read only
+        // Warning. A signal whose adverse arm demands persistence and whose favourable arm does not is
+        // biased by construction, and this is the signal the D63 separation state mirrors.
+        return priorConsecutiveAboveEdge + 1 >= sustainEvals
             ? new SignalOutcome("S3", percentile, "above_edge", MonitorStatus.Healthy)
-            : new SignalOutcome("S3", percentile, "between", MonitorStatus.Warning);
+            : new SignalOutcome("S3", percentile, "approaching_edge", MonitorStatus.Warning);
     }
 
     /// <summary>
@@ -192,6 +201,13 @@ public static class MonitorSignals
     /// <summary>The S3 contribution tokens that CONTINUE a below-noise streak (calibrated mode).</summary>
     public static bool ContinuesBelowNoiseStreak(string contribution) =>
         contribution is "below_noise" or "suspect";
+
+    /// <summary>The S3 contribution tokens that CONTINUE an above-edge streak (calibrated mode, D148).
+    /// `approaching_edge` is above the edge curve but not yet sustained, so it CONTINUES the streak it is
+    /// building; `above_edge` is the sustained state itself. `between` and the below-noise tokens break it —
+    /// a path that drops back under the edge curve starts its count again.</summary>
+    public static bool ContinuesAboveEdgeStreak(string contribution) =>
+        contribution is "approaching_edge" or "above_edge";
 
     /// <summary>The S3 contribution tokens that CONTINUE a below-anchor streak (flat pre-calibration mode,
     /// Change 3): the sustain that gates the anti-predictive Suspect.</summary>
