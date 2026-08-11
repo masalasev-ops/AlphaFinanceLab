@@ -309,12 +309,22 @@ public sealed class DailyPipeline(
                 logger.LogWarning("{AsOf}: security_id {Id} has no symbol — skipped from the fetch.", asOf, id);
                 continue;
             }
-            securities.Add(new Stage1Target(id, symbol, caReads.GetActionsAsOf(id, watermark), LastStoredDate(id, asOf, watermark)));
+            securities.Add(new Stage1Target(
+                id, symbol,
+                caReads.GetActionsAsOf(id, watermark),
+                LastStoredDate(id, asOf, watermark),
+                // D145: the as-of series over the fetch window, so the gate can tell a corrupt CORRECTION
+                // of a stored bar from an idempotent re-fetch of one. Resolved HERE, by the orchestrator,
+                // for the same reason PriorActions is: Stage1Fetch carries no DbContext (finding BB) and
+                // must not acquire one — it consumes resolved data or it cannot write, which is the
+                // property that makes "Stage 1 wrote nothing" checkable rather than promised.
+                barReads.GetSeries(id, from, asOf, watermark)));
         }
 
         var regimeProxyId = ResolveConfigLong(RegimeProxyIngestion.ProxyConfigKey, watermark);
         ProxyTarget? proxy = regimeProxyId is { } pid
-            ? new ProxyTarget(pid, db.Securities.Find(pid)?.CurrentSymbol ?? "GSPC", LastStoredDate(pid, asOf, watermark))
+            ? new ProxyTarget(pid, db.Securities.Find(pid)?.CurrentSymbol ?? "GSPC",
+                LastStoredDate(pid, asOf, watermark), barReads.GetSeries(pid, from, asOf, watermark))
             : null;
 
         return new Stage1Request(asOf, from, watermark, watermark, expected, securities, proxy);

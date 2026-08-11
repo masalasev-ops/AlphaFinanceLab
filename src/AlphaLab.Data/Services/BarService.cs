@@ -122,7 +122,18 @@ public sealed class BarIngestionService(AlphaLabDbContext db) : IBarIngestionSer
         Source = source
     };
 
-    private static bool Differs(BarRow existing, EodBar incoming) =>
+    /// <summary>
+    /// Does an incoming bar carry DIFFERENT values from the stored one — i.e. is it a CORRECTION rather
+    /// than an idempotent re-fetch? This is the question that decides whether ingestion appends a new
+    /// version.
+    ///
+    /// PUBLIC because the FR-6 gate must ask the SAME question (D145). Stage 1 keeps a Reject on an
+    /// already-gated date only when the fetched bar differs from what is stored, and if its notion of
+    /// "differs" drifted from this one the two would disagree in the worst way: the gate would pass a
+    /// bar this method then appends, or abort a day over a value nothing would have written. One
+    /// definition, so the refusal and the write are about the same thing.
+    /// </summary>
+    public static bool Differs(BarRow existing, EodBar incoming) =>
         existing.Open != incoming.Open
         || existing.High != incoming.High
         || existing.Low != incoming.Low

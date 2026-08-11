@@ -13,11 +13,13 @@ public sealed record Stage1Target(
     long SecurityId,
     string Symbol,
     IReadOnlyList<CorporateActionRow> PriorActions,
-    string? LastStoredDate);
+    string? LastStoredDate,
+    IReadOnlyList<BarRow> StoredBars);
 
 /// <summary>The regime proxy's fetch target. It carries no dividends/splits (an index has none) and is
 /// fetched through the proxy provider, not the market-data provider.</summary>
-public sealed record ProxyTarget(long SecurityId, string Symbol, string? LastStoredDate);
+public sealed record ProxyTarget(
+    long SecurityId, string Symbol, string? LastStoredDate, IReadOnlyList<BarRow> StoredBars);
 
 /// <summary>Everything Stage 1 needs, assembled by the orchestrator from read-only DB queries BEFORE
 /// Stage 1 runs. Stage 1 itself touches only the network (providers) and pure computation (the gate).</summary>
@@ -68,7 +70,7 @@ public sealed class Stage1Fetch(
             var splits = await marketData.GetSplitsAsync(target.Symbol, request.From, request.AsOf, ct).ConfigureAwait(false);
 
             var report = Gate(target.Symbol, bars, target.PriorActions, dividends, splits,
-                request.ExpectedDates, target.LastStoredDate);
+                request.ExpectedDates, target.LastStoredDate, target.StoredBars);
             securities.Add(new StagedSecurity(target.SecurityId, target.Symbol, bars, dividends, splits, report));
         }
 
@@ -78,7 +80,7 @@ public sealed class Stage1Fetch(
             // The proxy is fetched through its own provider (an index EOD, GSPC.INDX), carries no
             // corporate actions, and is gated with an empty action feed.
             var bars = await regimeProxy.GetProxyBarsAsync(request.From, request.AsOf, request.AsOf, ct).ConfigureAwait(false);
-            var report = Gate(p.Symbol, bars, [], [], [], request.ExpectedDates, p.LastStoredDate);
+            var report = Gate(p.Symbol, bars, [], [], [], request.ExpectedDates, p.LastStoredDate, p.StoredBars);
             proxy = new StagedSecurity(p.SecurityId, p.Symbol, bars, [], [], report);
         }
 
@@ -95,18 +97,62 @@ public sealed class Stage1Fetch(
         IReadOnlyList<DividendEvent> dividends,
         IReadOnlyList<SplitEvent> splits,
         IReadOnlyCollection<string> expectedDates,
-        string? lastStoredDate)
+        string? lastStoredDate,
+        IReadOnlyList<BarRow> storedBars)
     {
         var actions = MergeActions(priorActions, dividends, splits);
         var report = gate.Evaluate(symbol, bars, actions, expectedDates);
 
         if (lastStoredDate is null) return report; // nothing gated before ⇒ every flag is genuinely new
 
-        // Keep series-level flags (null date) and flags strictly after the last already-gated bar.
+        // D145: the date filter is now SEVERITY-AWARE, and the exception is narrower than "keep every
+        // reject" for a reason that would otherwise wedge the arena.
+        //
+        // WHAT THE OLD FILTER WAS FOR, and it is still honoured: P7. The fetch window carries a 40-session
+        // context tail, so ~40 already-stored dates are re-gated every single day. Re-emitting their
+        // WARNINGS would spam duplicate flags on every run, and re-fetching 20 years to gate the backlog
+        // would hammer the API budget. Dropping warnings on already-gated dates is the right ongoing
+        // behaviour and is unchanged.
+        //
+        // WHAT IT WAS NEVER FOR: suppressing a REJECT. A reject means the bar cannot be trusted or priced,
+        // and the day must fail closed (rule 10). Dropping it let a corrupt vendor CORRECTION on an
+        // already-stored date be ingested as a new bar version with no abort — which rule 3 then makes
+        // PERMANENT, and which skews ADV, the participation cap, realized vol and the population band
+        // every verdict is judged against.
+        //
+        // WHY NOT SIMPLY "KEEP EVERY REJECT": because a reject on an UNCHANGED stored bar would fire again
+        // on every run forever, and the arena would never commit another day. That is not hypothetical —
+        // P7's open backlog is ~488k backfilled bars that the gate never vetted, so a stored bar CAN be
+        // gate-rejectable. The distinguishing question is the one the writer asks: does the fetched bar
+        // DIFFER from what is stored? An identical re-fetch is an idempotent no-op with nothing new to
+        // refuse; a differing one is a correction about to be appended, and that is what must stop the day.
+        var storedByDate = storedBars.ToDictionary(b => b.Date, StringComparer.Ordinal);
+        var fetchedByDate = bars.ToDictionary(b => b.Date, StringComparer.Ordinal);
+
         var fresh = report.Flags
-            .Where(f => f.Date is null || string.CompareOrdinal(f.Date, lastStoredDate) > 0)
+            .Where(f => f.Date is null
+                        || string.CompareOrdinal(f.Date, lastStoredDate) > 0
+                        || IsCorrectionOfAStoredBar(f, storedByDate, fetchedByDate))
             .ToList();
         return fresh.Count == report.Flags.Count ? report : new QualityReport(fresh);
+    }
+
+    /// <summary>A REJECT on an already-gated date survives the filter only when the fetched bar carries
+    /// different values from the stored one — i.e. only when ingestion would actually append it. The
+    /// comparison is <see cref="BarIngestionService.Differs"/>, the writer's own, so the refusal and the
+    /// write can never be about different things.</summary>
+    private static bool IsCorrectionOfAStoredBar(
+        QualityFlag flag,
+        IReadOnlyDictionary<string, BarRow> storedByDate,
+        IReadOnlyDictionary<string, EodBar> fetchedByDate)
+    {
+        if (flag.Severity != QualitySeverity.Reject || flag.Date is null) return false;
+        if (!fetchedByDate.TryGetValue(flag.Date, out var fetched)) return false;
+
+        // No stored bar on a date at or before LastStoredDate means the gate is flagging a date this
+        // security has no row for — a gap being filled, which is new data, so the reject stands.
+        return !storedByDate.TryGetValue(flag.Date, out var stored)
+               || BarIngestionService.Differs(stored, fetched);
     }
 
     // The gate's reconciliation check reads only Type + ex/effective date, so the fetched dividends/splits
