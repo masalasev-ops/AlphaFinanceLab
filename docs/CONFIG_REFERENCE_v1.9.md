@@ -196,6 +196,15 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
   "Replay": {                                      // D37
     "ValidationYears": 15,
     "PrunePerMemberLedgersAfterSignoff": true,
+    "LedgerArithmeticVersion": null,               // D144 (v1.9.103) — NEVER set in appsettings; the key exists ONLY as a versioned `config`
+                                                   // row, stamped by ReplayRunner at the moment a generation is created (the
+                                                   // Benchmark.CapWeightProxySecurityId precedent). It records WHICH ledger arithmetic
+                                                   // produced the generation's stored trades/equity; the code-side value is
+                                                   // LedgerArithmetic.Version. Committed sessions are SKIPPED on a re-run, so after an
+                                                   // arithmetic change an ordinary run would leave old days on the old rules and compute
+                                                   // new ones on the new — one generation, two arithmetics (D95). A mismatch, or an
+                                                   // ABSENT row (a generation older than the marker — sp500 generation 2), refuses the
+                                                   // run unless --reset is present, which deletes the generation so there is nothing to mix
     "EdgePlantSurvivalFloor5y": 0.90,              // v1.9.7 finding 113: Phase-4 DoD floor — fraction of D64 edge plants still promotable at 5y of simulated
                                                    // track; a floor failure recalibrates S6's patience, never the plant (the lab must not kill its own honest winners)
     "JointFalseAlarmMaxFrac": 0.10,                // v1.9.7 finding 114: bound on the fraction of no-edge plants ever reaching Suspect via ANY signal over the

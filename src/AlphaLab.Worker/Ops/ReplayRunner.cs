@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using AlphaLab.Core.Config;
+using AlphaLab.Core.Ledger;
 using AlphaLab.Data;
 using AlphaLab.Data.Entities;
 using AlphaLab.Data.Providers;
@@ -120,6 +121,8 @@ public sealed class ReplayRunner(
             RecoverCrashedReplayRuns(db);
             if (request.Reset) DeleteReplayGeneration(db);
             GuardSingleGeneration(db, watermark, request);
+            GuardArithmeticVintage(db, request);
+            StampArithmeticVintage(db, request);
 
             // Zero sessions is a FAILURE, not a quiet success (rule 10; Phase-4 review): an unseeded
             // calendar or a from/to typo must not transition a replay job to 'done' having done nothing
@@ -274,6 +277,95 @@ public sealed class ReplayRunner(
         db.SaveChanges();
         _logger.LogWarning("replay: {Count} orphaned 'running' replay run(s) from a crash marked failed.", orphans.Count);
     }
+
+    /// <summary>
+    /// Refuse to ADD sessions to a committed generation that was produced under different ledger
+    /// arithmetic (D144; the enforcement of D142's whole-or-nothing constraint).
+    ///
+    /// THE DANGEROUS PATH WAS THE DEFAULT, which is the whole reason this exists. Committed days are
+    /// skipped — that is what makes a run resumable — so after D142/D143 an ordinary
+    /// <c>replay-calibrate</c> against this arena leaves the old sessions on the OLD rules and computes
+    /// every new one on the new ones, producing a single generation containing two arithmetics. D95
+    /// forbids exactly that, and until now the only thing standing in the way was a sentence in a
+    /// decision row. A constraint recorded where nothing examines it is the defect class D140 names, and
+    /// it was sitting inside the decision written to apply D140.
+    ///
+    /// <c>--reset</c> is exempt because it DELETES the generation first: there is then nothing to mix
+    /// with, and re-simulating the whole window is precisely the sanctioned remedy.
+    ///
+    /// AN UNSTAMPED GENERATION IS REFUSED, NOT ASSUMED COMPATIBLE. sp500 generation 2 predates the stamp,
+    /// so its rows carry no marker; "no marker" means "produced under arithmetic this build cannot
+    /// identify", and treating that as a match would silently permit the exact mix. Fail closed (D139's
+    /// pattern).
+    ///
+    /// The read is <c>ResolveCurrent</c>-shaped and that is CORRECT here rather than a D141 violation:
+    /// this is an operator pre-flight about the store's present state, not an input to any number a
+    /// reproduction must reproduce. It is the same reasoning as D141's presence-only carve-out.
+    /// </summary>
+    private void GuardArithmeticVintage(AlphaLabDbContext db, ReplayRequest request)
+    {
+        if (request.Reset) return;
+
+        var hasCommittedGeneration = db.Runs.Any(r => r.RunKind == ReplayKind && r.Status == "ok");
+        if (!hasCommittedGeneration) return; // this run STARTS a generation — nothing to be inconsistent with
+
+        var stamped = CurrentVintage(db);
+        if (stamped == LedgerArithmetic.Version) return;
+
+        throw new InvalidOperationException(
+            $"replay: REFUSED — this arena holds a committed replay generation produced under ledger " +
+            $"arithmetic '{stamped ?? "(unstamped — older than the marker, not identifiable)"}', but this " +
+            $"build produces '{LedgerArithmetic.Version}'. Committed sessions are SKIPPED, so continuing " +
+            "would leave those days on the old rules while every new session used the new ones — one " +
+            "generation containing two arithmetics, which is what D95 forbids and what makes a curve built " +
+            "across it uninterpretable. Regenerate the window WHOLE with --reset, or leave the generation " +
+            "alone; there is no correct partial re-run (D142 Consequences, D144). To re-simulate a window " +
+            "for a confirmation slice, copy the store to a scratch arena and run there with --reset " +
+            "--report-only — never --reset the arena holding a frozen generation.");
+    }
+
+    /// <summary>Mark a generation with the arithmetic that produced it, at the moment it is created.
+    /// Append-only (rule 24): a differing value INSERTs (key, version+1); an identical one writes
+    /// nothing, so a resumed run does not accumulate duplicate rows.</summary>
+    private void StampArithmeticVintage(AlphaLabDbContext db, ReplayRequest request)
+    {
+        var latest = db.Config
+            .Where(c => c.Key == LedgerArithmetic.VintageConfigKey)
+            .AsEnumerable()
+            .OrderByDescending(c => c.Version)
+            .FirstOrDefault();
+
+        if (latest?.ValueJson == LedgerArithmetic.Version) return;
+
+        // Only stamp when this run is actually creating the generation. Reaching here with a committed
+        // generation and a different stamp is impossible — the guard above threw — except under --reset,
+        // which has just deleted it.
+        if (!request.Reset && db.Runs.Any(r => r.RunKind == ReplayKind && r.Status == "ok")) return;
+
+        db.Config.Add(new ConfigRow
+        {
+            Key = LedgerArithmetic.VintageConfigKey,
+            ValueJson = LedgerArithmetic.Version,
+            Version = (latest?.Version ?? 0) + 1,
+            // The generation's first session, never a wall clock: this row is part of what makes the
+            // generation identifiable, and a timestamp would make two identical runs differ.
+            ChangedOn = request.From,
+            Reason = "The ledger arithmetic this replay generation was produced under (D144). A later " +
+                     "build with different arithmetic refuses to add sessions to it without --reset.",
+        });
+        db.SaveChanges();
+
+        _logger.LogInformation(
+            "replay: generation stamped with ledger arithmetic '{Version}' (D144).", LedgerArithmetic.Version);
+    }
+
+    /// <summary>The generation's recorded arithmetic, or null if it predates the marker.</summary>
+    private static string? CurrentVintage(AlphaLabDbContext db) => db.Config
+        .Where(c => c.Key == LedgerArithmetic.VintageConfigKey)
+        .AsEnumerable()
+        .OrderByDescending(c => c.Version)
+        .Select(c => c.ValueJson)
+        .FirstOrDefault();
 
     private void GuardSingleGeneration(AlphaLabDbContext db, string watermark, ReplayRequest request)
     {
