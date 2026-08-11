@@ -78,6 +78,49 @@ public class PromotionGateTests
         Assert.Equal(PromotionVerdict.TooEarly, PromotionGate.Decide(0.20, double.PositiveInfinity, 100, 63));
     }
 
+    [Fact]
+    public void D146_ADegeneratePairPastTheMinimumTrack_IsTooEarly_NotRefused()
+    {
+        // THE DEFECT. A strategy that has never traded has a flat equity curve, so the paired estimator
+        // returns gap 0 and MDE 0 — the purest case of no evidence there is. Under the old strict `<`,
+        // `0 < 0` was false and control fell through to `0 > 0` ⇒ REFUSED: an absence of evidence rendered
+        // as a directional finding that the strategy is WORSE than the benchmark.
+        Assert.Equal(PromotionVerdict.TooEarly,
+            PromotionGate.Decide(observedGapAnn: 0.0, mdeAnn: 0.0, trackDays: 100, minTrackDays: 63));
+    }
+
+    [Fact]
+    public void D146_AGapExactlyEqualToTheMde_IsTooEarly()
+    {
+        // The boundary itself, pinned from both sides. A gap EQUAL to the smallest detectable effect is
+        // not OUTSIDE it — that is what "inside the MDE" means when the two coincide (rule 6).
+        Assert.Equal(PromotionVerdict.TooEarly, PromotionGate.Decide(0.10, 0.10, 100, 63));
+        Assert.Equal(PromotionVerdict.TooEarly, PromotionGate.Decide(-0.10, 0.10, 100, 63));
+
+        // …and a hair beyond it still decides, so the change did not swallow the adjudicable band.
+        Assert.Equal(PromotionVerdict.Promoted, PromotionGate.Decide(0.1000001, 0.10, 100, 63));
+    }
+
+    [Fact]
+    public void D146_ANaNMde_IsTooEarly_TheGuardWasAsymmetric()
+    {
+        // The guard checked IsNaN on the GAP and IsInfinity on the MDE, so a NaN MDE fell through:
+        // `Math.Abs(gap) <= NaN` is false and the sign test then decided a verdict off an unestimable
+        // bound. An MDE that is not a number is not a threshold.
+        Assert.Equal(PromotionVerdict.TooEarly, PromotionGate.Decide(0.20, double.NaN, 100, 63));
+        Assert.Equal(PromotionVerdict.TooEarly, PromotionGate.Decide(-0.20, double.NaN, 100, 63));
+    }
+
+    [Fact]
+    public void D146_ARealGapAgainstADegenerateMde_StILLDecides()
+    {
+        // The deliberate NON-change, pinned so the next reader does not "finish the job". An MDE of
+        // exactly 0 alongside a real gap arises from a degenerate benchmark (the raw-gap fallback), and
+        // whether that constitutes infinite precision is a separate design question — recorded as a
+        // PROPOSAL, not settled here. D146 corrects the boundary; it does not redefine what MDE 0 means.
+        Assert.Equal(PromotionVerdict.Promoted, PromotionGate.Decide(0.252, 0.0, 100, 63));
+    }
+
     [Theory]
     [InlineData(PromotionVerdict.Promoted, "Promoted")]
     [InlineData(PromotionVerdict.Refused, "Refused")]

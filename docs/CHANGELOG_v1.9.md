@@ -216,3 +216,26 @@ D142 recorded that generation 2 must be regenerated **whole or not at all**, bec
 **D145 — Stage 1's already-gated filter is severity-aware.** A warning on a re-gated date is still dropped; a reject survives when the fetched bar is a correction of the stored one, or when no stored bar exists. The row carries the P7 split, the anti-wedge reasoning, the one-definition argument for `Differs`, and why the stored series is resolved by the orchestrator rather than read inside Stage 1.
 
 *Verification: `check-register` green at **145 rows, D1..D145**; `ci.ps1` green — **1,280 tests** (from 1,277), seven projects, zero skipped, all nine guard greps.*
+
+---
+
+## v1.9.105 — Phase 6.5a (review remediation, PR 5): the rule-6 boundary (2026-08-11)
+
+*Recorded 2026-08-11. **Phase 6 checkpoint 6.5a, PR 5.** Decision **D146** new; finding **408**, with the rule-26 Consequences field. No migration, no schema change, no config key. Full suite green at 1,285 tests across seven projects. Next-free finding after this entry: **409**.*
+
+### finding 408 — the one function that enforces rule 6 turned an absence of evidence into a directional verdict
+
+`PromotionGate.Decide` is 34 lines and is the ONE place hard rule 6's *"inside the MDE ⇒ TooEarly"* lives. Thirteen review auditors examined what feeds it and what reads it; none opened it. It had two defects on the same line pair.
+
+**The boundary.** The test was a strict `<`, so a gap exactly equal to the smallest detectable effect fell through to the sign test. The case that makes this more than a rounding nicety is the **degenerate pair**: a strategy that has never traded has a flat equity curve, so the paired estimator returns gap 0 *and* MDE 0. `0 < 0` is false, `0 > 0` is false, and the verdict was **Refused** — an absence of evidence rendered as a directional finding that the strategy is *worse* than the benchmark. That is the exact inversion the MDE rail exists to prevent.
+
+**The asymmetric guard.** The pre-flight checked `IsNaN` on the gap and `IsInfinity` on the MDE, never `IsNaN` on the MDE. A NaN MDE therefore fell straight through — `Math.Abs(gap) <= NaN` is false — and the sign test decided a verdict off an unestimable bound.
+
+**Why it reached further than the gate.** `SeparationState` treats any non-TooEarly verdict as decisive, so the spurious `Refused` also un-dimmed the alpha cell (UX-1), sorted the row into below-or-flagged, and **suppressed the `IndistinguishableFromRandom` chip for precisely the strategy most indistinguishable from random** — a rule-21 inversion produced by a comparison operator. The chip is D63's flagship product, and the path that removed it needed no lucky percentile draw and no unusual data: only a strategy that had not traded yet.
+**Consequences:** `PromotionGate.Decide` — `<=` and a symmetric NaN guard. **D146** is the decision. Six fixtures, including `D146_ATooEarlyVerdictKeepsTheChip_WhileARefusedOneSuppressesIt`, which pins the read-model mechanism from both sides so the fix is shown to restore the chip rather than merely relabel a verdict nobody reads. Falsifier run: reverting to `<` and the old guard turns three of the new tests red while the eight pre-existing gate tests stay green. **Deliberately NOT changed, and pinned by `D146_ARealGapAgainstADegenerateMde_STILLDecides`:** a real gap against an MDE of exactly 0 still decides. That combination comes from a degenerate BENCHMARK (the raw-gap fallback), and whether MDE 0 means infinite precision or an unusable estimate is a separate question about what the estimator MEANS — a proposal, not this PR. **No stored row changes** — existing `power_reports.verdict` values are untouched and the frozen generation is unaffected; this changes what the gate decides from here.
+
+### The decision
+
+**D146 — a gap equal to its MDE is inside it, and an unestimable MDE adjudicates nothing.** The row carries the degenerate-pair case, the asymmetric-guard defect, the read-model consequence via `SeparationState`'s `decisive` shortcut, and the explicit statement of what was left alone and why.
+
+*Verification: `check-register` green at **146 rows, D1..D146**; `ci.ps1` green — **1,285 tests** (from 1,280), seven projects, zero skipped, all nine guard greps.*
