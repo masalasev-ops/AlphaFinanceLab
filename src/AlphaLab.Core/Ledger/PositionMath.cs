@@ -1,3 +1,5 @@
+using AlphaLab.Core.Domain;
+
 namespace AlphaLab.Core.Ledger;
 
 /// <summary>
@@ -22,6 +24,39 @@ public static class PositionMath
     /// worth knowing about rather than discovering.
     /// </summary>
     public const double ShareEpsilon = 1e-9;
+
+    /// <summary>
+    /// The position after buying <paramref name="boughtShares"/> at <paramref name="rawFillPrice"/>,
+    /// on top of <paramref name="existing"/> (null ⇒ this fill OPENS the line).
+    ///
+    /// THE FLAGS RIDE ALONG (D147). This used to build a FRESH <see cref="Position"/> from four fields,
+    /// which silently dropped <see cref="Position.Frozen"/> and <see cref="Position.FrozenReason"/> —
+    /// so any buy into a frozen name performed D55's audited unfreeze with no admin action, no audit row
+    /// and no operator. The sell leg had always used `existing with { … }` and preserved them, so the
+    /// asymmetry was plainly unintentional; expressing both legs the same way is what stops it recurring.
+    /// A fill is not an operator decision and cannot resolve a freeze.
+    /// </summary>
+    public static Position ApplyBuy(Position? existing, long accountId, SecurityId securityId,
+        double boughtShares, decimal rawFillPrice, string filledOn)
+    {
+        if (existing is null)
+        {
+            return new Position
+            {
+                AccountId = accountId,
+                SecurityId = securityId,
+                Shares = boughtShares,
+                CostBasis = BasisMath.AddBuy(0m, rawFillPrice, boughtShares),
+                OpenedOn = filledOn,
+            };
+        }
+
+        return existing with
+        {
+            Shares = existing.Shares + boughtShares,
+            CostBasis = BasisMath.AddBuy(existing.CostBasis, rawFillPrice, boughtShares),
+        };
+    }
 
     /// <summary>
     /// The position after selling <paramref name="soldShares"/> out of <paramref name="existing"/>.

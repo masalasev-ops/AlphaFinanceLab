@@ -147,7 +147,7 @@ public static class FunnelRunner
             Stage1Eligible = eligibility.Eligible,
             Stage2Scores = ScoredNames(scores, model.Config.Seed),
             Stage3WishList = selection.WishList,
-            Stage4 = new Stage4Snapshot(plan.Opens, plan.Holds, plan.Closes, plan.Scope),
+            Stage4 = new Stage4Snapshot(plan.Opens, plan.Holds, plan.Closes, plan.Scope, plan.Frozen),
             Stage5Targets = sized.Targets,
             Stage5UninvestedCash = sized.UninvestedCash,
             Stage6Orders = orders,
