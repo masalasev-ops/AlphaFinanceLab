@@ -305,6 +305,13 @@ Unchanged in shape: **backfill once** (full daily history per universe security 
 - Corporate-action ledger semantics (all forced events, all logged to `cash_events`/`trades` with the action id):
   - **Dividend** → cash credit on ex-date (D30).
   - **Split** → share count × ratio; raw price basis adjusted; equity unchanged.
+    - A restatement also restates that security's **pending T+1 orders**, by the same ratio, before they
+      fill (**D142**). An order decided at close T is denominated in T's share units; the exchange divides
+      the quote in the same breath the ledger multiplies the count, so converting preserves the decision
+      and refusing to convert corrupts it by exactly the ratio. Ratios are resolved over the securities
+      named in the day's **orders**, not over the account's book — a pending buy into a name not yet held
+      needs the same conversion. The stored `stage_json` is never rewritten; the conversion is local to
+      the fill. A sale that still exceeds the restated holding is **refused**, not absorbed as a close.
   - **Ticker change** → alias update only; position, history, and identity continuous.
   - **Cash merger** → position closed at deal cash per share on effective date (standard costs waived — corporate action, not a trade).
   - **Stock merger** → shares converted at the exchange ratio into the acquirer's `security_id`; cost basis carries.

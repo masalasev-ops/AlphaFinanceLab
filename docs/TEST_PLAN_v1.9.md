@@ -29,6 +29,7 @@
 |---|---|---|
 | `FX-Dividend` | held name, ex-date mid-window | FR-9/D30: cash on ex-date; B&H total-return acceptance |
 | `FX-Split` | 4:1 split while held | shares ×4, raw basis ÷4, equity unchanged through the event |
+| `FX-SplitPendingOrder` | 2:1 and 1:2 effective on the FILL date of a stored Stage-6 order (whole-line close; buy into an UNHELD name); sibling with an oversell no action explains | D142: the order is restated into the book's units and realises the same value as the no-split run; the line actually closes; the unheld-name buy spends the intended notional; the oversell guard rolls the whole day back |
 | `FX-MergerCash` | held target, $54.20/share effective day 30 | position closed at deal cash, costs waived, action_id stamped |
 | `FX-MergerStock` | 0.85 exchange ratio into acquirer | shares converted across security_ids, basis carried |
 | `FX-MergerMixed` | $10 cash + 0.5 shares | both legs, one action |
