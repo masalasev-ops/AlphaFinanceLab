@@ -3,6 +3,7 @@ using AlphaLab.Core.Config;
 using AlphaLab.Core.Domain;
 using AlphaLab.Core.Ledger;
 using AlphaLab.Data;
+using AlphaLab.Data.Providers;
 using AlphaLab.Data.Services;
 using AlphaLab.Worker.Ops;
 using AlphaLab.Worker.Tests.Pipeline;
@@ -268,6 +269,61 @@ public class ReproduceDayTests
                 if (File.Exists(scratchPath + s)) File.Delete(scratchPath + s);
             }
         }
+    }
+
+    /// <summary>
+    /// D142: a day on which a corporate action restated a pending order still reproduces byte-identically.
+    ///
+    /// The restatement reads corporate_actions at the run's watermark and folds the ratios into a LOCAL
+    /// copy of the stored order — it writes nothing back to stage_json. Both halves matter here:
+    /// corporate_actions is in ScratchStore's untouched set (watermark-resolved, D76) so the reproduction
+    /// reads the same ratio, and the prior session's decision row survives the rewind, so the input to
+    /// the fold is identical. If either were false the reproduction would fill a different quantity, and
+    /// D142 would have quietly broken NFR-1 for every split day.
+    /// </summary>
+    [Fact]
+    public async Task FR25_D142_ASplitDayWithAPendingOrder_ReproducesByteIdentically()
+    {
+        using var h = new PipelineHarness();
+        await h.RunAsync(h.Run1);
+        await h.RunAsync(h.Run2);
+
+        var accountId = h.AccountIdFor("buyhold:ew");
+        double held;
+        using (var db = h.Open())
+        {
+            held = db.Positions
+                .Single(p => p.AccountId == accountId && p.SecurityId == PipelineHarness.MemberA).Shares;
+        }
+
+        h.Market.AddSplit(PipelineHarness.MemberASymbol, new SplitEvent(h.Run3, 0.5, "1/2"));
+        h.RescaleBarsFrom(PipelineHarness.MemberASymbol, h.Run3, 2.0);
+        h.PlantPriorOrder(accountId, "buyhold:ew", h.Run2, new AlphaLab.Core.Funnel.PlannedOrder
+        {
+            SecurityId = new SecurityId(PipelineHarness.MemberA),
+            Side = TradeSide.Sell,
+            Shares = held,
+            Reason = TradeReason.ExitPolicy,
+            DecidedOn = h.Run2,
+            FillOn = h.Run3,
+            Rationale = "planted by FR25_D142",
+        });
+
+        await h.RunAsync(h.Run3);
+
+        // The restatement must have actually happened, or this test reproduces an ordinary day and
+        // proves nothing about D142.
+        using (var db = h.Open())
+        {
+            var trade = db.Trades.Single(t =>
+                t.AccountId == accountId && t.FilledOn == h.Run3 && t.SecurityId == PipelineHarness.MemberA);
+            Assert.Equal(held * 0.5, trade.Shares, 9);
+        }
+
+        var outcome = await RunnerFor(h).RunAsync(ConnectionFor(h), h.Run3);
+
+        Assert.True(outcome.Matches, string.Join("\n", outcome.Differences));
+        Assert.Empty(outcome.Differences);
     }
 
     /// <summary>Freeze the first held position we find. Uses the real ledger seam (FreezePosition), so

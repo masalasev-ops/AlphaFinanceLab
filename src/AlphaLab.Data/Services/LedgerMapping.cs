@@ -95,7 +95,52 @@ public static class LedgerMapping
         _ => throw new InvalidOperationException($"Unmapped cash_events.type '{token}'."),
     };
 
+    // ---- corporate_actions.type (the 8-value CHECK) ----
+
+    /// <summary>Map the DB token to the Core enum, failing CLOSED on an unknown token (rule 10) rather
+    /// than defaulting to a benign kind — an action type this build does not recognize is a stop, not a
+    /// silent skip.</summary>
+    public static CorporateActionType ParseCorporateActionType(string type) => type switch
+    {
+        "dividend" => CorporateActionType.Dividend,
+        "split" => CorporateActionType.Split,
+        "ticker_change" => CorporateActionType.TickerChange,
+        "merger_cash" => CorporateActionType.MergerCash,
+        "merger_stock" => CorporateActionType.MergerStock,
+        "merger_mixed" => CorporateActionType.MergerMixed,
+        "spinoff" => CorporateActionType.Spinoff,
+        "delist" => CorporateActionType.Delist,
+        _ => throw new InvalidOperationException(
+            $"Unknown corporate_actions.type '{type}'. The ledger refuses an action kind it cannot map " +
+            "rather than defaulting it (rule 10)."),
+    };
+
     // ---- rows ----
+
+    /// <summary>
+    /// Row → domain for a corporate action. Lives here, beside every other row translation, rather than
+    /// privately in the applier: D142 gave it a SECOND caller (the pending-order restatement, which asks
+    /// about securities the account may not hold and so cannot go through the applier). Two copies of a
+    /// mapper whose <see cref="CorporateAction.AppliedOn"/> decides WHICH DAY an action lands on is
+    /// exactly the drift that would put the book and its orders back out of step.
+    /// </summary>
+    public static CorporateAction ToDomain(CorporateActionRow r)
+    {
+        ArgumentNullException.ThrowIfNull(r);
+
+        return new CorporateAction
+        {
+            ActionId = r.ActionId,
+            SecurityId = new SecurityId(r.SecurityId),
+            Type = ParseCorporateActionType(r.Type),
+            ExDate = r.ExDate,
+            EffectiveDate = r.EffectiveDate,
+            CashPerShare = r.CashPerShare,
+            Ratio = r.Ratio,
+            CounterpartySecurityId = r.CounterpartySecurityId is { } c ? new SecurityId(c) : null,
+            NewSymbol = r.NewSymbol,
+        };
+    }
 
     public static AccountRow ToRow(Account a) => new()
     {

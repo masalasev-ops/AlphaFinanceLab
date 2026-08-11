@@ -137,7 +137,12 @@ public static class OrderBuilder
             var currentShares = byId.TryGetValue(target.Id, out var existing) ? existing.Shares : 0.0;
             var delta = targetShares - currentShares;
 
-            if (Math.Abs(delta) < ShareEpsilon)
+            // Below the ledger's own share tolerance a "delta" is floating-point noise rather than an
+            // intent, and trading it would pay a spread to move nothing. Read from PositionMath so the
+            // smallest delta Stage 6 will route and the remainder at which the ledger closes a line are
+            // ONE number: were they to drift apart, an order could be routed for a quantity the ledger
+            // then declined to recognise as a close.
+            if (Math.Abs(delta) < PositionMath.ShareEpsilon)
             {
                 notes.Add(new FunnelNote(target.Id, "already at target — no order (trading zero shares is a cost with no effect)."));
                 continue;
@@ -162,10 +167,6 @@ public static class OrderBuilder
 
         return orders;
     }
-
-    /// <summary>Below this, a "delta" is floating-point noise rather than an intent. Trading it would
-    /// pay a spread to move nothing.</summary>
-    private const double ShareEpsilon = 1e-9;
 
     private static string Iso(DateOnly d) => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
     private static string Num(double v) => v.ToString("G6", CultureInfo.InvariantCulture);

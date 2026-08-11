@@ -33,6 +33,20 @@ public sealed class FakeMarketData : IMarketDataProvider
         list.Add(dividend);
     }
 
+    /// <summary>
+    /// Plant a split on the fake feed, so a harness test exercises the REAL ingest path
+    /// (Stage1Fetch → DailyPipeline.IngestStaged → CorporateActionIngestion.IngestSplits) rather than
+    /// hand-inserting a corporate_actions row and skipping the code under test.
+    ///
+    /// The <c>_splits</c> dictionary and <see cref="GetSplitsAsync"/> have existed since 2.10 with no
+    /// writer, so every split test before D142 either bypassed this provider or did not exist.
+    /// </summary>
+    public void AddSplit(string symbol, SplitEvent split)
+    {
+        if (!_splits.TryGetValue(symbol, out var list)) { list = []; _splits[symbol] = list; }
+        list.Add(split);
+    }
+
     public Task<IReadOnlyList<EodBar>> GetEodAsync(string symbol, string from, string to, string asOf, CancellationToken ct = default)
     {
         if (ThrowOnFetch) throw new InvalidOperationException($"fake provider hard-failed fetching {symbol}.");
