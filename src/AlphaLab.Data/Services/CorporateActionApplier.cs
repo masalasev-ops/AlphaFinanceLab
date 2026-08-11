@@ -140,7 +140,7 @@ public sealed class CorporateActionApplier(
             // date "dividend" precedes "split" lexically — the dividend is paid on the pre-split shares
             // of record, which is the correct order.
             var todays = actions.GetActionsAsOf(securityId.Value, watermark)
-                .Select(ToDomain)
+                .Select(LedgerMapping.ToDomain)
                 .Where(a => CorporateActionWindow.Contains(a.AppliedOn, previousSession, asOf))
                 .ToList();
 
@@ -305,34 +305,6 @@ public sealed class CorporateActionApplier(
         CorporateActionType.MergerCash or CorporateActionType.MergerStock or CorporateActionType.MergerMixed
         or CorporateActionType.Delist;
 
-    private static CorporateAction ToDomain(CorporateActionRow row) => new()
-    {
-        ActionId = row.ActionId,
-        SecurityId = new SecurityId(row.SecurityId),
-        Type = ParseType(row.Type),
-        ExDate = row.ExDate,
-        EffectiveDate = row.EffectiveDate,
-        CashPerShare = row.CashPerShare,
-        Ratio = row.Ratio,
-        CounterpartySecurityId = row.CounterpartySecurityId is { } c ? new SecurityId(c) : null,
-        NewSymbol = row.NewSymbol,
-    };
-
-    /// <summary>Map the DB token to the Core enum, failing CLOSED on an unknown token (rule 10) rather
-    /// than defaulting to a benign kind — an action type this build does not recognize is a stop, not a
-    /// silent skip.</summary>
-    private static CorporateActionType ParseType(string type) => type switch
-    {
-        "dividend" => CorporateActionType.Dividend,
-        "split" => CorporateActionType.Split,
-        "ticker_change" => CorporateActionType.TickerChange,
-        "merger_cash" => CorporateActionType.MergerCash,
-        "merger_stock" => CorporateActionType.MergerStock,
-        "merger_mixed" => CorporateActionType.MergerMixed,
-        "spinoff" => CorporateActionType.Spinoff,
-        "delist" => CorporateActionType.Delist,
-        _ => throw new InvalidOperationException(
-            $"Unknown corporate_actions.type '{type}'. The ledger refuses an action kind it cannot map " +
-            "rather than defaulting it (rule 10)."),
-    };
+    // Row → domain moved to LedgerMapping.ToDomain(CorporateActionRow) when D142 gave it a second
+    // caller (ShareUnitRestatements, which asks about securities this account may not hold).
 }

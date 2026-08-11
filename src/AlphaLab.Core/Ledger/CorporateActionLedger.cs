@@ -179,6 +179,44 @@ public static class CorporateActionLedger
         return new CorporateActionEffect.DividendCredited(cash, perShare, position.Shares);
     }
 
+    /// <summary>
+    /// The factor this action multiplies a share COUNT by, or null if it does not restate share units.
+    ///
+    /// WHY THIS EXISTS SEPARATELY FROM <see cref="Apply"/>. A unit restatement is a property of the
+    /// ACTION, not of any position: a pending order in a name the account does not yet hold is restated
+    /// by the same factor as a held line, and <see cref="Apply"/> cannot answer for it because it needs a
+    /// position to price. D142's order restatement asks exactly this question, over the securities named
+    /// in the day's stored orders rather than over the book.
+    ///
+    /// It is the SAME rule <see cref="Split"/> applies, including the fail-closed ratio validation — a
+    /// non-positive or non-finite ratio zeroes out or corrupts a share count either way, and guessing a
+    /// unit is worse than stopping. <c>UnitRestatementRatio_AgreesWithApply</c> asserts the two answers
+    /// match for EVERY <see cref="CorporateActionType"/>, so a new action kind that restates units cannot
+    /// be added to the dispatch without this returning its factor.
+    /// </summary>
+    public static double? UnitRestatementRatio(CorporateAction action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+
+        return action.Type switch
+        {
+            CorporateActionType.Split => RequireRatio(action),
+
+            // Everything else leaves the share COUNT alone. A dividend moves cash; a ticker change moves
+            // an alias; a spin-off moves BASIS off the parent but not shares; a merger or delist
+            // TERMINATES the line rather than re-denominating it, which is a different remedy (there is
+            // no factor that converts an order into a line that no longer exists).
+            _ => null,
+        };
+    }
+
+    private static double RequireRatio(CorporateAction action) =>
+        action.Ratio is { } r && double.IsFinite(r) && r > 0
+            ? r
+            : throw new InvalidOperationException(
+                $"Split action {action.ActionId} ({action.SecurityId}) has no positive, finite ratio " +
+                $"(got {action.Ratio?.ToString() ?? "null"}) — cannot restate the share unit.");
+
     private static CorporateActionEffect Split(Position position, CorporateAction action)
     {
         if (action.Ratio is not { } ratio || !double.IsFinite(ratio) || ratio <= 0)

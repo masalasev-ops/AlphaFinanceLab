@@ -186,12 +186,20 @@ public sealed class DailyPipeline(
                 var features = new BarFeatureView(barReads, calendar, asOfDate, watermark, costs);
                 var broker = new VirtualBroker(new CostModel(costs));
 
+                // D142: the share-unit conversions in force today, resolved once per security for the
+                // whole day. Built HERE rather than per account because a ratio is a property of the
+                // security and the window — every account with a pending order in the same name gets the
+                // same answer, including an account that does not hold it yet.
+                var restatements = new ShareUnitRestatements(
+                    caReads, asOf, watermark,
+                    calendar.PreviousSession(asOfDate) is { } prevSession ? Iso(prevSession) : null);
+
                 foreach (var account in ledger.GetAccounts(ledgerKind))
                 {
                     // Plants (FR-36) are equity-only fixtures: PlantEquityStep computes their day below;
                     // they have no funnel plan, no orders, no book — skipping is by design, not a warning.
                     if (AlphaLab.Evaluation.Calibration.PlantCohorts.IsPlantId(account.StrategyId)) continue;
-                    await RunAccountDayAsync(account, ledgerKind, asOfDate, asOf, watermark, features, broker, ct).ConfigureAwait(false);
+                    await RunAccountDayAsync(account, ledgerKind, asOfDate, asOf, watermark, features, broker, restatements, ct).ConfigureAwait(false);
                 }
 
                 // The random control populations (D36) are part of the day: one compact equity row per
@@ -372,7 +380,7 @@ public sealed class DailyPipeline(
 
     private async Task RunAccountDayAsync(
         Account account, RunKind kind, DateOnly asOfDate, string asOf, string watermark,
-        BarFeatureView features, VirtualBroker broker, CancellationToken ct)
+        BarFeatureView features, VirtualBroker broker, ShareUnitRestatements restatements, CancellationToken ct)
     {
         var plan = StrategyRegistry.For(db, account.StrategyId);
         if (plan is null)
@@ -387,8 +395,9 @@ public sealed class DailyPipeline(
         caApplier.ApplyForAccount(account.AccountId, kind, asOf, watermark,
             caPrevSession is { } cps ? Iso(cps) : null);
 
-        // (b) Fill the orders decided on the PRIOR session at today's open (the T+1 half of decide-at-close-T).
-        FillPriorOrders(account.AccountId, kind, asOfDate, asOf, features, broker);
+        // (b) Fill the orders decided on the PRIOR session at today's open (the T+1 half of decide-at-close-T),
+        // in the share units (a) just restated the book into (D142).
+        FillPriorOrders(account.AccountId, kind, asOfDate, asOf, features, broker, restatements);
 
         // (c) The book post-CA/post-fill, and its equity at today's close.
         var held = ledger.GetPositions(account.AccountId);
@@ -430,7 +439,9 @@ public sealed class DailyPipeline(
         ledger.RecordPositionSnapshot(account.AccountId, asOf, held, kind);
     }
 
-    private void FillPriorOrders(long accountId, RunKind kind, DateOnly asOfDate, string asOf, BarFeatureView features, VirtualBroker broker)
+    private void FillPriorOrders(
+        long accountId, RunKind kind, DateOnly asOfDate, string asOf,
+        BarFeatureView features, VirtualBroker broker, ShareUnitRestatements restatements)
     {
         var prevSession = calendar.PreviousSession(asOfDate);
         if (prevSession is null) return;
@@ -439,9 +450,23 @@ public sealed class DailyPipeline(
         if (priorJson is null) return; // the account's first decision has not been made yet (inception)
 
         var snapshot = DecisionSnapshot.FromJson(priorJson);
-        foreach (var order in snapshot.Stage6Orders)
+        foreach (var stored in snapshot.Stage6Orders)
         {
-            if (order.FillOn != asOf) continue; // only today's fills (consecutive-session processing keeps these aligned)
+            if (stored.FillOn != asOf) continue; // only today's fills (consecutive-session processing keeps these aligned)
+
+            // D142: the stored order is denominated in the share units of close T. If a corporate action
+            // restated this security between T and now — step (a), minutes ago — convert it, so the
+            // quantity the broker prices is in the same unit as the book and as today's quote. The stored
+            // row is NOT touched: this is a local copy, and the prior session's stage_json stays exactly
+            // what it was.
+            var order = OrderRestatement.Restate(stored, restatements.RatiosFor(stored.SecurityId));
+            if (!ReferenceEquals(order, stored))
+            {
+                logger.LogInformation(
+                    "{AsOf}: order for {Security} restated {Before} → {After} sh by today's corporate action(s) — " +
+                    "the DECISION is unchanged; only the unit its quantity is written in.",
+                    asOf, stored.SecurityId, stored.Shares, order.Shares);
+            }
 
             var mkt = new MarketInputs
             {
