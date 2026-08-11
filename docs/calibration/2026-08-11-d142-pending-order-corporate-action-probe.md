@@ -85,17 +85,32 @@ CLASS B (terminates — the oversell guard changes the outcome)   :  0
 | 9 | 402 `buyhold:ew` | 2020-10-08 | Sell | 0.393433 | 1019 | 2020-10-09 | 19896 | 1.195 | 7.73644 → 9.24505 | not tripped |
 | 10 | 402 `buyhold:ew` | 2025-05-15 | Sell | 0.157995 | 1090 | 2025-05-16 | 23561 | 1.01 | 7.24637 → 7.31883 | not tripped |
 
-### The blast radius is three accounts, not 403
+### The exposure, in two parts — and the order matters
 
 | accounts (replay) | 403 |
 |---|---|
 | accounts with any `decisions` row | **3** — `401=buyhold:cw`, `402=buyhold:ew`, `403=threshold:sma50` |
 | `decisions` rows (replay) | 15,093 |
 
-The 400 plant strategies write no `decisions` row at all — they are equity overlays and never route an
-order through the funnel — so **the plant cohort the calibration curves rest on cannot be affected in
-any window.** Of the ten hits, eight are `buyhold:ew` and two are `threshold:sma50`. **`buyhold:cw` —
-D131's gate opponent — has zero.**
+**(1) The contamination is confined to the funnel path.** Exactly three of the 403 replay accounts route
+orders through the funnel at all; the other 400 are structurally outside the affected path.
+
+**(2) Within that path it touched two of the three exposed accounts** — `buyhold:ew` ×8,
+`threshold:sma50` ×2, `buyhold:cw` (D131's gate opponent) ×0.
+
+Both facts belong together and in that order. *"Two of 403"* is arithmetically true, reads as half a
+percent, and would lead an operator deciding whether to regenerate straight to "immaterial" — the exact
+class of statement, literally true and misleading to the reader it was written for, that this
+remediation exists to remove.
+
+**Plant immunity is STRUCTURAL, not observed.** The 400 D64 plants are equity-only fixtures:
+`DailyPipeline` skips them before the funnel (`PlantCohorts.IsPlantId`), so they hold no book, carry no
+pending order, and **cannot be reached by this defect by construction** — at any watermark, in any
+window, in this generation or a future one. That is a property, verifiable by reading the pipeline
+rather than by re-running this probe, and it is what licenses the frozen D56 curves, the D121/D122
+detectable band, P23's recompute parity and the D117 confirmation slice all standing unchanged. Stated
+this way deliberately: *"plants untouched"* would have been an observation about one probe run, and the
+next person asking "are the curves safe?" would have had to redo it to find out.
 
 ---
 
@@ -120,6 +135,43 @@ the account's book, as the finding was originally filed, this hit would have bee
 
 ---
 
+## 4b. Does the divergence outlive its session? Measured, not reasoned
+
+"Ten sessions affected" invites the reading *"confined to ten sessions"*. Whether that is true depends on
+when each affected line next moves, which is a question about the store rather than about the mechanism —
+so it was queried rather than argued.
+
+| account | security | order | kind | book at decision → at fill | next trade in that name |
+|---|---|---|---|---|---|
+| 402 | 64 | Sell 0.112032 | delta/trim | 34.4616 → 45.5151 | 2022-05-11 (**+21**) |
+| 403 | 64 | Buy 356.68 | open/add | 1.08524 → 358.117 | 2022-05-11 (**+21**) |
+| 402 | 481 | Sell 0.146012 | delta/trim | 5.1377 → 10.1294 | 2018-12-10 (**+21**) |
+| **403** | **481** | **Sell 0.0704145** | **WHOLE-LINE CLOSE** | **0.0704145 → 0.0704145** | 2018-12-10 (**+21**) |
+| 402 | 756 | Sell 0.237174 | delta/trim | 2.40791 → 4.57865 | 2010-07-08 (**+21**) |
+| 403 | 756 | Buy 21.4186 | open (unheld) | none → 21.4186 | 2010-07-08 (**+21**) |
+| 402 | 828 | Buy 1.84997 | open/add | 18.763 → 21.0164 | 2009-12-04 (**+21**) |
+| 402 | 863 | Buy 0.0569777 | open/add | 3.30924 → 6.67546 | 2013-10-08 (**+21**) |
+| 402 | 1019 | Sell 0.393433 | delta/trim | 7.73644 → 8.85162 | 2020-11-09 (**+21**) |
+| 402 | 1090 | Sell 0.157995 | delta/trim | 7.24637 → 7.16084 | 2025-06-17 (**+21**) |
+
+**Findings, stated only as far as the measurement supports:**
+
+- **The divergence is NOT confined to the hit session.** In all ten cases the affected name is not traded
+  again for **+21 sessions**, so the book deviation persists across 21 sessions rather than ending with
+  the fill.
+- **Nine of the ten are deltas, trims or opens** — not whole-line closes. The "an ExitPolicy close leaves
+  (1 − 1/r) of the line open" framing describes the mechanism, not the majority of these hits.
+- **One IS a whole-line close, and it shows the mechanism in real data.** `threshold:sma50`, security
+  481, 2018-11-07: a 2-for-1 restated the line to 0.140829 while the stored close sold 0.0704145, leaving
+  **exactly 50 % of a line the ExitPolicy had closed still on the book** — and there for 21 sessions.
+- **Whether the +21 rebalance fully re-converges is NOT ESTABLISHED.** The delta is recomputed against
+  whatever the book then holds, which would correct the QUANTITY, but that was not measured and is not
+  claimed here. This is D140's second state recorded deliberately: an earlier assertion that the
+  deviation propagates indefinitely was withdrawn as unverified rather than kept because it sounded
+  right.
+
+---
+
 ## 5. Adjudication
 
 **Generation 2 stands.** It is not mixed arithmetic; it is uniformly *pre-D142* arithmetic, and it stays
@@ -132,6 +184,13 @@ The constraint that follows is recorded in D142's `Consequences` field:
 > re-run after the fix is what would create the mixed-arithmetic generation D95 forbids. `reproduce-day`
 > on any of the nine dates in the table above will legitimately DIVERGE after D142; that is the defect's
 > fingerprint, not an NFR-1 failure.
+
+**And that constraint is prose that nothing enforces — with the dangerous path as the DEFAULT.**
+`ReplayRunner` skips same-watermark committed days (`:157-162`), so a plain `replay-calibrate` against
+this arena after D142 lands produces precisely the mixed arithmetic D95 forbids, while `--reset` — the
+safe path — is the opt-in. That is D140's own defect class sitting inside the decision that applies D140.
+Recorded as **finding 403** with its own named PR in the 6.5a queue; deliberately not built here, so this
+PR stays one finding wide.
 
 The oversell guard is shipped in the same PR on the strength of class B = 0: it is provably inert on
 every stored day of this generation.
