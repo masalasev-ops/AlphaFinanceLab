@@ -366,9 +366,21 @@ public class CalibrationRunTests
             // So the assertion is: nothing else, ever. Any other key appearing under --report-only is the
             // regression this guards — and "no config rows" as a blanket claim is retired here rather than
             // left standing as a sentence the run does not honour (D140).
+            // D144 (v1.9.103) AMENDS THE COUNT, and for the reason this comment already gives. A second
+            // provenance row now lands here: `Replay.LedgerArithmeticVersion@v1`, stamped by ReplayRunner
+            // when a generation is created, recording WHICH ledger arithmetic produced its stored trades.
+            // The argument for permitting it is the one written above for the roster bootstrap, applied
+            // unchanged: it is provenance the generation needs to be identifiable rather than a threshold
+            // that governs a verdict, and `ReplayRunner` cannot see `reportOnly` — suppressing the write
+            // under a flag the writer cannot see is exactly what was rejected for `Accounts.StartingCash`.
+            //
+            // The claim therefore becomes TWO named rows and nothing else, ever. It is written as an
+            // allow-list rather than a count so a third key still fails, which is the regression this
+            // guards; and D141's "exactly one" is amended by D144 rather than quietly outgrown (rule 25).
             var permittedBootstrap = AlphaLab.Strategies.DummyRoster.StartingCashConfigKey + "@v1";
+            var permittedVintage = AlphaLab.Core.Ledger.LedgerArithmetic.VintageConfigKey + "@v1";
             Assert.Equal(
-                before.Union([permittedBootstrap]).OrderBy(s => s, StringComparer.Ordinal).ToList(),
+                before.Union([permittedBootstrap, permittedVintage]).OrderBy(s => s, StringComparer.Ordinal).ToList(),
                 Snapshot(db));
         }
         finally

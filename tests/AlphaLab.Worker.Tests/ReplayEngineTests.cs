@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AlphaLab.Core.Config;
+using AlphaLab.Core.Ledger;
 using AlphaLab.Data;
 using AlphaLab.Data.Entities;
 using AlphaLab.Data.Providers;
@@ -286,6 +287,118 @@ public class ReplayEngineTests
             Runner(h).RunAsync(Conn(h),
                 new ReplayRequest(h.Sessions[31], h.Sessions[33], WithPlants: false, WithEvaluation: false)));
         Assert.Contains("WITH plants", ex2.Message, StringComparison.Ordinal);
+    }
+
+    // ==================== D144 — the ledger-arithmetic vintage guard ====================
+
+    /// <summary>
+    /// The generation records the arithmetic it was produced under, at the moment it is created — and
+    /// records it ONCE, so a resumed run does not accumulate duplicate config rows (rule 24 is
+    /// append-only, not append-per-run).
+    /// </summary>
+    [Fact]
+    public async Task D144_AGenerationIsStampedWithItsLedgerArithmetic_Once()
+    {
+        using var h = new PipelineHarness();
+
+        await Runner(h).RunAsync(Conn(h), Window(h));
+        await Runner(h).RunAsync(Conn(h), Window(h)); // resume: every session already committed
+
+        using var db = h.Open();
+        var rows = db.Config.Where(c => c.Key == LedgerArithmetic.VintageConfigKey).ToList();
+        var row = Assert.Single(rows);
+        Assert.Equal(LedgerArithmetic.Version, row.ValueJson);
+    }
+
+    /// <summary>
+    /// THE DEFAULT PATH IS THE DANGEROUS ONE, which is the whole point of D144. Committed days are
+    /// skipped, so an ordinary re-run after an arithmetic change would leave them on the old rules and
+    /// compute every new session on the new ones — one generation, two arithmetics (D95). Simulated by
+    /// rewriting the stamp to an older vintage, which is exactly what generation 2 looks like to a build
+    /// that has moved on.
+    /// </summary>
+    [Fact]
+    public async Task D144_AddingSessionsToAGenerationOfOlderArithmetic_IsRefused()
+    {
+        using var h = new PipelineHarness();
+        await Runner(h).RunAsync(Conn(h), new ReplayRequest(h.Sessions[25], h.Sessions[26]));
+
+        using (var db = h.Open())
+        {
+            var row = db.Config.Single(c => c.Key == LedgerArithmetic.VintageConfigKey);
+            db.Config.Add(new ConfigRow
+            {
+                Key = row.Key, ValueJson = "la-1", Version = row.Version + 1,
+                ChangedOn = h.Sessions[25], Reason = "test: an older arithmetic",
+            });
+            db.SaveChanges();
+        }
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            Runner(h).RunAsync(Conn(h), new ReplayRequest(h.Sessions[27], h.Sessions[28])));
+
+        Assert.Contains("la-1", ex.Message, StringComparison.Ordinal);
+        Assert.Contains(LedgerArithmetic.Version, ex.Message, StringComparison.Ordinal);
+        Assert.Contains("--reset", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// An UNSTAMPED generation is refused too, and this is the case that matters most: sp500 generation 2
+    /// predates the marker entirely. "No marker" means "produced under arithmetic this build cannot
+    /// identify", and treating that as a match would silently permit the exact mix D144 exists to stop.
+    /// </summary>
+    [Fact]
+    public async Task D144_AnUnstampedGeneration_IsRefusedRatherThanAssumedCompatible()
+    {
+        using var h = new PipelineHarness();
+        await Runner(h).RunAsync(Conn(h), new ReplayRequest(h.Sessions[25], h.Sessions[26]));
+
+        using (var db = h.Open())
+        {
+            // Strip the marker: the shape of every generation produced before D144 shipped.
+            db.Config.RemoveRange(db.Config.Where(c => c.Key == LedgerArithmetic.VintageConfigKey));
+            db.SaveChanges();
+        }
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            Runner(h).RunAsync(Conn(h), new ReplayRequest(h.Sessions[27], h.Sessions[28])));
+
+        Assert.Contains("unstamped", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("--reset", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// `--reset` is exempt, and must be: it DELETES the generation first, so there is nothing to mix
+    /// with, and re-simulating the whole window is the sanctioned remedy rather than the hazard. If this
+    /// went red the guard would have made the safe path unreachable — turning a mixing hazard into a
+    /// dead end.
+    /// </summary>
+    [Fact]
+    public async Task D144_ResetIsExempt_AndRestampsTheFreshGeneration()
+    {
+        using var h = new PipelineHarness();
+        await Runner(h).RunAsync(Conn(h), new ReplayRequest(h.Sessions[25], h.Sessions[26]));
+
+        using (var db = h.Open())
+        {
+            var row = db.Config.Single(c => c.Key == LedgerArithmetic.VintageConfigKey);
+            db.Config.Add(new ConfigRow
+            {
+                Key = row.Key, ValueJson = "la-1", Version = row.Version + 1,
+                ChangedOn = h.Sessions[25], Reason = "test: an older arithmetic",
+            });
+            db.SaveChanges();
+        }
+
+        var outcome = await Runner(h).RunAsync(Conn(h),
+            new ReplayRequest(h.Sessions[27], h.Sessions[28], Reset: true));
+
+        Assert.False(outcome.StoppedEarly);
+
+        using var read = h.Open();
+        var latest = read.Config.Where(c => c.Key == LedgerArithmetic.VintageConfigKey)
+            .AsEnumerable().OrderByDescending(c => c.Version).First();
+        Assert.Equal(LedgerArithmetic.Version, latest.ValueJson);
     }
 
     // Verify-pass completion of the mode guard: a calibration that seeded plants and then aborted
