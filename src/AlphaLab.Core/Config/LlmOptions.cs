@@ -63,9 +63,9 @@ public sealed class LlmDailyBudgetOptions
     /// <summary>Daily token ceiling across all seats and tasks; 0 = no token ceiling (cost and calls
     /// still apply). DERIVED (D130, closing finding 320's open knob): floor(MaxCostUsd / (the mean
     /// uncached input rate across the configured pricing table / 1e6)) = 130,000 at the authored 100.
-    /// Overshoot note (finding 382): this guard is checked as state ≥ cap (backward-looking), unlike the
-    /// cost guard's state + estimate &gt; cap, so it admits one call past the limit — aligning it with the
-    /// pre-flight shape is a named Phase 6 item, not changed in the v1.9.92 config pass.</summary>
+    /// Enforced PRE-FLIGHT as state + estimate &gt; cap — the same shape as the cost guard (finding 382
+    /// closed the backward-looking `state &gt;= cap` form this note used to describe) — and ACCUMULATED
+    /// across a batch since D151 (finding 420), so N batched requests cannot cross the ceiling by N−1.</summary>
     public int MaxTokens { get; set; } = 130_000;
 }
 

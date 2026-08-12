@@ -422,8 +422,14 @@ public sealed class ReplayRunner(
     }
 
     /// <summary>Delete the replay GENERATION: every run_kind='replay' row plus the replay accounts'
-    /// books. Never bars, corporate_actions, config, or any forward row — the CI greps and rule 3 stay
-    /// true by construction (no statement here touches the append-only tables).</summary>
+    /// books. Never bars, corporate_actions, config, or any forward row.
+    ///
+    /// <para>That last sentence used to end "the CI greps and rule 3 stay true by construction" — a claim
+    /// about the greps that nothing examined, and a false one: they matched only the raw-SQL delete form,
+    /// which this method does not write, and not the EF idiom on the next twenty lines, which is what it
+    /// does write. D151's guard 1d now checks it, so the sentence above is enforced rather than asserted.
+    /// The twenty `ExecuteDelete` calls below are excluded by table-qualification, not by exception: none
+    /// of them names an append-only DbSet.</para></summary>
     public static void DeleteReplayGeneration(AlphaLabDbContext db)
     {
         using var txn = db.Database.BeginTransaction();

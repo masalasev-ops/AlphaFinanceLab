@@ -8,8 +8,10 @@ namespace AlphaLab.Evaluation.Tests;
 /// <summary>
 /// The structural guard on §24.5's descriptive-only boundary: nothing that judges a strategy may take a
 /// dependency on the Signal Library. Before this, the boundary was prose in three documents — and this
-/// is the FIRST structural enforcement of a "never an input to X" rule in the repo (rule 32 is still
-/// prose-only; the bars rule is enforced, but as a SQL grep).
+/// was the FIRST structural enforcement of a "never an input to X" rule in the repo. Both parenthetical
+/// claims that used to follow have since expired and are corrected rather than left standing (D151):
+/// rule 32 is no longer prose-only (`Rule32GuardTests` is the closure, `ci.ps1` guard 4b the text scan),
+/// and the bars rule is no longer only a SQL grep (guard 1d covers the EF DML idiom).
 ///
 /// SCOPED TO THE ASSEMBLY WITH THE LIBRARY'S OWN TYPES EXCLUDED — deliberately NOT to a list of consumer
 /// namespaces. A namespace enumeration fails by OMISSION at exactly the edit that should have triggered

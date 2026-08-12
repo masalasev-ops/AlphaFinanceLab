@@ -392,10 +392,10 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
                                                    // MaxTokens = floor(MaxCostUsd / (mean uncached input rate / 1e6)) = 130,000
                                                    // at the authored 100 (mean of the configured InputPerMTok values). The
                                                    // token ceiling is now ENFORCED (>0) — finding 320's knob finally has a
-                                                   // derived value. Overshoot note (finding 382): the token guard is checked
-                                                   // state >= cap (backward-looking), unlike the cost guard's pre-flight
-                                                   // state + estimate > cap, so it admits ONE call past the limit; aligning it
-                                                   // is a named Phase 6 item. The caps assume a CALIBRATED estimator (D130):
+                                                   // derived value. The token guard is enforced PRE-FLIGHT as state + estimate
+                                                   // > cap (finding 382) and ACCUMULATES across a batch (D151,
+                                                   // finding 420), so N batched requests cannot cross any ceiling
+                                                   // by N-1 requests. The caps assume a CALIBRATED estimator (D130):
                                                    // until the ExpectedOutputTokens seeds and EstimatedArmCostUsd are
                                                    // recalibrated from actuals, the binding constraint is the estimator
                                                    // rather than the budget.
