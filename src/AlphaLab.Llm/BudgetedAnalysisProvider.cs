@@ -62,9 +62,23 @@ public sealed class BudgetedAnalysisProvider(
         }
 
         // ---- 2. Budget, pre-flight. Whatever the ceiling refuses is degraded, unspent.
+        //
+        // THE RUNNING TOTALS ARE THE POINT (D151, finding 420). `state` is the DAY-START ledger and never
+        // advances, so before this every request in a batch was judged against the same unspent figures:
+        // if one fitted, all N fitted, and actual spend could reach state + N x estimate against a ceiling
+        // the guard had "enforced". Only the CALL dimension accumulated, via admitted.Count — which is why
+        // the one test that looks like batch coverage (Budget_PartialAdmission) passes: it binds on calls.
+        // D130 classifies batching as a cost LEVER that changes no cap's formula; unaccumulated, it was a
+        // cap MULTIPLIER of exactly N. That contradiction with a live register row is what makes this a
+        // bug rather than a design question.
+        //
+        // Accumulated over `toSpend`, never over `requests`: a cache hit spent nothing and must contribute
+        // nothing, which is the ordering contract in this class's own doc comment.
         var state = await ledger.GetAsync(day, ct).ConfigureAwait(false);
         var admitted = new List<AnalysisRequest>();
         var refused = 0;
+        var admittedCost = 0m;
+        var admittedTokens = 0;
 
         foreach (var r in toSpend)
         {
@@ -78,7 +92,7 @@ public sealed class BudgetedAnalysisProvider(
                 llm.UseBatchesApiForScheduled);
             var estimateTokens = CostModel.EstimateTokenCount(r.Prompt, expectedOut);
 
-            if (WouldExceed(state, estimate, estimateTokens, admitted.Count))
+            if (WouldExceed(state, estimate, estimateTokens, admitted.Count, admittedCost, admittedTokens))
             {
                 results[r.CustomId] = new AnalysisResult(
                     r.CustomId, AnalysisOutcome.BudgetExhausted, "", TokenUsage.Zero, model,
@@ -88,6 +102,8 @@ public sealed class BudgetedAnalysisProvider(
             else
             {
                 admitted.Add(r);
+                admittedCost += estimate;
+                admittedTokens += estimateTokens;
             }
         }
 
@@ -134,7 +150,7 @@ public sealed class BudgetedAnalysisProvider(
             request.Prompt, expectedOut, llm.PricingFor(model), llm.BatchDiscountMultiplier, batched: false);
         var estimateTokens = CostModel.EstimateTokenCount(request.Prompt, expectedOut);
 
-        if (WouldExceed(state, estimate, estimateTokens, 0))
+        if (WouldExceed(state, estimate, estimateTokens, 0, 0m, 0))   // ONE request: nothing admitted before it
         {
             await ledger.RecordAsync(day, 0, TokenUsage.Zero, degraded: true, "budget exhausted", ct)
                 .ConfigureAwait(false);
@@ -155,19 +171,28 @@ public sealed class BudgetedAnalysisProvider(
 
     /// <summary>Would admitting one more call at <paramref name="estimate"/> (costing
     /// <paramref name="estimateTokens"/> tokens) cross any of the three D24 ceilings? A zero ceiling means
-    /// that dimension is not enforced.</summary>
-    private bool WouldExceed(BudgetState state, decimal estimate, int estimateTokens, int alreadyAdmitted)
+    /// that dimension is not enforced.
+    ///
+    /// <para>ALL THREE DIMENSIONS ACCUMULATE ACROSS THE BATCH (D151), and the three carry the +1 term
+    /// differently for a reason worth stating, because "unifying" them is the likely way to break this:
+    /// <paramref name="alreadyAdmitted"/> is a COUNT of calls not yet including the one being judged, so
+    /// the call line adds <c>+ 1</c>; <paramref name="admittedCost"/> and <paramref name="admittedTokens"/>
+    /// are SUMS of estimates already admitted, and the call being judged contributes its own
+    /// <paramref name="estimate"/> term — so they must NOT take a <c>+ 1</c>.</para></summary>
+    private bool WouldExceed(
+        BudgetState state, decimal estimate, int estimateTokens,
+        int alreadyAdmitted, decimal admittedCost, int admittedTokens)
     {
         var b = llm.DailyBudget;
         if (b.MaxCalls > 0 && state.Calls + alreadyAdmitted + 1 > b.MaxCalls) return true;
-        if (b.MaxCostUsd > 0m && state.CostUsd + estimate > b.MaxCostUsd) return true;
+        if (b.MaxCostUsd > 0m && state.CostUsd + admittedCost + estimate > b.MaxCostUsd) return true;
         // MaxTokens (finding 320), aligned to the cost guard's PRE-FLIGHT shape (finding 382, v1.9.94).
         // It was `state.Tokens >= cap` — backward-looking, where the cost dimension above is
         // `state + estimate > cap` — so the token ceiling admitted ONE call past its limit before
         // refusing. The estimate's token count is the same quantity CostModel.Estimate prices: the
         // prompt's input tokens plus the task's expected output (D130's pre-registered seed, never the
         // API ceiling). The recorded spend below still uses the API's actual counts.
-        if (b.MaxTokens > 0 && state.Tokens + estimateTokens > b.MaxTokens) return true;
+        if (b.MaxTokens > 0 && state.Tokens + admittedTokens + estimateTokens > b.MaxTokens) return true;
         return false;
     }
 

@@ -166,6 +166,7 @@ leads with means what it says.*
 - `FR21_CacheHit_CostsZero` — second read same (prompt_hash, model, date) spends nothing.
 - `FR21_Replay_HasNoAnalysisPath` — replay runs produce zero analysis_cache rows by construction (compile-time absence preferred: the replay composition root has no IAnalysisProvider registration).
 - `FR22_Budget_DegradesInOrder` — over-budget day: held names served, then cached, then neutral fallback; never a blackout; llm_budget_log.degraded = 1.
+- `D151_BatchBudget_AccumulatesAcrossTheBatch` - finding 420: the cost AND token ceilings accumulate across a batch, so N requests cannot cross a cap by N-1; a cache hit contributes nothing to the running total. NOTE (finding 421): the refusal order is ARRIVAL order, not the priority order this FR22 row promises - that gap is recorded, not yet built.
 - Mocked provider for CI; one live smoke test gated by an xUnit `[Trait("Category","LiveSmoke")]` (excluded from the default run via `--filter`) — not an env flag (D67).
 
 *The AI seats (D79-D82; every seat priced by the arena, golden rule 32):*

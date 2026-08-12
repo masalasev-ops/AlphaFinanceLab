@@ -21,13 +21,26 @@ function Assert-NoMatch {
     param(
         [Parameter(Mandatory)][string[]]$Files,
         [Parameter(Mandatory)][string]$Pattern,
-        [Parameter(Mandatory)][string]$Message
+        [Parameter(Mandatory)][string]$Message,
+        [switch]$AllowEmpty,
+        # Suppress the red hit listing. ONLY for the self-tests below, where a throw is the PASS and the
+        # listing would read as a build failure in the CI log. Never use it for a real guard.
+        [switch]$Quiet
     )
-    if (-not $Files) { return }
+    # AN EMPTY FILE LIST IS A FAILURE, NOT A PASS (D151, finding 418). This used to `return`, so a guard
+    # whose scoped directory had been renamed away reported success having scanned NOTHING - a
+    # green-forever check of the exact kind this guard set exists to prevent, sitting in the helper every
+    # guard below inherits. Guards that legitimately may scan nothing must say so with -AllowEmpty.
+    if (-not $Files) {
+        if ($AllowEmpty) { return }
+        throw "Guard grep scanned NO FILES (scope is empty or mis-pathed): $Message"
+    }
     $hits = Select-String -Path $Files -Pattern $Pattern -AllMatches -ErrorAction SilentlyContinue
     if ($hits) {
-        Write-Host "GUARD FAILED: $Message" -ForegroundColor Red
-        $hits | ForEach-Object { Write-Host "  $($_.Path):$($_.LineNumber): $($_.Line.Trim())" -ForegroundColor Red }
+        if (-not $Quiet) {
+            Write-Host "GUARD FAILED: $Message" -ForegroundColor Red
+            $hits | ForEach-Object { Write-Host "  $($_.Path):$($_.LineNumber): $($_.Line.Trim())" -ForegroundColor Red }
+        }
         throw "Guard grep failed: $Message"
     }
 }
@@ -161,14 +174,101 @@ try {
     #     for two generations without anyone noticing.
     #
     #     SCOPED TO src + tools, NOT tests - deliberately, and this is the one exclusion in the guard set.
-    #     DetectabilityGateTests re-seeds a fixture DB by clearing its Calibration.DetectionPower row to
-    #     exercise the no-curves branch; that is a test constructing a scenario, not the lab mutating its
-    #     own config history. If a future test needs the same, prefer a fresh arena.
+    #     TWO test sites rely on it, and both are named here because the comment used to name only one
+    #     (D151): DetectabilityGateTests clears its Calibration.DetectionPower row to exercise the
+    #     no-curves branch, and ReplayEngineTests clears Replay.LedgerArithmeticVersion to build the
+    #     unstamped-generation case D144 refuses. Both are tests CONSTRUCTING a scenario in a throwaway
+    #     fixture DB, not the lab mutating its own config history. If a future test needs the same,
+    #     prefer a fresh arena.
     $srcToolFiles = Get-ChildItem -Path (Join-Path $repoRoot 'src'), (Join-Path $repoRoot 'tools') -Recurse -File -Include *.cs, *.sql -ErrorAction SilentlyContinue |
         Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' } | ForEach-Object { $_.FullName }
     Assert-NoMatch -Files $srcToolFiles -Pattern 'DELETE\s+FROM\s+config\b' -Message 'DELETE FROM config is forbidden - config is append-only-versioned (rule 24 / D72).'
     Assert-NoMatch -Files $srcToolFiles -Pattern 'UPDATE\s+config\b'         -Message 'UPDATE config is forbidden - a change INSERTs (key, version+1) (rule 24 / D72).'
     Assert-NoMatch -Files $srcToolFiles -Pattern 'Config\.Remove(Range)?\s*\(' -Message 'db.Config.Remove/RemoveRange is forbidden - config is append-only-versioned (rule 24 / D72).'
+
+    # 1d. THE SAME THREE APPEND-ONLY TABLES, GUARDED AGAINST THE IDIOM THIS CODEBASE ACTUALLY WRITES
+    #     (D151, finding 418). Guards 1, 1b and the SQL halves of 1c match `DELETE FROM x` / `UPDATE x`,
+    #     and those strings appear NOWHERE in src, tests or tools - not once, including migrations. Six
+    #     patterns with nothing to match, while the repo performs DML through EF: 43 ExecuteDelete /
+    #     ExecuteUpdate / Remove / RemoveRange sites across ReplayRunner, ScratchStore and LedgerStore.
+    #     So "CI greps enforce" (hard rule 3) was a claim about a check that could not see the writes it
+    #     claimed to forbid - D140's shape. The SQL patterns are KEPT rather than replaced: they cost
+    #     nothing and they still cover a future raw-SQL migration.
+    #
+    #     TABLE-QUALIFIED ON PURPOSE, and this is the whole design of the pattern. An unqualified
+    #     \.ExecuteDelete\( would fire on all 41 LEGITIMATE calls in ReplayRunner.DeleteReplayGeneration
+    #     and ScratchStore.Rewind - the replay --reset and catch-up rewind paths the arena depends on -
+    #     and a bare \.Remove\( would fire on HashSet<T>.Remove in HistoricalMembershipIngestion and
+    #     MembershipRefresh. Anchoring on the DbSet name immediately before the verb excludes all of them,
+    #     and also keeps the guard off the PROSE that explains the rule (guard 5 records that its own
+    #     first draft fired on a comment describing the very invariant it enforces).
+    #
+    #     KNOWN GAP, stated rather than hidden (guard 5's discipline): the pattern is SINGLE-LINE. Every
+    #     real DML site today is written `db.<Set>.Where(...).ExecuteDelete();` on one line, but a
+    #     multi-line `db.Bars\n  .Where(...)\n  .ExecuteDelete()` would evade this - and ScratchStore is
+    #     ALREADY written that way for other tables (:218-220, :233-235), so the form is live in the repo
+    #     and this is a real hole, not a theoretical one. The brace is that bars/corporate_actions/config
+    #     have no such call at all today; if one is ever added legitimately, widen this to a multiline scan.
+    #
+    #     SCOPED src + tools, NOT tests - guard 1c's reasoning, which applies verbatim: a test that
+    #     constructs a data gap in a throwaway fixture DB (BarFeatureViewTests db.Bars.RemoveRange,
+    #     DetectabilityGateTests and ReplayEngineTests on config) is not the lab mutating its own store.
+    #     Note guard 1's SQL patterns above DO include tests; that asymmetry is deliberate and survives.
+    $appendOnlySets = 'Bars|CorporateActions|Config'
+    $efDmlVerbs = 'Remove|RemoveRange|ExecuteDelete|ExecuteUpdate|ExecuteDeleteAsync|ExecuteUpdateAsync'
+    $efDmlPattern = '\b(' + $appendOnlySets + ')\s*\.\s*(' + $efDmlVerbs + ')\s*\(' +
+                    '|\b(' + $appendOnlySets + ')\s*\.\s*Where\s*\(.*\)\s*\.\s*(' + $efDmlVerbs + ')\s*\('
+    Assert-NoMatch -Files $srcToolFiles -Pattern $efDmlPattern `
+        -Message 'EF DML on an append-only table is forbidden: bars/corporate_actions are versioned append-only (rule 3 / D40 / D76) and config INSERTs (key, version+1) (rule 24 / D72). Corrections append a new version.'
+
+    # 1e. THE SELF-TEST FOR 1d, because a guard nobody has seen fire is a guard nobody knows works.
+    #     check-register.ps1:283-311 is the precedent, and finding 383 is the lesson it records: its own
+    #     first self-test RE-IMPLEMENTED the thing it was testing and so passed on an engine where the
+    #     real loop failed. This one therefore calls the SAME Assert-NoMatch with the SAME $efDmlPattern
+    #     variable - never a re-declared regex - against a synthetic violation, and asserts it THROWS.
+    $probeDir = Join-Path ([System.IO.Path]::GetTempPath()) ("alphalab-guard-probe-" + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $probeDir -Force | Out-Null
+    try {
+        $probe = Join-Path $probeDir 'Probe.cs'
+        # One line per form the guard must catch, including the chained .Where(...) shape.
+        @(
+            'db.Bars.ExecuteDelete();'
+            'db.CorporateActions.Where(c => c.Id == 1).ExecuteDelete();'
+            'db.Config.RemoveRange(stale);'
+            'db.Config.Where(c => c.Key == k).ExecuteUpdate(s => s.SetProperty(x => x.Value, "v"));'
+        ) | Set-Content -Path $probe -Encoding UTF8
+        $probeLines = (Get-Content $probe).Count
+        $fired = $false
+        try { Assert-NoMatch -Files @($probe) -Pattern $efDmlPattern -Message 'self-test probe' -Quiet }
+        catch { $fired = $true }
+        if (-not $fired) { throw 'Guard 1d SELF-TEST failed: the EF-DML pattern did not fire on a synthetic violation - the guard is not enforcing what its message claims.' }
+
+        $hitLines = (Select-String -Path $probe -Pattern $efDmlPattern -AllMatches | Measure-Object).Count
+        if ($hitLines -ne $probeLines) {
+            throw "Guard 1d SELF-TEST failed: the pattern matched $hitLines of $probeLines probe forms - one of the DML shapes is not covered."
+        }
+
+        # And the other direction: the guard must NOT fire on the legitimate idioms, or it gets deleted
+        # the first time it blocks a replay --reset (guard 5: 'a guard that cannot be satisfied is a
+        # guard that gets deleted'). These four lines are copied from real, sanctioned call sites.
+        $clean = Join-Path $probeDir 'Clean.cs'
+        @(
+            'db.Trades.Where(t => t.RunKind == ReplayKind).ExecuteDelete();'
+            'db.Positions.Remove(existing);'
+            'open.Remove(id);'
+            'db.Config.Add(new ConfigRow { Key = k });'
+            '// Never bars, corporate_actions, config - the append-only tables stay untouched.'
+        ) | Set-Content -Path $clean -Encoding UTF8
+        Assert-NoMatch -Files @($clean) -Pattern $efDmlPattern -Message 'Guard 1d SELF-TEST failed: the EF-DML pattern fired on a LEGITIMATE call site or on prose describing the rule.'
+
+        # 1f. Assert-NoMatch's empty-list behaviour is itself self-tested (finding 418): it used to
+        #     silently pass, so every guard inherited a green-forever mode reachable by renaming a folder.
+        $empty = $false
+        try { Assert-NoMatch -Files @() -Pattern 'anything' -Message 'self-test empty scope' }
+        catch { $empty = $true }
+        if (-not $empty) { throw 'Assert-NoMatch SELF-TEST failed: an empty file list must fail, not pass silently.' }
+    }
+    finally { Remove-Item $probeDir -Recurse -Force -ErrorAction SilentlyContinue }
 
     # 2. No committed secret-key material (D67). appsettings.Secrets.json is gitignored, so it is
     #    excluded from the committable set below.
@@ -213,6 +313,34 @@ try {
             Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' } | ForEach-Object { $_.FullName }
     }
     Assert-NoMatch -Files $consumerCs -Pattern 'signal_ic|ISignal\b|SignalIc|SignalLibrary' -Message 'The Signal Library is descriptive only (D91) - the allocator/gate/sizing/eligibility must never read it.'
+
+    # 4b. GOLDEN RULE 32's COROLLARY (MASTER 23.8.4) GETS THE SAME TWO-GUARD TREATMENT (D151, finding 419).
+    #     "These artifacts are read by humans, and by nothing that judges AI output": no monitor signal,
+    #     gate input, allocator term or population comparison may read ai_context_packs or ai_decisions.
+    #     Rule32GuardTests is the closure (the brace); this is the belt, and until now rule 32 had only
+    #     the closure while D91 had both. The asymmetry mattered because the closure reads SIGNATURES:
+    #     every judging class already takes AlphaLabDbContext, on which db.AiDecisions and db.AiContextPacks
+    #     sit, so `db.AiDecisions.Count(...)` inside a monitor method changes no signature, compiles, and
+    #     passes every reflection guard in the repo. A body-level text scan is the only thing that sees it.
+    #
+    #     Monitor, Calibration and ReadModels are added to the judging set here and NOT to guard 4's
+    #     $consumerDirs: D91's boundary deliberately sanctions AlphaLab.Evaluation.ReadModels as the FR-46
+    #     signal consumer (DescriptiveOnlyGuardTests names it), whereas rule 32 sanctions no read-model at
+    #     all. Two rules, two consumer sets - merging them would quietly widen one of them.
+    $judgingDirs = @(
+        'src/AlphaLab.Evaluation/Allocator', 'src/AlphaLab.Evaluation/Gate',
+        'src/AlphaLab.Evaluation/Candidates', 'src/AlphaLab.Evaluation/Power',
+        'src/AlphaLab.Evaluation/Monitor', 'src/AlphaLab.Evaluation/Calibration',
+        'src/AlphaLab.Evaluation/ReadModels', 'src/AlphaLab.Evaluation/Metrics',
+        'src/AlphaLab.Core/Funnel'
+    ) | ForEach-Object { Join-Path $repoRoot $_ } | Where-Object { Test-Path $_ }
+    $judgingCs = @()
+    if ($judgingDirs) {
+        $judgingCs = Get-ChildItem -Path $judgingDirs -Recurse -File -Include *.cs -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' } | ForEach-Object { $_.FullName }
+    }
+    Assert-NoMatch -Files $judgingCs -Pattern 'ai_context_packs|ai_decisions|AiContextPacks\b|AiDecisions\b|AiDecisionRow|AiContextPackRow|AiDecisionRecord|ContextPack\b|IAiDecisionStore' `
+        -Message 'Golden rule 32 (MASTER 23.8.4): no monitor signal, gate input, allocator term, population comparison or read-model may read the AI-seat artefacts (ai_context_packs / ai_decisions).'
 
     # 5. Ledger money is C# decimal persisted as TEXT, NEVER double/REAL (rule 20 / D69). Added at
     #    v1.9.85 (finding 365) for the same reason as 1c: the invariant was held by review alone.

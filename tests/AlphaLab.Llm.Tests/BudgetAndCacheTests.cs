@@ -222,6 +222,73 @@ public class BudgetAndCacheTests
     }
 
     [Fact]
+    public async Task D151_CostCeiling_AccumulatesAcrossTheBatch_NotJustTheCallCount()
+    {
+        // finding 420. `Budget_PartialAdmission` above LOOKS like this coverage — its name promises a
+        // partially-admitted batch — but it binds on maxCalls, the one dimension that already
+        // accumulated. No test in the repository ever put more than one request through a binding COST
+        // ceiling, so the defect's whole surface was unobserved by construction.
+        //
+        // maxCalls is left at the fixture default of 10 ON PURPOSE: if it were 1 this test would pass
+        // for the call-dimension reason and become a duplicate of Budget_PartialAdmission that can never
+        // fail on cost. One request estimates 0.008785 USD, so 0.012 admits exactly one and refuses two.
+        var llm = TestOptions.Llm(maxCost: 0.012m);
+        llm.Tasks[AnalysisTaskNames.RegimeBrief].ExpectedOutputTokens = 700;
+        var (provider, transport, _, ledger) = Build(llm);
+        ScriptBatch(transport, ("r1", "served"));     // only the admissible one is scripted
+
+        var results = await provider.RunBatchAsync(
+            [TestOptions.Request("r1"), TestOptions.Request("r2")]);
+
+        Assert.Equal(AnalysisOutcome.Succeeded, results[0].Outcome);
+        Assert.Equal(AnalysisOutcome.BudgetExhausted, results[1].Outcome);
+        Assert.True(ledger.Records[^1].Degraded);
+    }
+
+    [Fact]
+    public async Task D151_TokenCeiling_AccumulatesAcrossTheBatch()
+    {
+        // The second open dimension. One request estimates 714 tokens, so 1000 admits exactly one.
+        // maxCalls stays at the default 10 for the same reason as above.
+        var llm = TestOptions.Llm(maxTokens: 1000);
+        llm.Tasks[AnalysisTaskNames.RegimeBrief].ExpectedOutputTokens = 700;
+        var (provider, transport, _, ledger) = Build(llm);
+        ScriptBatch(transport, ("r1", "served"));
+
+        var results = await provider.RunBatchAsync(
+            [TestOptions.Request("r1"), TestOptions.Request("r2")]);
+
+        Assert.Equal(AnalysisOutcome.Succeeded, results[0].Outcome);
+        Assert.Equal(AnalysisOutcome.BudgetExhausted, results[1].Outcome);
+        Assert.True(ledger.Records[^1].Degraded);       // the day is stamped, and the refusal spent nothing
+    }
+
+    [Fact]
+    public async Task D151_ACacheHitContributesNothingToTheRunningTotal()
+    {
+        // THE ORDERING CONTRACT, now that a running total exists to violate it. Accumulating over
+        // `requests` instead of `toSpend` would make a free cache hit consume headroom it never spent —
+        // reintroducing precisely the defect the cache-before-budget order exists to prevent, in the
+        // commit that fixes a different one. r1 is served from cache; r2 must still be admitted on a
+        // ceiling that fits exactly one paid call.
+        var llm = TestOptions.Llm(maxCost: 0.012m);
+        llm.Tasks[AnalysisTaskNames.RegimeBrief].ExpectedOutputTokens = 700;
+        var (provider, transport, cache, _) = Build(llm);
+        var r1 = TestOptions.Request("r1");
+        await cache.PutAsync(
+            AnthropicWire.PromptHash(r1.Prompt), llm.ModelFor(r1.Task.Wire()), Day, r1.Task,
+            "from cache", TokenUsage.Zero);
+        ScriptBatch(transport, ("r2", "served"));
+
+        // A DISTINCT prompt: the fixture default hashes identically, so r2 would otherwise be served
+        // from the entry seeded for r1 and the test would prove nothing about the budget at all.
+        var results = await provider.RunBatchAsync([r1, TestOptions.Request("r2", "different fresh rows")]);
+
+        Assert.Equal(AnalysisOutcome.CacheHit, results[0].Outcome);
+        Assert.Equal(AnalysisOutcome.Succeeded, results[1].Outcome);
+    }
+
+    [Fact]
     public async Task SucceededResult_IsCached_SoTheSecondReadIsFree()
     {
         var (provider, transport, cache, _) = Build();
