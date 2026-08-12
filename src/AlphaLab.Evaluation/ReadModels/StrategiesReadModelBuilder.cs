@@ -25,14 +25,8 @@ public sealed class StrategiesReadModelBuilder(AlphaLabDbContext db, VerdictsOpt
         var stamp = ReadModelStamps.LatestForward(db);
         if (stamp.Status == ReadModelStampStatus.NoRunYet) return StrategiesReadModel.NoRunYet;
 
-        var rows = db.Strategies
-            .OrderBy(s => s.StrategyId)
-            .AsEnumerable()
-            // D64 plants are REPLAY-ONLY fixtures (FR-36): they exist solely inside the quarantined
-            // generation, so the forward leaderboard never lists them (rule 1 / FR-33).
-            .Where(s => !Calibration.PlantCohorts.IsPlantId(s.StrategyId))
-            .Select(BuildRow)
-            .ToList();
+        // D149: the forward-visible set comes from the ONE seam, never a filter re-expressed here.
+        var rows = ForwardVisibility.ForwardStrategies(db.Strategies).Select(BuildRow).ToList();
 
         return new StrategiesReadModel { Stamp = stamp, Rows = rows };
     }
@@ -41,7 +35,17 @@ public sealed class StrategiesReadModelBuilder(AlphaLabDbContext db, VerdictsOpt
     {
         var stamp = ReadModelStamps.LatestForward(db);
         var s = db.Strategies.FirstOrDefault(x => x.StrategyId == strategyId);
-        if (stamp.Status == ReadModelStampStatus.NoRunYet || s is null) return StrategyDetailReadModel.NoRunYet;
+
+        // D149: a replay-only D64 plant is NOT FOUND on a forward screen, exactly as it is absent from the
+        // leaderboard. This filter was missing while `Build`'s was eight lines above, so a plant id served
+        // a full forward strategy card — latent only because no forward run exists yet to stamp it.
+        if (stamp.Status == ReadModelStampStatus.NoRunYet
+            || s is null
+            || !ForwardVisibility.IsForwardVisible(s.StrategyId))
+        {
+            return StrategyDetailReadModel.NoRunYet;
+        }
+
         return new StrategyDetailReadModel { Stamp = stamp, Strategy = BuildRow(s) };
     }
 

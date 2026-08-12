@@ -28,9 +28,10 @@ public sealed class CohortMaturationBuilder(AlphaLabDbContext db, KpiOptions kpi
             .AsEnumerable()
             // Plants are calibration FIXTURES, not admission cohorts (Phase-4 review): a with-plants
             // replay seeds ~350 plant strategies sharing ONE created_on vintage — without this filter
-            // the replay strip would render them as a giant synthetic "cohort" drowning the real ones
-            // (the same rule StrategiesReadModelBuilder applies to the leaderboard).
-            .Where(s => !Calibration.PlantCohorts.IsPlantId(s.StrategyId))
+            // the replay strip would render them as a giant synthetic "cohort" drowning the real ones.
+            // Routed through the D149 seam so this and the leaderboard cannot drift apart; the reason it
+            // is the SAME rule is that both are forward-visibility questions, not two similar ones.
+            .Where(s => ForwardVisibility.IsForwardVisible(s.StrategyId))
             .ToList();
 
         var forward = BuildCohorts(strategies, "live", quarantined: false);

@@ -319,3 +319,24 @@ D148's first draft stated that `replay-recompute --verify-parity` "will now repo
 **D148 — "sustained" means sustained on both arms and in both places.** The row carries why the literal 95 was the conservative error, why the two halves could not ship separately, the read-the-persisted-bar argument, the MEASURED zero-divergence bound, and the harness position with both gaps named.
 
 *Verification: `check-register` green at **148 rows, D1..D148** (19 amended-by); `ci.ps1` green — **1,297 tests** (from 1,291), seven projects, zero skipped, all nine guard greps.*
+
+---
+
+## v1.9.108 — Phase 6.5a (review remediation, PR 8): forward visibility becomes a seam (2026-08-11)
+
+*Recorded 2026-08-11. **Phase 6 checkpoint 6.5a, PR 8.** Decision **D149** new; finding **415**, with the rule-26 Consequences field. No migration, no schema change, no config key, no D144 arithmetic bump. Full suite green at 1,298 tests across seven projects. Next-free finding after this entry: **416**.*
+
+### finding 415 — the replay quarantine was a habit kept per call site, and one call site did not keep it
+
+Hard rule 1 quarantines replay from every forward view, and D64 plants are replay-only fixtures (FR-36). `StrategiesReadModelBuilder.Build` filtered them out of the leaderboard with the rule cited in its own comment; `BuildDetail`, **eight lines below it**, did not — so a plant id would have served a full forward strategy card.
+
+**The failure mode is why the fix is the seam.** A copied predicate fails by *silent omission*: nothing throws, no test goes red, a screen simply shows a row it should not, and the next builder omits it the same way for the same reason. Fixing the instance would have left the mechanism that produced it.
+
+**Latent, not live, and the row says which.** `BuildDetail` resolves the forward stamp first and returns `NoRunYet` when there is none, and no forward day has run — so every id returns not-found today, plant or not. It *arms* at go-live. Both the original review and its two verifiers called this reachable; the store said otherwise. The correction is recorded so the severity is not re-inflated later.
+**Consequences:** `ForwardVisibility` (new) owns `IsForwardVisible` / `ForwardStrategies`, and all three forward readers route through it — `Build`, `BuildDetail`, `CohortMaturationBuilder`. `ReplayReadModelBuilder` keeps the **inverse** and now calls `IsReplayFixture` rather than re-testing the raw `plant:` prefix: the replay screen's subject IS the quarantined generation, so it is the other side of the rule and now reads as one. **D149** is the decision. **There were no `BuildDetail` tests at all** — the same absence that let the §13.6 freeze rail drift (D147) and the funnel's planner before it, now three for three. `D149_APlantIsAbsentFromTheLeaderboard_AND_NotFoundOnItsDetailCard` asserts BOTH call sites in one fixture, because the defect was that one of two adjacent sites was checked and the other was not, and it seeds a committed run so the assertion is not satisfied by the short-circuit. Falsifier run: disabling the new filter turns it red while the eight sibling leaderboard fixtures stay green. No stored row changes and no generation is affected — the entire value of this fix is prospective.
+
+### The decision
+
+**D149 — forward visibility is one seam, not a predicate each read-model re-expresses.** The row carries the silent-omission argument, the named inverse, and the latent-not-live correction.
+
+*Verification: `check-register` green at **149 rows, D1..D149**; `ci.ps1` green — **1,298 tests** (from 1,297), seven projects, zero skipped, all nine guard greps.*

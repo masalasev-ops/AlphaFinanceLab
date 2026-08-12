@@ -99,6 +99,42 @@ public class StrategiesReadModelBuilderTests
         Assert.NotEqual("distinguishable-above", row.Tier);
     }
 
+    /// <summary>
+    /// D149. `Build` filtered D64 plants out of the leaderboard; `BuildDetail`, eight lines below it, did
+    /// not — so a replay-only calibration fixture served a full forward strategy card. Both now route
+    /// through the ONE seam, and both halves are asserted here because the defect was precisely that one
+    /// of two adjacent call sites was checked and the other was not.
+    ///
+    /// LATENT, NOT LIVE, and the fixture says so: `BuildDetail` resolves the forward stamp FIRST and
+    /// returns NoRunYet when there is none, and the live arena has zero forward runs. `SeedRun` is what
+    /// arms it — without that call this test would pass against the defect.
+    /// </summary>
+    [Fact]
+    public void D149_APlantIsAbsentFromTheLeaderboard_AND_NotFoundOnItsDetailCard()
+    {
+        using var arena = new EvalArena();
+        var dates = EvalArena.Dates(80, new DateOnly(2026, 1, 5));
+        arena.SeedStrategy("cand:x", "candidate", dates, Enumerable.Repeat(0.0, 79).ToArray());
+        arena.SeedStrategy("plant:edge:daily:2:0", "candidate", dates, Enumerable.Repeat(0.001, 79).ToArray());
+        arena.SeedRun(dates[^1]);           // arms the forward stamp — without this both paths short-circuit
+
+        using var db = arena.Open();
+
+        // The leaderboard has always excluded it.
+        Assert.DoesNotContain(Builder(db).Build().Rows, r => r.Id == "plant:edge:daily:2:0");
+
+        // The detail card did NOT, and now returns not-found rather than a card.
+        var detail = Builder(db).BuildDetail("plant:edge:daily:2:0");
+        Assert.Equal(ReadModelStampStatus.NoRunYet, detail.Stamp.Status);
+        Assert.Null(detail.Strategy);
+
+        // Anti-vacuity: a REAL strategy still resolves, so the fix did not simply break the endpoint.
+        var real = Builder(db).BuildDetail("cand:x");
+        Assert.NotEqual(ReadModelStampStatus.NoRunYet, real.Stamp.Status);
+        Assert.NotNull(real.Strategy);
+        Assert.Equal("cand:x", real.Strategy!.Id);
+    }
+
     [Fact]
     public void Build_Baseline_IsAReferenceRow_WithNoVerdict()
     {

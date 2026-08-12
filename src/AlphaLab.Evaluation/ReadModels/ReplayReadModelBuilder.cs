@@ -25,7 +25,10 @@ public sealed class ReplayReadModelBuilder(AlphaLabDbContext db)
         if (runs.Count == 0) return ReplayReadModel.NoRunYet;
 
         var plantStrategies = db.Accounts.Where(a => a.RunKind == Replay).Select(a => a.StrategyId).ToList()
-            .Where(PlantCohorts.IsPlantId)
+            // The INVERSE of the D149 forward rule, and deliberately so: the replay screen's whole subject
+            // is the quarantined generation. Named through the seam rather than left as a raw prefix test,
+            // so a reader can see this is the other side of the rule and not an exception to it.
+            .Where(ForwardVisibility.IsReplayFixture)
             .Count();
         var valueAdd = db.PowerReports
             .Where(p => p.RunKind == Replay && p.StrategyA == AllocatorValueAddKpi.BlendId)
