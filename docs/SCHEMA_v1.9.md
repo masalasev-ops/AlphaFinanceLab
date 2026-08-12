@@ -104,7 +104,12 @@ CREATE TABLE index_membership_log (                -- D35 daily refresh audit
                                                   -- NO CHECK, deliberately - convention + a test, so a third
                                                   -- source is an INSERT and not a rebuild (finding 324 applied
                                                   -- forward). Load-bearing at the rule-22 widen, when oef_csv
-                                                  -- flips to ivv_csv and both write into this one table.
+                                                  -- would flip to ivv_csv and both write into this one table.
+                                                  -- THAT FLIP IS NOT WIRED (D154): the sp500 arm registers no
+                                                  -- provider at all, and before it can, the cross-check Source
+                                                  -- must move to UniverseOptions.MembershipCrossCheck. A naive
+                                                  -- flip keeps stamping S&P 500 rows 'wikipedia_sp100' HERE,
+                                                  -- which is false provenance under D137 - worse than absence.
 );
 
 CREATE TABLE index_membership (                    -- as-of state (never deleted)
@@ -165,8 +170,12 @@ CREATE TABLE strategies (
   strategy_id   TEXT PRIMARY KEY,                  -- e.g. 'momentum:L126:K21:N40'
   family        TEXT NOT NULL,                     -- momentum|meanrev|lowvol|...
   config_json   TEXT NOT NULL,                     -- params + seed (frozen, D17)
-  exit_policy_json TEXT NOT NULL,
-  holding_horizon_days INTEGER,
+  exit_policy_json TEXT NOT NULL,               -- WRITTEN, NOT READ (finding 424, open): the executed
+                                                -- ExitPolicy comes from model.Exits, so D68's monthly EW
+                                                -- rebalance cadence is a C# default this column records
+                                                -- and nothing consults. Binding it needs a deserializer
+                                                -- on the run path that does not exist yet.
+  holding_horizon_days INTEGER,                 -- same (finding 424): Horizon comes from model.Horizon.
   created_on    TEXT NOT NULL,
   parent_strategy_id TEXT,                         -- fork lineage
   status        TEXT NOT NULL DEFAULT 'candidate'  -- candidate|live|baseline|retired|control
@@ -506,7 +515,12 @@ CREATE TABLE journal_entries (                     -- D52
     ('hypothesis','observation','decision_note','skeptic_review','outcome')),
   title       TEXT NOT NULL,
   body_md     TEXT NOT NULL,
-  strategy_id TEXT REFERENCES strategies(strategy_id),
+  strategy_id TEXT REFERENCES strategies(strategy_id),  -- NULL is legitimate for an arena-level brief
+                                                -- (UX-10). A kind='skeptic_review' row REQUIRES a
+                                                -- non-empty strategy_id - enforced in CODE at two
+                                                -- places (API 422 before the budget check, Worker
+                                                -- throw -> jobs.failed with the reason), never by the
+                                                -- engine: the FK here is documentary (D153).
   linked_entry_id INTEGER REFERENCES journal_entries(entry_id), -- outcome -> hypothesis
   metric      TEXT,                                -- pre-declared confirm/refute metric
   evidence_window_days INTEGER,                    -- pre-declared window

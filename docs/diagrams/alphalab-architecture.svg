@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 880" width="800" height="880" role="img" aria-labelledby="t d">
-<title id="t">AlphaLab architecture, one page</title>
+<title id="t">AlphaLab research flow, one page</title>
 <desc id="d">Market history feeds the field of strategies (human strategies plus the AI contestant, each trading its own 100k) and the measured-alongside group (random crowds, the twin, the rule grader). The field writes the ledger; the others write benchmarks and rule grades. The benchmarks feed a judging layer that asks whether a result beat the crowd, whether the contestant beat its twin, and what the overfitting checks say; the rule grades are descriptive only — they inform the AI researcher's evidence and the dashboards, never the judges (D91). That produces a verdict, which drives the money split, the dashboards, and the AI researcher, which proposes one strategy that a human approves back onto the field. Separately, a sealed calibration run plants fake strategies of known quality, replays twenty years on a simulated clock, checks whether the machinery caught them, and sets the pass marks the judging layer uses.</desc>
 <style>
   .bg   { fill: #ffffff; }

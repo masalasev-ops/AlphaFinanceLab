@@ -8,7 +8,7 @@
 
 | Feed | Launch source (D49) | Reverts to EODHD-primary on upgrade |
 |---|---|---|
-| Index membership | **iShares IVV holdings CSV = primary**, Wikipedia scrape = cross-check (dual free sources — still satisfies the D35 named+validated standard); fail-closed on divergence unchanged | Yes (constituents endpoint slot is dormant, not deleted) |
+| Index membership | **iShares OEF holdings CSV = the wired primary**, Wikipedia S&P 100 scrape = cross-check (dual free sources — still satisfies the D35 named+validated standard); fail-closed on disagreement. The IVV CSV is the S&P 500 arm and is **deliberately unwired** (D154): `Ivv()` has zero production call sites, and an sp500 token registers no provider at all |
 | Historical membership (replay/catch-up as-of) | Free community CSV (github.com/fja05680/sp500), caveat logged in the Phase-4 calibration report | Yes (S&P 500 historical snapshots) |
 | Sector / industry | **Sector column of the same IVV holdings CSV** (GICS-based, refreshed with the daily membership pull) | Optional |
 | News | EODHD News API (on-plan) | — |
@@ -64,7 +64,7 @@ Phase 0 wires the config builder as `AddJsonFile("appsettings.json", optional:fa
 - [ ] `GET /api/splits/AAPL.US`, `/api/div/AAPL.US` — event shapes
 - [ ] `GET /api/exchange-symbol-list/US?delisted=1` — delisted list for the security master
 - [ ] `GET /api/news?s=AAPL.US&limit=3` — confirm on-plan + payload shape (5-call cost noted)
-- [ ] IVV product page → "Download holdings" → pin the real CSV URL; confirm ticker + **sector** columns parse
+- [ ] *(Not a day-zero gate — the sp500 arm is unwired, D154.)* IVV product page → "Download holdings" → pin the real CSV URL; confirm ticker + **sector** columns parse. `--preflight` does not probe IVV; it probes OEF, Wikipedia S&P 100, `eod AAPL.US` and `eod GSPC.INDX`, which is exactly consistent with what is wired.
 - [ ] OEF product page → "Download holdings" → pin the real CSV URL (D70 S&P 100 slice); confirm the ticker column parses
 - [ ] Set `Arena.Id = "sp500"` (D71) — the DB path, snapshots, and backups namespace under it. You only run one arena now; a second is a future config + instance operation (see ARENA_ARCHITECTURE_v1.9.3 §6), never a rewrite
 - [ ] Download both Ken French daily CSV zips manually; note header/footer junk lines for the parser

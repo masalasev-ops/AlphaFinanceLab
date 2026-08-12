@@ -1,4 +1,4 @@
-﻿# CLAUDE.md — AlphaLab (paper trading research lab)
+# CLAUDE.md — AlphaLab (paper trading research lab)
 
 ## What this is
 Project name: **AlphaLab** (root namespace `AlphaLab.*`, D62).
@@ -20,7 +20,7 @@ money as strings/minor-units (never floats).
 - docs/STRATEGY_CATALOG_v1.9.md — IModel contracts + per-strategy acceptance criteria
 - docs/DESIGN_IMPROVEMENTS_v1.9.md — metrics math, costs/sizing, LLM economics, Arena Replay
 - docs/OVERFITTING_MONITOR_v1.9.md — eight signals, thresholds, MDE derivation
-- docs/BUILD_AND_PROMPTS_v1.9.md — FR-1..46, phase plan, phase prompts (Phase 0 is structured as checkpoints 0.1–0.6 with the pinned versions, the no-AUTOINCREMENT migration hand-edit, the 404→D60 fallback, and the ASCII-only .ps1 rule)
+- docs/BUILD_AND_PROMPTS_v1.9.md — FR-1..47, phase plan, phase prompts (Phase 0 is structured as checkpoints 0.1–0.6 with the pinned versions, the no-AUTOINCREMENT migration hand-edit, the 404→D60 fallback, and the ASCII-only .ps1 rule)
 - docs/SCHEMA_v1.9.md — the ONLY source of truth for table shapes (never invent columns)
 - docs/CONFIG_REFERENCE_v1.9.md — the ONLY source of truth for config keys/defaults
 - docs/INTEGRATIONS_v1.9.md — the ONLY source of truth for external endpoints
@@ -42,8 +42,22 @@ money as strings/minor-units (never floats).
 
 ## Hard rules (violations are bugs, not style)
 1. Forward paper P&L judges strategies. Replay (`run_kind='replay'`) judges only the
-   machinery; it is quarantined from every forward view, gate input, and chart.
-2. All identity is `security_id`. Tickers are time-ranged aliases via `ticker_history`.
+   machinery; it is quarantined from every forward view, gate input, and chart. The
+   quarantine is ONE SEAM, not a predicate each reader re-expresses (D149): `ForwardVisibility`
+3. Bars are versioned append-only. Never UPDATE or DELETE a bar row. Every run records a
+   watermark; all reads resolve latest-version <= watermark. ENFORCED — and only since D151
+   (finding 418), which is why the parenthetical now names the guard rather than the idea: the
+   original greps matched raw SQL appearing NOWHERE in this repo while the codebase performs DML
+   through EF at 43 sites. `ci.ps1` guard 1d matches the EF idiom, table-qualified over the
+   THREE append-only tables — bars (D40), `corporate_actions` (D76), `config` (rule 24). Guard
+   1e self-tests that it fires AND stays silent on the sanctioned `ExecuteDelete` calls; guard
+   1f closed `Assert-NoMatch`'s pass-on-empty-scope. KNOWN GAP, carried from D151 rather than
+   dropped: the pattern is single-line, so multi-line chained DML would evade it.
+7. Strategies declare Horizon + ExitPolicy. Stage 4 closes ONLY via ExitPolicy or forced
+   corporate-action/guardrail events. Zero-score names are never selectable. A §13.6 event
+   reaches PENDING orders too, not only the book: a re-denominating action RESTATES that
+   security's stored T+1 orders before they fill (D142), and a TERMINAL one CANCELS them
+   (D143) instead of filling into a delisted or merged-out name.
 3. Bars are versioned append-only. Never UPDATE or DELETE a bar row (CI greps enforce).
    Every run records a watermark; all reads resolve latest-version <= watermark.
 4. Point-in-time everywhere via IFeatureView(asOf, watermark). Every new feature or
@@ -56,12 +70,20 @@ money as strings/minor-units (never floats).
 7. Strategies declare Horizon + ExitPolicy. Stage 4 closes ONLY via ExitPolicy or forced
    corporate-action/guardrail events. Zero-score names are never selectable.
 8. Frozen parameters: any change to a live strategy forks a new strategy_id and
-   increments trials_registry. Never tune a live strategy against the monitor.
+   increments trials_registry. Never tune a live strategy against the monitor. ENFORCED since
+   D152, and by NOTHING before it: `StrategyRegistry.ForRow` reconciles what a strategy
+   EXECUTES against what its row FROZE and THROWS on disagreement, naming the field that moved.
+   An UNREADABLE row is a different sentence — rule 10's "unknown", skipped with a reason. Until
+   D152 an edit to a `Create(...)` default was written NOWHERE and executed EVERYWHERE, because
+   the roster writer is idempotent (D17): no fork, no trial, no log line.
 9. Random populations are the null. Every strategy is ranked against its matched
    population; the cost-free population is display-only.
 10. Fail closed: missing risk input → reject the order with a logged reason; unmapped
     corporate action or bar-stoppage-without-event → freeze position + alert.
-    Nothing is ever silently defaulted or mispriced.
+    Nothing is ever silently defaulted or mispriced. A FROZEN POSITION IS ALSO NOT SIZED AND
+    NOT TRADED (D147): it carries its own list on `PortfolioPlan`, so a whole-book rebalance
+    cannot reach it and price it at the very number the freeze called untrustworthy — and NO
+    FILL CLEARS THE FREEZE; only the D55 audited admin action does.
 11. Secrets live in ONE gitignored file: appsettings.Secrets.json (D67; SETUP_v1.9 §5).
     Config builder = AddJsonFile(appsettings.json) + AddJsonFile(appsettings.Secrets.json,
     optional:true) — NO AddEnvironmentVariables, NO AddUserSecrets, no env vars anywhere.
@@ -69,9 +91,12 @@ money as strings/minor-units (never floats).
     the committed appsettings.json, the repo, logs, or the DB. appsettings.Secrets.json is
     gitignored (CI grep also scans committed files for key patterns). Never commit/log/echo keys.
 12. The daily run is the D53 staged pipeline: fetch (no DB writes) -> ONE atomic write
-    transaction per trading day -> LLM batch post-commit in its own transaction.
-    Multi-day recovery replays missed sessions (trading calendar, D54) in order,
-    one write transaction per day, idempotently (catchup_log); no LLM for past days.
+13. Claude is forward-only, batched (Message Batches API), prompt-cached, budgeted;
+    INewsProvider enforces the news budget BEFORE any token is spent. Replay has no
+    LLM path by construction. The D24 daily ceilings ACCUMULATE ACROSS A BATCH (D151, finding
+    420) — before it only the call count did, so an N-request batch could cross the cost and
+    token caps by N−1 requests. A cache hit contributes nothing to the running total. KNOWN
+    OPEN (finding 421): mid-batch refusal is ARRIVAL-ordered, not D24's priority order.
 13. Claude is forward-only, batched (Message Batches API), prompt-cached, budgeted;
     INewsProvider enforces the news budget BEFORE any token is spent. Replay has no
     LLM path by construction.
@@ -109,9 +134,15 @@ money as strings/minor-units (never floats).
     with its run_id + watermark. Breaking changes bump /v2 and the OpenAPI version.
     Ledger money is C# decimal persisted as TEXT in SQLite (D69) — never double/REAL.
 21. Verdict language matches the channel (D63): the population channel yields
-    IndistinguishableFromRandom (the separation state, computed in read-models per
-    MASTER §20.8) — never "proven no edge"; fast-kill claims belong only to the
-    trade-level expectancy track and anti-predictive S3/S6 breaches. Calibration
+22. Universe (D65/D70/D109): forward operation runs the S&P 100 slice through Phase 4 sign-off,
+    sourced from the OEF holdings CSV + Wikipedia S&P 100 cross-check (fail closed, count
+    sanity 99–103). WIDENING TO THE S&P 500 IS NOT A CONFIG FLIP TODAY (D154): `sp100` is the
+    only wired universe, and any other token registers NO membership provider at all, so the
+    roster goes visibly stale rather than fetching ~101 OEF names against the `[495,510]` band.
+    The widen needs D154's three items first — a `Backfill:WikipediaSp500Url` key that exists
+    nowhere, evidence the cross-check parses the S&P 500 table, and the cross-check `Source`
+    moved off `Bootstrap.` or the rows carry false provenance (D137) — plus the backfill delta.
+    THAT IS WHERE THIS ARENA'S UNIVERSE STOPS:
     curves require the D64 plants (regime-conditional, autocorrelated, multi-seed —
     never constant drift) and are not trusted without the plant-sensitivity check
     archived in the calibration report (MASTER §20.9).
@@ -213,8 +244,12 @@ src/AlphaLab.Api (ASP.NET Core minimal-API under /api/v1: read endpoints per scr
   contract conventions D60; enqueues Worker jobs for long-running commands — D57) ·
 src/AlphaLab.Web (standalone Blazor WebAssembly client of AlphaLab.Api; swappable for Angular/React/mobile) ·
 tests/ (mirrors src; fixtures under tests/Fixtures per TEST_PLAN_v1.9.md) ·
-docs/ (this documentation set) · tools/ (backfill CLI, backup, snapshot scripts, ci.ps1,
-  audit-dividend-unadjusted.ps1) · .github/workflows/ (GitHub Actions: runs tools/ci.ps1 on push + PR)
+docs/ (this documentation set) · tools/ (backfill CLI + ten .ps1: ci.ps1 and check-register.ps1
+  — the rule-25 enforcement, run BY ci.ps1 — migrate.ps1 (rule 14's ONLY sanctioned schema path,
+  which takes the snapshot itself), snapshot-db.ps1, resume-calibration.ps1 (D144-guarded),
+  replay-progress.ps1, backup-offsite.ps1, register-nightly-backup.ps1,
+  Resolve-AlphaLabConnection.ps1, audit-dividend-unadjusted.ps1) ·
+  .github/workflows/ (GitHub Actions: runs tools/ci.ps1 on push + PR)
 
 ## Commands (once Phase 0 lands)
 - `dotnet test` — full suite (CI runs this + the greps)
@@ -223,4 +258,9 @@ docs/ (this documentation set) · tools/ (backfill CLI, backup, snapshot scripts
     Add `--serve` (or set Worker.Mode=Scheduled) to keep it resident with the Quartz schedule.
 - `dotnet run --project src/AlphaLab.Api` — the API (localhost); OpenAPI at /openapi/v1.json, Scalar UI at /scalar/v1 (/swagger redirects)
 - `dotnet run --project src/AlphaLab.Web` — the reference Blazor client (talks to AlphaLab.Api)
+- `tools/migrate.ps1` — the ONLY sanctioned way to apply a schema change (rule 14): it takes the
+    pre-migration snapshot itself, so `snapshot-db.ps1` is the manual half rather than the path.
 - `tools/snapshot-db.ps1` — pre-migration snapshot (Windows/PowerShell first-class; takes `-Arena`, default `sp500` — D71)
+- `tools/ci.ps1` — build + full suite + the guard greps + `check-register.ps1`. `.ps1` files are
+    ASCII-ONLY by rule: PowerShell 5.1 decodes them as ANSI, and guard 4c exists because two
+    PowerShell escapes (`` `f ``, `` `a ``) once survived into the doc corpus as control bytes.

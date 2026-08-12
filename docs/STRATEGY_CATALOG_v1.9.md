@@ -65,7 +65,7 @@ public interface IModel
 
 **Scoring parity with the Signal Library (D91, Phase 4.5).** Cross-sectional IModels wrap the same `ISignal` implementations the Signal Library grades, so the library's rank-IC record measures the exact deployed formula, not a lookalike. Parity is pinned by `FX-SignalParity` (lands with Phase 6): scorer-output equality between the library path and the strategy path on the same day and pool. The library is descriptive only; nothing in it feeds Stage 2 or any other funnel stage (MASTER §24).
 
-**`ExitPolicy` shapes.** Declarative, serialized in `StrategyConfig`, executed by shared Stage 4 code:
+**`ExitPolicy` shapes.** Declarative, serialized in `StrategyConfig`, executed by shared Stage 4 code. **The stored `exit_policy_json` is written and read back by NOTHING (finding 424, open):** execution takes the policy from `model.Exits`, so D68's monthly EW rebalance cadence is a C# default the row records and nobody consults. Binding them needs a deserializer on the run path that does not exist yet:
 - `RankBuffer(exitRank)` — exit when cross-sectional rank falls below `exitRank` (momentum).
 - `TargetOrTimeStop(exitCondition, maxHoldDays)` — exit on the reversion condition or the time stop (mean reversion).
 - `ScheduledRebalance(everyNDays)` — hold to the next rebalance (low-vol; Value/Quality).

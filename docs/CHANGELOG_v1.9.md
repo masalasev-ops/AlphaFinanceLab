@@ -486,3 +486,43 @@ That entry recorded **1,318 tests**; the measured figure was **1,317**. Correcte
 **Consequences:** none here. It belongs to whoever wires the contestant phase; naming it now means the next reader of that enum knows it is unwired rather than assuming it is used somewhere.
 
 *Verification: `check-register` green at **154 rows, D1..D154**; `ci.ps1` green.*
+
+---
+
+## v1.9.114 — the post-6.5a corpus reconciliation: what thirteen PRs left behind (2026-08-12)
+
+*Recorded 2026-08-12. Decision **D155** new; findings **429** and **430**. **D51's Status cell corrected to `amended-by D150`** — it should have moved in v1.9.109 and did not. Two new enforcement checks: `check-register` **3g** and `ci.ps1` guard **4c**. No code behaviour change, no schema change, no migration, no stored row altered. Next-free finding after this entry: **431**.*
+
+### The occasion
+
+D142–D154 each updated the design documents their result touched and each carried a rule-26 Consequences field. A four-track audit of the corpus found **17 SEVERE, 36 MODERATE and 29 MINOR** stale statements across nineteen files anyway — because every PR was internally complete while the relationships *between* documents were nobody's deliverable. That is rule 25's relational shape, one level up from the register.
+
+**The worst of it was operational.** `RUNBOOK` §8's post-crash resume box told the operator to run `resume-calibration.ps1`, which by construction never emits `--reset` — and D144's vintage guard refuses exactly that path on an unstamped generation, which sp500 generation 2 is. Both documented resume routes were dead for the only generation that exists. The box's own closing clause — *"resuming one generation with two code vintages is invisible to every watermark check"* — is the sentence D144 turned into an enforcement.
+
+### finding 429 — the register asserted an amendment its own target did not acknowledge
+
+D150's headline says *"amends D51"*. **D51's Status cell read `active` for a full version pass.** Rule 25 requires the named row's Status to move in the same commit.
+
+**The cause is worth recording because it has now bitten three times:** the PR-9 edit used a PowerShell `-like` pattern whose `**` are *wildcards* — `'| **D51** |*'` matched several lines, the guard `if (-not $row)` saw a truthy **array** and passed, and the replacement silently did nothing.
+
+**Every check in `check-register` passed throughout, correctly by its own design:** 3a asks only whether a cited row *exists*; 3b covers `superseded-by` and deliberately not `amended-by` (applying it to amendments produced 200+ legitimate-citation violations); nothing looked in the other direction at all.
+
+**Consequences:** check **3g** — for every row whose body says "amends D*n*", D*n*'s Status must not be `active`. **Not "must name the amender", and that is the design:** a row can be amended more than once and the cell holds one value — D89 is amended by both D116 and D121 and names only D121, which is correct and must not fail. The hard check is non-active; the name check is a WARNING, matching 3f. **Falsified against the real defect, not a synthetic one:** restoring D51 to `active` makes 3g emit a NEW, non-grandfathered violation and fail the build.
+
+### finding 430 — two PowerShell escapes were shipped into the corpus as control bytes
+
+`` `f `` (form feed) ate the backtick of `` `floor` `` in DESIGN_IMPROVEMENTS, leaving *"the presence of the loor token"*. `` `a `` (bell) ate a path separator in PROGRESS, leaving `sp500<BEL>lphalab.db`. Neither is visible in any renderer; neither failed anything; the form feed was introduced by the very PR that added D150's clause (the bell predates it, v1.9.71).
+
+**Consequences:** `ci.ps1` guard **4c** scans the corpus for `[\x00-\x08\x0B\x0C\x0E-\x1F]`. **A tooling hazard, not a typo class** — every doc edit here goes through a `.ps1`, the repo already mandates ASCII-only `.ps1` because PS 5.1 decodes them as ANSI, and the same escape set will keep firing. Verified both directions: fires on a synthetic form feed, silent on tab/LF/CR across 68 files.
+
+### What moved
+
+**CLAUDE.md hard rules 1, 3, 7, 8, 10, 13 and 22** are brought into line with the decisions that changed what they assert. Rule 8 had named **no enforcer** while D152 had given it its first; rule 3's *"(CI greps enforce)"* became true only with D151. MASTER, SCHEMA, CONFIG_REFERENCE, TEST_PLAN, OVERFITTING_MONITOR, DESIGN_IMPROVEMENTS, STRATEGY_CATALOG, both UX docs, RUNBOOK, SETUP, INTEGRATIONS, REBUILD, MANIFEST, README, START_HERE and BUILD_AND_PROMPTS all move. The architecture SVG's accessible `<title>` was the last element still calling it an architecture picture after v1.9.70 corrected it to a research-flow one. **finding 417** (a `floor` chip beside a 4.7e-33 weight) is now recorded in UX-9, UX_DESIGN_SYSTEM and TEST_PLAN, where it had appeared nowhere.
+
+**BUILD_AND_PROMPTS was the worst-drifted file, and its repair is the least trustworthy part of this pass** — said plainly rather than buried. It was frozen at v1.9.92 while HEAD reached v1.9.113, cited nothing above **D130** against a register at **D154**, listed **13 of 26** hard rules, and contradicted *itself* on the detectability horizon (`:92` said 10, `:215` said 3). Its 33 repairs were drafted and adversarially verified by subagents, then re-checked here against the file on disk — a step that mattered: the verifiers' `oldStringFoundExactlyOnce` claims were re-derived rather than trusted. **21 further audit items were refuted by the drafters and not applied**, most of the "dead citation" class (BUILD cites amended rows by number without quoting superseded content, which needs no repair).
+
+### Deliberately not done
+
+TEST_PLAN still lacks fixture rows for eight of the thirteen PRs, and five §8 entries name tests that do not exist. Both are now **recorded in the file** rather than invented — writing a fixture row for a test nobody has written is the green-forever shape this whole checkpoint has been about.
+
+*Verification: `check-register` green at **154 rows, D1..D155**; `ci.ps1` green — **1,331 tests**, zero skipped, thirteen guard families.*

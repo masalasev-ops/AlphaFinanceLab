@@ -2,7 +2,7 @@
 
 Purpose: a standing record of the lab improvements agreed for later, explaining what each one is and why it earns its place, so the reasoning is not lost while the core build (Phases 0 to 8) proceeds. This is the companion to POST_PHASE8_PLAN.md, which carries the build order, the prerequisites, and the definition of done. This doc answers what and why. That doc answers when and how.
 
-As of this writing the build is at Phase 3 (the honest arena). Nothing here is built during Phases 0 to 8 except the named near-term hookups, which are small seams placed in the upcoming phases so the post-8 work is cheap to finish.
+As of this writing the build is at Phase 6, checkpoint 6.5a (v1.9.113). Nothing here is built during Phases 0 to 8 except the named near-term hookups, which are small seams placed in the upcoming phases so the post-8 work is cheap to finish.
 
 ## Governing principle
 

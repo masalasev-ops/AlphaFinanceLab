@@ -53,7 +53,7 @@ MDE_ann = (z_{1−α/2} + z_{power}) · σ_LR · 252 / √T
         = 2.8 · σ_LR · 252 / √T           # at 95% / 80% defaults
 ```
 
-Rendered beside every comparison, recomputed at every evaluation, persisted to `power_reports`. **The promotion gate never acts on a gap smaller than the pair's current MDE — the verdict is `TooEarly`.** The same long-run-variance idea governs the trade track's block bootstrap (§1.3).
+Rendered beside every comparison, recomputed at every evaluation, persisted to `power_reports`. **The promotion gate never acts on a gap smaller than OR EQUAL TO the pair's current MDE — the verdict is `TooEarly`.** D146 settled that "inside the MDE" is `<=`: the strict `<` let the degenerate never-traded pair (gap 0 against MDE 0) fall through to the sign test and render as a directional `Refused`, which is an absence of evidence stated as a finding. A `NaN` on either side adjudicates nothing. The same long-run-variance idea governs the trade track's block bootstrap (§1.3).
 
 ### 1.3 The trade-level evidence track (D44)
 
@@ -132,7 +132,7 @@ A strategy with three months of track has a huge `se_i` and lands at ~equal weig
 2. `TooEarly` against the benchmark (D131) ⇒ `|t_i − current_i| ≤ TooEarlyTiltCapPts`;
 3. Suspect ⇒ `t_i = current_i × (1 − SuspectDecayPctPerEval)` — decay only, never a new tilt;
 4. banded movement: only move if `|t_i − current_i| > BandPts`, and then **to the band edge**, not to `t_i`;
-5. renormalize, **floor-aware** (D150): the rows step 1's floor clamp actually produced keep the floor afterwards, and the remainder is spread pro rata over the rest — a plain division by the sum pushes them back under it whenever Sigma applied > 1, which the floor and the band routinely cause. The pin is on the VALUE, not on the presence of the loor token, so a row clause 3 subsequently decayed is NOT lifted back. There is deliberately NO symmetric ceiling treatment; see MASTER 20.2 clause 3. Baselines and control populations never receive weight.
+5. renormalize, **floor-aware** (D150): the rows step 1's floor clamp actually produced keep the floor afterwards, and the remainder is spread pro rata over the rest — a plain division by the sum pushes them back under it Σ applied > 1, which the floor and the band routinely cause. The pin is on the VALUE, not on the presence of the `floor` token, so a row clause 3 subsequently decayed is NOT lifted back. There is deliberately NO symmetric ceiling treatment; see MASTER §20.2 clause 3. Baselines and control populations never receive weight.
 
 **Persistence (NFR-2):** every evaluation writes the full input vector `{α̂, se, α̃, w, target, applied, clamps_bound}` per strategy to `allocation_log` — every weight on screen (UX-9) reconstructs from the log.
 
@@ -158,7 +158,7 @@ The seats are separable: the researcher improves the lab even if the contestant 
 - **Prompt caching** on the static instruction block; only the day's news is fresh tokens.
 - **Per-task model tiering (config):** extraction/classification → cheap fast model; briefs/skeptic/regime narrative → stronger model.
 - **News ingestion budget — the real token lever:** `INewsProvider` (EODHD news) enforces, before any token is spent: relevance filter (universe symbols + macro tags) → title-hash dedupe → cap 25 articles/read → truncate each to 2,000 chars post-extraction. The budget, not the call count, bounds cost.
-- **Hard caps (D24) unchanged:** daily token/call/cost ceilings; cache hits free; degradation order (held names first → cached → neutral fallback); never a blackout.
+- **Hard caps (D24, as amended by D130):** daily token/call/cost ceilings, all DERIVED from the one authored `Llm.AnnualBudgetUsd`; cache hits free and contributing nothing to the running total. **The ceilings ACCUMULATE ACROSS A BATCH (D151, finding 420)** — until then only the call count did, so batching was a cap multiplier of exactly N rather than the cost lever D130 calls it. Never a blackout. **The degradation ORDER (held names first → cached → neutral fallback) is not implemented** — `Llm.DegradationOrder` is read by nothing in `src` and mid-batch refusal is arrival-ordered (finding 421, open).
 - **Forward-only (D16):** no LLM output ever enters a backtest or replay; `analysis_cache` rows are keyed `(prompt_hash, model, date)` and replay simply has none.
 
 ---

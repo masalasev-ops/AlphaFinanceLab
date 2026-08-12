@@ -1,6 +1,6 @@
 # START HERE — build the AlphaLab (design revision v1.9) with Claude Code, starting today
 
-You're holding **AlphalabTradingplanV1.9** — the complete, self-contained documentation set for building a personal C#/.NET paper-trading research lab entirely through Claude Code. Everything is merged in; there's nothing to reconcile. *(Build status and full pass history: see `docs/CHANGELOG_v1.9.md` and `PROGRESS.md` — the reference build is signed off through Phase 4 (Arena Replay) with Phase 4.5 code-complete; `PROGRESS.md` is the live status.)*
+You're holding **AlphalabTradingplanV1.9** — the complete, self-contained documentation set for building a personal C#/.NET paper-trading research lab entirely through Claude Code. Everything is merged in; there's nothing to reconcile. *(Build status and full pass history: see `docs/CHANGELOG_v1.9.md` and `PROGRESS.md` — the reference build is at **Phase 6, checkpoint 6.5a**, with Phase 4 signed off and Phases 4.5/5/5.5 complete; `PROGRESS.md` is the live status.)*
 
 **New in this revision (v1.9):** the design's claims were audited against its own mechanics, and three fixes are merged in. **The lab's fast product is named honestly (D63):** because the random controls are cost-matched, an edgeless strategy is never "falsified in months" — it is declared **`IndistinguishableFromRandom`**, a first-class chip rendered beside every verdict, with fast kills reserved for the trade-level track and anti-predictive breaches; the KPIs are re-split to match. **The calibration is grounded (D64):** the planted strategies that produce every monitor threshold are now fully specified (regime-conditional, lumpy, multi-seed — never constant drift), with a mandatory sensitivity check archived in the calibration report. **The build order is a route, not just gates (D65):** S&P 100, API-only (Scalar), straight to Phase 4 replay — screens are a parallel workstream due by Phase 7. (Specs: `MASTER_DESIGN_v1.9.md` §20.8–20.9, §17.1.)
 
@@ -19,7 +19,7 @@ You're holding **AlphalabTradingplanV1.9** — the complete, self-contained docu
 **2. Get the repo (2 minutes).** Clone the repository. The layout is already what the build expects, with **nothing to copy or rearrange**:
 - **`CLAUDE.md` and `PROGRESS.md` at the repo root** — the standing rules the build obeys + the phase-gate ledger.
 - The full design set (all the `.md` files) and the `.html` mockups under **`docs/`** — the consolidated `alphalab_ux_mockups.html` plus the standalone panel mockups in `docs/mockups/`.
-- **If starting a fresh rebuild** — Phase 0 creates the solution; see `docs/REBUILD.md`. The reference build has already progressed through Phase 4 (Arena Replay, signed off) with Phase 4.5 code-complete — `PROGRESS.md` carries the live status.
+- **If starting a fresh rebuild** — Phase 0 creates the solution; see `docs/REBUILD.md`. The reference build has already progressed to **Phase 6, checkpoint 6.5a** (Phase 4 signed off; 4.5, 5 and 5.5 complete) — `PROGRESS.md` carries the live status.
 
 **3. First Claude Code session — Phase 0 (the skeleton).**
 - Open the repo in **Claude Code** and turn **Plan Mode ON**.
@@ -50,13 +50,13 @@ That's it — you can complete steps 1–3 today and have a running (empty) app 
 ```
 
 - The **quant core** never knows a UI exists.
-- **`AlphaLab.Api`** turns each screen into a plain JSON endpoint and handles the handful of user actions (create a strategy, ask for a research brief, run the skeptic, apply an admin fix, launch a replay).
+- **`AlphaLab.Api`** turns each screen into a plain JSON endpoint and handles the handful of user actions (create a strategy, ask for a research brief, run the skeptic, apply an admin fix, launch a replay). The skeptic needs a subject: a request with no `strategy_id` is refused with a 422 before the budget is even checked (D153), because a review that is not linked to the thing reviewed is an opinion about nothing. An arena-level *brief* still dispatches — the rail is skeptic-only.
 - The **honesty rules live in the data**, not the UI: a number that's too uncertain to trust arrives already flagged "show this dimmed." So every UI, present or future, obeys the same rules automatically.
 - To swap the UI later: build a new front end against the same `AlphaLab.Api` endpoints. Nothing else changes.
 
 ## What the HTML mockups are
 
-Static **pictures** of the finished screens — open them in a browser to see the intended look. You never run or edit them. `docs/alphalab_ux_mockups.html` is the consolidated mockup covering every screen; `docs/mockups/` holds standalone panel mockups for rules added since that file was last regenerated (`cohort_curve_panel.html`, `signal_library_panel.html`), and the consolidated file absorbs them on its next regeneration. When a phase prompt says "per `alphalab_ux_mockups.html`", Claude Code reads that file and reproduces its layout in the real UI. The enforceable rules they illustrate live in `docs/UX_GUIDELINES_v1.9.md` (UX-1…UX-16) and are enforced in the read-models.
+Static **pictures** of the finished screens — open them in a browser to see the intended look. You never run or edit them. `docs/alphalab_ux_mockups.html` is the consolidated mockup covering every screen; `docs/mockups/` holds standalone panel mockups for rules added since that file was last regenerated (`cohort_curve_panel.html`, `signal_library_panel.html`), and the consolidated file absorbs them on its next regeneration. When a phase prompt says "per `alphalab_ux_mockups.html`", Claude Code reads that file and reproduces its layout in the real UI. The enforceable rules they illustrate live in `docs/UX_GUIDELINES_v1.9.md` (UX-1…UX-20) and are enforced in the read-models.
 
 ## Which document answers which question
 
