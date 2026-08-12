@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AlphaLab.Core.Domain;
+using AlphaLab.Data.Entities;
 using AlphaLab.Core.Json;
 using AlphaLab.Core.Ledger;
 using AlphaLab.Data.Services;
@@ -93,6 +94,100 @@ public class DummyRosterTests
             Assert.IsType<ExitPolicy.Never>(JsonSerializer.Deserialize<ExitPolicy>(cwJson, AlphaLabJson.Options));
             var ew = Assert.IsType<ExitPolicy.ScheduledRebalance>(JsonSerializer.Deserialize<ExitPolicy>(ewJson, AlphaLabJson.Options));
             Assert.Equal(21, ew.EveryNDays);
+        }
+        finally { TestDb.Delete(path); }
+    }
+
+    /// <summary>
+    /// THE RULE-8 REGRESSION (D152, finding 422). The reference values are the `config_json` of the three
+    /// rows in the LIVE sp500 arena, verbatim.
+    ///
+    /// <para>**WHY LITERALS AND NOT THE SEEDED ROW ITSELF.** The obvious form of this test — seed a fresh
+    /// arena, then assert the registry's plan matches the row `DummyRoster` just wrote — CANNOT FAIL. The
+    /// writer serializes `BuyAndHoldModel.CapWeight().Config` and the runner executes
+    /// `BuyAndHoldModel.CapWeight()`; one edit moves both, so a fresh arena always agrees with itself.
+    /// That is the tautology this whole finding is about, one layer up.</para>
+    ///
+    /// <para>The divergence is only visible against an arena frozen EARLIER, because `RegisterStrategy`
+    /// is idempotent (D17, `:119`): on an existing store an edit to a `Create(...)` default is written
+    /// NOWHERE and executed EVERYWHERE — no fork, no `trials_registry` row, no log line, and every
+    /// subsequent day judged under parameters the store does not record. Pinning the historical bytes
+    /// here reproduces that comparison, so an edit to a default reddens THIS test, which is the
+    /// enforcement rule 8 previously lacked. If a fork is ever genuinely intended, it takes a new
+    /// `strategy_id` and these literals stay exactly as they are.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("buyhold:cw", """{"seed":0,"selection":{"mode":"top_n","n":1,"min_score":0.6,"max_concurrent":60},"sizing":"equal","params":{},"unregistered":false}""")]
+    [InlineData("buyhold:ew", """{"seed":0,"selection":{"mode":"top_n","n":100000,"min_score":0.6,"max_concurrent":60},"sizing":"equal","params":{},"unregistered":false}""")]
+    [InlineData("threshold:sma50", """{"seed":0,"selection":{"mode":"threshold","n":40,"min_score":0.6,"max_concurrent":60},"sizing":"equal","params":{"lookback":50},"unregistered":true}""")]
+    public void D152_AFreshArenaFreezesWhatTheLiveArenaAlreadyFroze(string strategyId, string liveArenaConfigJson)
+    {
+        var path = TestDb.CreateMigrated();
+        try
+        {
+            using var db = TestDb.Open(path);
+            new DummyRoster(db, new LedgerStore(db)).Seed(AsOf, Wm);
+
+            var row = db.Strategies.Single(s => s.StrategyId == strategyId);
+            var fresh = StrategyConfigJson.Read(row.ConfigJson);
+            var live = StrategyConfigJson.Read(liveArenaConfigJson);
+            Assert.NotNull(fresh);
+            Assert.NotNull(live);
+
+            // Compared field by field rather than byte by byte ON PURPOSE: D152 also puts the writer
+            // through the canonicalizer, so the fresh bytes are legitimately in a different ORDER from
+            // the live arena's pre-canonical ones while recording the identical parameters. A byte
+            // assertion here would fail for a reason that has nothing to do with rule 8.
+            Assert.Equal(live!.Seed, fresh!.Seed);
+            Assert.Equal(live.Sizing, fresh.Sizing);
+            Assert.Equal(live.Selection.Mode, fresh.Selection.Mode);
+            Assert.Equal(live.Selection.N, fresh.Selection.N);
+            Assert.Equal(live.Selection.MinScore, fresh.Selection.MinScore);
+            Assert.Equal(live.Selection.MaxConcurrent, fresh.Selection.MaxConcurrent);
+            Assert.Equal(
+                live.Params.OrderBy(p => p.Key, StringComparer.Ordinal).ToList(),
+                fresh.Params.OrderBy(p => p.Key, StringComparer.Ordinal).ToList());
+
+            // And the runner agrees with the row the live arena holds — the join D152 closes.
+            var plan = StrategyRegistry.ForRow(new StrategyRow
+            {
+                StrategyId = strategyId, Family = "passive", ConfigJson = liveArenaConfigJson,
+                ExitPolicyJson = "{}", CreatedOn = AsOf, Status = "candidate",
+            });
+            Assert.NotNull(plan);
+        }
+        finally { TestDb.Delete(path); }
+    }
+
+    /// <summary>
+    /// D152 / finding 423: the stored bytes are in D133's canonical form, so `Write(Read(stored))` equals
+    /// `stored`. `DummyRoster` used to write a raw typed serialize, which carried insertion order and
+    /// omitted `frozen`/`frozen_sets`/`horizon` — so the round-trip property D133's row claims for every
+    /// frozen row was false for all three of the rows that actually trade.
+    ///
+    /// <para>Asserted against the STORED BYTES, not `Write` against `Write`: the existing
+    /// `D133_ConfigJson_RoundTripsEveryFrozenRow` compares `Write(original)` with `Write(read)`, which is
+    /// true of any canonicalizer whatsoever and therefore cannot detect this. Fresh arenas only —
+    /// `RegisterStrategy` never rewrites an existing row (D17).</para>
+    /// </summary>
+    [Fact]
+    public void D152_TheFrozenBytesAreCanonical_SoAReadBackReSerializesIdentically()
+    {
+        var path = TestDb.CreateMigrated();
+        try
+        {
+            using var db = TestDb.Open(path);
+            new DummyRoster(db, new LedgerStore(db)).Seed(AsOf, Wm);
+
+            var rows = db.Strategies.OrderBy(s => s.StrategyId).ToList();
+            Assert.Equal(3, rows.Count);
+
+            foreach (var row in rows)
+            {
+                var read = StrategyConfigJson.Read(row.ConfigJson);
+                Assert.NotNull(read);
+                Assert.Equal(row.ConfigJson, StrategyConfigJson.Write(read!));
+            }
         }
         finally { TestDb.Delete(path); }
     }

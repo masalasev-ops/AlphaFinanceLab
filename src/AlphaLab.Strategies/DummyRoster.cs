@@ -122,7 +122,12 @@ public sealed class DummyRoster(AlphaLabDbContext db, ILedgerStore ledger)
         {
             StrategyId = model.Id,
             Family = family,
-            ConfigJson = JsonSerializer.Serialize(model.Config, AlphaLabJson.Options),
+            // D152: through the D133 canonicalizer, not a raw typed serialize. Without it the stored bytes
+            // carried insertion order and omitted frozen/frozen_sets/horizon, so Write(Read(stored)) did
+            // not equal stored for ANY of the three rows that actually trade — the one property D133
+            // exists to provide. FRESH ARENAS ONLY: :119 above returns early for an existing id (D17), so
+            // no row already written is touched or rewritten.
+            ConfigJson = StrategyConfigJson.Write(model.Config),
             // Serialize the DECLARED type (ExitPolicy) so the [JsonPolymorphic] "kind" discriminator
             // is written — exit_policy_json must round-trip the shape, not just its fields.
             ExitPolicyJson = JsonSerializer.Serialize<ExitPolicy>(model.Exits, AlphaLabJson.Options),

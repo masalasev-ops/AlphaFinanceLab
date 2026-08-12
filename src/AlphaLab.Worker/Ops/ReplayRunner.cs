@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Text.Json;
 using AlphaLab.Core.Config;
+using AlphaLab.Core.Domain;
+using AlphaLab.Core.Json;
 using AlphaLab.Core.Ledger;
 using AlphaLab.Data;
 using AlphaLab.Data.Entities;
@@ -215,7 +217,15 @@ public sealed class ReplayRunner(
                 {
                     StrategyId = spec.StrategyId,
                     Family = "plant",
-                    ConfigJson = JsonSerializer.Serialize(new
+                    // D152: the anonymous object D133's row names as a bypasser, now routed through the
+                    // canonicalizer. WithUnregisteredMarker rather than Write(StrategyConfig) on purpose:
+                    // StrategyConfig cannot hold `plant`/`family`/`alpha_ann_pct`, so the typed writer
+                    // would DROP them — the exact finding-391 failure mode. The marker is semantically a
+                    // no-op here (the payload already sets unregistered = true, and :200-202 says why it
+                    // must), so its whole effect is canonical key order under AlphaLabJson.Options.
+                    // FRESH ARENAS ONLY: :212 skips an existing id, and DeleteReplayGeneration never
+                    // deletes strategies rows, so even --reset leaves the 500 seeded plants standing.
+                    ConfigJson = StrategyConfigJson.WithUnregisteredMarker(JsonSerializer.Serialize(new
                     {
                         plant = true,
                         kind = spec.Kind.ToString().ToLowerInvariant(),
@@ -223,7 +233,7 @@ public sealed class ReplayRunner(
                         alpha_ann_pct = spec.AlphaAnnPct,
                         seed = spec.Seed,
                         unregistered = true,
-                    }),
+                    }, AlphaLabJson.Options)),
                     ExitPolicyJson = "{}",   // a plant never trades; there is no policy to execute
                     HoldingHorizonDays = spec.HorizonDays,
                     CreatedOn = seededOn,

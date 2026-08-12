@@ -38,7 +38,16 @@ public sealed record StrategyRunPlan(
 /// **Row-driven, not id-driven, and that is the point.** The `strategies` table stores frozen config,
 /// and until D133 nothing could read it back — so the only way to run a strategy was to recognise its
 /// id in a hardcoded switch, which is why an admitted candidate could pass the detectability gate, spend
-/// a trial, and never trade a day. What runs is now derived from what was FROZEN.
+/// a trial, and never trade a day.
+///
+/// **HOW MUCH OF THAT IS TRUE TODAY, stated because the paragraph above used to end "what runs is now
+/// derived from what was FROZEN" and that sentence was true of ZERO strategies (D152, finding 422).**
+/// <see cref="Families"/> is empty until 6.11, and the three <see cref="RunSettingKeys"/> have no writer
+/// anywhere in the repo or in any arena — so the row-driven branch below is unreachable in production
+/// and the only strategies that run are the three resolved by id. The lifecycle PATH is closed; the
+/// derivation is not yet exercised by anything. What D152 adds is the missing half for the ids that DO
+/// run: the model is still built in C#, but it is now RECONCILED with the frozen row and refused if
+/// they disagree, so "derived from what was frozen" is at least CHECKED against what was frozen.
 ///
 /// **ONE entry point for both consumers.** `DailyPipeline` and `SeedingBacktestEngine` resolve through
 /// the same call, so the daily run and the backtest engine can never accept different strategy sets —
@@ -99,11 +108,43 @@ public static class StrategyRegistry
     {
         ArgumentNullException.ThrowIfNull(row);
 
-        // The three Phase-2 dummies are resolved by id, with a recorded reason: their rows were frozen
-        // BEFORE D133 made config_json readable, so they do not carry the run settings a row-driven
-        // family reads — and D17 forbids re-serializing over a frozen row to add them. They are a
-        // closed set that will never grow; every strategy admitted from here is row-driven.
-        if (LegacyDummy(row.StrategyId) is { } legacy) return legacy;
+        // THE THREE PHASE-2 DUMMIES ARE STILL BUILT FROM C#, AND ARE NOW CHECKED AGAINST THEIR FROZEN ROW
+        // (D152, finding 422). The carve-out's stated reason used to be that these rows "do not carry the
+        // run settings a row-driven family reads". That was THREE KEYS WIDE, not whole-row wide, and the
+        // sentence read as the latter: the rows carry Selection (mode/N/MinScore/MaxConcurrent), Seed,
+        // Sizing and Params — every parameter the funnel consumes — and lack only `position_cap_pct`,
+        // `max_concurrent_positions` and `universe_scope`, the three keys checkpoint 6.2 invented for
+        // itself and that nothing has ever written. So the model can and must be reconciled with the row.
+        //
+        // WHY A CHECK RATHER THAN CONSTRUCTION FROM THE ROW. The two checkpoint-2.9 run-setting seams
+        // (cap-weight's 100% position cap, equal-weight's breadth ceiling) are genuinely NOT in the rows,
+        // and D17 forbids re-serializing a frozen row to add them, so something must still supply them
+        // from code. Building the MODEL from the row and the SETTINGS from code would leave exactly the
+        // same unchecked join, one field narrower. Checking binds both halves at once.
+        //
+        // FAIL CLOSED, LOUDLY (rule 10). Hard rule 8 says a change to a live strategy forks a new
+        // strategy_id; nothing enforced it, because DummyRoster.RegisterStrategy is idempotent, so an
+        // edit to a Create(...) default would be written NOWHERE and executed EVERYWHERE — no fork, no
+        // trials_registry row, no log line, and every day after it judged under parameters the store
+        // does not record. A null return would report that as "unknown strategy" and skip the account,
+        // which is the wrong sentence for a rule-8 breach; this throws, because the arena's evidence
+        // base is what is at stake and the only way to reach it is for a developer to edit a default.
+        if (LegacyDummy(row.StrategyId) is { } legacy)
+        {
+            var frozenConfig = StrategyConfigJson.Read(row.ConfigJson);
+            if (frozenConfig is null) return null;   // unreadable frozen config ⇒ unknown (rule 10)
+
+            var divergence = FirstDivergence(legacy.Model.Config, frozenConfig);
+            if (divergence is not null)
+            {
+                throw new InvalidOperationException(
+                    $"Strategy '{row.StrategyId}' EXECUTES a parameter its frozen row does not record: {divergence}. " +
+                    "Hard rule 8: a change to a live strategy forks a new strategy_id and increments " +
+                    "trials_registry — it never edits what a running strategy does. Fork it, or revert the code.");
+            }
+
+            return legacy;
+        }
 
         if (!Families.TryGetValue(row.Family, out var build)) return null;
 
@@ -127,6 +168,37 @@ public static class StrategyRegistry
             : UniverseScope.FullIndex;
 
         return new StrategyRunPlan(build(config), scope, sizing, guardrails);
+    }
+
+    /// <summary>
+    /// The first field on which the model a build would EXECUTE disagrees with the row that was FROZEN,
+    /// or null when they agree. Returns the field rather than a bool so the refusal names what moved.
+    ///
+    /// <para>Scope is deliberate: every field the funnel actually consumes off <see cref="StrategyConfig"/>
+    /// — Selection (all four terms), Seed, Sizing, Params. <c>Unregistered</c> is excluded because it is a
+    /// registration marker rather than a run parameter (rule 16), and Frozen/FrozenSets/Horizon because
+    /// the pre-D133 dummy rows carry none and comparing them would refuse on absence rather than on
+    /// change. Anything added to <see cref="StrategyConfig"/> that a funnel reads belongs here too.</para>
+    /// </summary>
+    private static string? FirstDivergence(StrategyConfig executes, StrategyConfig frozen)
+    {
+        if (executes.Seed != frozen.Seed) return $"seed executes {executes.Seed}, frozen {frozen.Seed}";
+        if (executes.Sizing != frozen.Sizing) return $"sizing executes {executes.Sizing}, frozen {frozen.Sizing}";
+        if (executes.Selection.Mode != frozen.Selection.Mode) return $"selection.mode executes {executes.Selection.Mode}, frozen {frozen.Selection.Mode}";
+        if (executes.Selection.N != frozen.Selection.N) return $"selection.n executes {executes.Selection.N}, frozen {frozen.Selection.N}";
+        if (executes.Selection.MaxConcurrent != frozen.Selection.MaxConcurrent) return $"selection.max_concurrent executes {executes.Selection.MaxConcurrent}, frozen {frozen.Selection.MaxConcurrent}";
+        if (executes.Selection.MinScore != frozen.Selection.MinScore) return $"selection.min_score executes {executes.Selection.MinScore}, frozen {frozen.Selection.MinScore}";
+
+        foreach (var key in executes.Params.Keys.Concat(frozen.Params.Keys).Distinct(StringComparer.Ordinal).OrderBy(k => k, StringComparer.Ordinal))
+        {
+            var inCode = executes.Params.TryGetValue(key, out var a);
+            var inRow = frozen.Params.TryGetValue(key, out var b);
+            if (!inCode) return $"params['{key}'] frozen at {b}, absent from the executed model";
+            if (!inRow) return $"params['{key}'] executes {a}, absent from the frozen row";
+            if (a != b) return $"params['{key}'] executes {a}, frozen {b}";
+        }
+
+        return null;
     }
 
     /// <summary>
