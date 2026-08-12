@@ -447,6 +447,8 @@ Hard rule 8 says a change to a live strategy forks a new `strategy_id` and incre
 
 **`PromptVersion` bumps rs-1.1 → rs-1.2**, because D81 rule 2 makes an L0 edit a prompt-version event and never a tidy-up; the prompt hash covers all three layers, so the bump is a deliberate cache miss. **The precedent's condition was re-verified rather than assumed:** the `cp-1.1`/`rs-1.1` bumps were taken while the store held zero researcher proposals so no D110 margin series lost comparability, and that condition still holds exactly — `ai_decisions`, `ai_context_packs`, `journal_entries`, `analysis_cache`, `llm_budget_log` and `jobs` are **all at zero rows** in sp500.
 
+**MASTER §23.4's refusal count moves four → five in this commit**, because §23.4 declares itself the one place the researcher's scope is stated and that *"every other statement of it, in any document, is a pointer here"*.
+
 **Falsifier run:** disabling the API guard, the Worker guard and the evidence block reddens exactly three fixtures and leaves every control green — including `BriefAndSkeptic_LandAsTheirOwnKinds…`, `FR32_BriefAndSkeptic_AlsoReturn202Job`, `AnUnavailableModel_FailsTheJobClosed…` and `Finding325_EveryL0Block_IsBelowThePromptCacheMinimum`, which confirms the new rail stayed under the 512-token prompt-cache floor. The L0 fixture asserts the literal rail text and the `PromptVersion` constant, so it fails by construction if either is reverted.
 
 ### correction to v1.9.111
