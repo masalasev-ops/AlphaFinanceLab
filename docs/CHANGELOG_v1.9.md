@@ -427,4 +427,32 @@ Hard rule 8 says a change to a live strategy forks a new `strategy_id` and incre
 
 **Consequences:** none in this commit, deliberately. It is the same defect family as 422 one column over, but binding it needs an exit-policy deserializer on the run path that does not exist yet, and folding that into this PR would have made its falsifier ambiguous. Needs its own D-number.
 
-*Verification: `check-register` green at **152 rows, D1..D152**; `ci.ps1` green — **1,318 tests**, zero skipped.*
+*Verification: `check-register` green at **152 rows, D1..D152**; `ci.ps1` green — **1,317 tests**, zero skipped.*
+
+---
+
+## v1.9.112 — Phase 6.5a (review remediation, PR 12): the skeptic is given a subject and the arena's numbers (2026-08-12)
+
+*Recorded 2026-08-12. **Phase 6 checkpoint 6.5a, PR 12.** Decision **D153** new. Finding **425**, with the rule-26 Consequences field. `PromptVersion` **rs-1.1 → rs-1.2**. No migration, no schema change, no config key, no stored row altered, no D144 arithmetic bump. Next-free finding after this entry: **426**.*
+
+### finding 425 — the skeptic reviewed nothing, and the prose directly above it said otherwise
+
+`ResearchJobExecutor.RunAdvisoryAsync` built the skeptic's L2 block from three lines — date, strategy id, topic — with `StrategyId` nullable and unvalidated. A request with no subject rendered `Strategy: (arena-level — no single strategy)` and landed a `skeptic_review` row with `strategy_id` NULL.
+
+**Four statements of the rule, no enforcer.** The class comment directly above says brief and skeptic land *"linked to what they are about (D52) — a review that is not linked to the thing reviewed is an opinion with no subject"*; PROGRESS 5.6 repeats it; MASTER §486 and §572 both say "linked"; and `journal_entries.strategy_id` has no `.IsRequired()` and a documentary-only FK. The D140 shape, in the seat whose entire output an operator reads.
+
+**The second half is worse than the null, and the review named only the first.** Even *with* a subject the skeptic received no evidence: its L0 block orders it to *"argue against the claim in front of you"*, to say *"what would have to be true for this result to be luck rather than edge"*, and **not to hedge into balance** — while the L2 block it was handed contained no claim, no result and no number.
+
+**Consequences:** `SkepticEvidence` now supplies the arena's own figures for the named strategy — latest forward `power_reports` pair (observed gap, NW-corrected MDE, track length, verdict), `overfitting_status`, trials count (multiple-testing exposure), forward trade count. **Forward channel only (rule 1), asserted in the prompt text itself** so the channel is visible in the record rather than inferable from the code. **Absence is reported, not papered over:** no forward day has ever run in this arena, so the block names exactly which rows do not exist and a new L0 rail tells the model to say the evidence is thin and stop — refusing the job would be wrong (there *is* a subject) and inventing an attack would be worse. **The rail is skeptic-only:** UX-10 lists "today's regime brief" as an arena-level action and MASTER §199 scopes "feed it a strategy's stats" to the skeptic, so a brief with no `strategy_id` stays legitimate; a control fixture pins that, because a symmetric guard is the obvious over-correction. **Refused in both places for different reasons:** the API returns 422 *before* the budget check so a request that can never produce a valid review does not spend the day's headroom, and the Worker throws as well because the API is not the only way into the queue and a job may already be queued from before the rail existed. **Non-empty, not exists-in-`strategies`** — a skeptic against a just-drafted candidate whose row `CandidateFactory` has not written yet is legitimate, and 404-ing it would make the rail a race against registration. **Not pack-routed, deliberately and unchanged:** the recipe is closed at eight fields and an eighth costs a discontinuity in D110's margin series, so `Assert.Empty(db.AiContextPacks)` stays green untouched and the consequence — no D80 pack record exists for a skeptic review — is stated rather than implied.
+
+**`PromptVersion` bumps rs-1.1 → rs-1.2**, because D81 rule 2 makes an L0 edit a prompt-version event and never a tidy-up; the prompt hash covers all three layers, so the bump is a deliberate cache miss. **The precedent's condition was re-verified rather than assumed:** the `cp-1.1`/`rs-1.1` bumps were taken while the store held zero researcher proposals so no D110 margin series lost comparability, and that condition still holds exactly — `ai_decisions`, `ai_context_packs`, `journal_entries`, `analysis_cache`, `llm_budget_log` and `jobs` are **all at zero rows** in sp500.
+
+**MASTER §23.4's refusal count moves four → five in this commit**, because §23.4 declares itself the one place the researcher's scope is stated and that *"every other statement of it, in any document, is a pointer here"*.
+
+**Falsifier run:** disabling the API guard, the Worker guard and the evidence block reddens exactly three fixtures and leaves every control green — including `BriefAndSkeptic_LandAsTheirOwnKinds…`, `FR32_BriefAndSkeptic_AlsoReturn202Job`, `AnUnavailableModel_FailsTheJobClosed…` and `Finding325_EveryL0Block_IsBelowThePromptCacheMinimum`, which confirms the new rail stayed under the 512-token prompt-cache floor. The L0 fixture asserts the literal rail text and the `PromptVersion` constant, so it fails by construction if either is reverted.
+
+### correction to v1.9.111
+
+That entry recorded **1,318 tests**; the measured figure was **1,317**. Corrected in place. The delta is one test and changes nothing, but a stated count that was not the counted one is the defect class this whole checkpoint is about.
+
+*Verification: `check-register` green at **153 rows, D1..D153**; `ci.ps1` green — **1,323 tests**, zero skipped.*

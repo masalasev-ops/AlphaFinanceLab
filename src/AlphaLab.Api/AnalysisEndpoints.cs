@@ -182,6 +182,23 @@ public static class AnalysisEndpoints
                 if (worker.IsLive)
                     return ApiResults.Error(409, "conflict", "A daily run is in progress — retry after it completes.");
 
+                // A SKEPTIC REVIEW NEEDS A SUBJECT; A BRIEF DOES NOT (D153, finding 425). The asymmetry is
+                // in the design, not an oversight here: UX-10 lists "today's regime brief" as an
+                // arena-level action, while MASTER §199 scopes "feed it a strategy's stats" to the
+                // skeptic. Refused BEFORE the budget check so a request that can never produce a valid
+                // review does not consume the day's headroom on its way to being useless.
+                //
+                // NON-EMPTY, not exists-in-`strategies`. A skeptic run against a just-drafted candidate
+                // whose row CandidateFactory has not written yet is legitimate, and 404-ing it would make
+                // the rail a race against registration. What the rail forbids is a review with no subject
+                // at all; whether the arena has evidence for that subject is reported IN the prompt.
+                if (jobKind == "analysis_skeptic" && string.IsNullOrWhiteSpace(req.StrategyId))
+                {
+                    return ApiResults.Error(422, "unprocessable_entity",
+                        "A skeptic review requires strategy_id: a review that is not linked to the thing " +
+                        "reviewed is an opinion with no subject (D52).");
+                }
+
                 var asOf = clock.GetUtcNow().UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
                 var exhausted = await BudgetExhaustedAsync(budgetLedger, llm, asOf, ct);
                 if (exhausted is not null) return exhausted;
