@@ -108,8 +108,9 @@ public sealed class MonitorRecompute(
                 .OrderBy(g => g.Key, StringComparer.Ordinal)
                 .ToList();
 
-            // The three streaks the monitor carries, plus the aggregate's consecutive-Suspect count.
+            // The streaks the monitor carries, plus the aggregate's consecutive-Suspect count.
             var belowAnchor = 0;    // S3 flat-anchor / trajectory below-noise streak
+            var aboveEdge = 0;      // S3 trajectory above-edge streak (D148 — Healthy is sustained too)
             var insideBand = 0;     // S6 inside-band streak
             var negativeT = 0;      // S6 negative-alpha streak
             var suspectRun = 0;     // consecutive 'suspect' statuses
@@ -127,7 +128,7 @@ public sealed class MonitorRecompute(
                     StringComparer.Ordinal);
 
                 var s2 = RecomputeS2(checks);
-                var s3 = RecomputeS3(checks, belowAnchor);
+                var s3 = RecomputeS3(checks, belowAnchor, aboveEdge);
                 var s6 = RecomputeS6(checks, strategyId, session.Key, insideBand, negativeT);
 
                 var aggregate = MonitorSignals.Aggregate([s2.Status, s3.Status, s6.Status]);
@@ -142,6 +143,7 @@ public sealed class MonitorRecompute(
                 // Advance the streaks from THIS evaluation's recomputed contributions.
                 belowAnchor = MonitorSignals.ContinuesBelowAnchorStreak(s3.Contribution)
                               || MonitorSignals.ContinuesBelowNoiseStreak(s3.Contribution) ? belowAnchor + 1 : 0;
+                aboveEdge = MonitorSignals.ContinuesAboveEdgeStreak(s3.Contribution) ? aboveEdge + 1 : 0;
                 insideBand = MonitorSignals.ContinuesInsideBandStreak(s6.Contribution) ? insideBand + 1 : 0;
                 negativeT = MonitorSignals.ContinuesNegativeTStreak(s6.Contribution) ? negativeT + 1 : 0;
                 suspectRun = token == "suspect" ? suspectRun + 1 : 0;
@@ -177,7 +179,7 @@ public sealed class MonitorRecompute(
     /// trajectory forms re-threshold purely over stored inputs. Which form ran is recoverable from
     /// <c>threshold_json</c>: the trajectory records `p_noise_at`/`p_edge_at`, the flat form records the
     /// anchors. An `undefined` row (no matched population) had no percentile and stays as it was.</summary>
-    private SignalOutcome RecomputeS3(IReadOnlyDictionary<string, StoredCheck> checks, int priorBelow)
+    private SignalOutcome RecomputeS3(IReadOnlyDictionary<string, StoredCheck> checks, int priorBelow, int priorAbove)
     {
         if (!checks.TryGetValue("S3", out var c)) return Absent("S3");
         if (c.Value is not { } percentile) return new SignalOutcome("S3", null, c.Contribution, StatusOf(c.Contribution, "S3"));
@@ -187,7 +189,7 @@ public sealed class MonitorRecompute(
             var sustain = spec.Int(RecomputeParameters.S3SustainEvals,
                 (int)(ReadDouble(c.ThresholdJson, "sustain_evals") ?? MonitorSignals.FlatAnchorSustainEvals));
             var trackDays = (int)(ReadDouble(c.ThresholdJson, "track_days") ?? 0);
-            return MonitorSignals.S3Trajectory(percentile, trackDays, pNoise, pEdge, priorBelow, sustain);
+            return MonitorSignals.S3Trajectory(percentile, trackDays, pNoise, pEdge, priorBelow, sustain, priorAbove);
         }
 
         // Flat pre-calibration anchors. The anchors live on MonitorSignals as constants, so an override is

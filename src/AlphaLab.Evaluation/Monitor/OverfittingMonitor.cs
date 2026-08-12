@@ -181,7 +181,9 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
             var percentile = Statistics.PercentileRank(memberAlphas, SafeAlpha(stratReturns, benchReturns).Alpha);
             var trackDays = stratReturns.Count;
             var priorBelow = TrailingStreak(strategyId, "S3", asOf, runKind, MonitorSignals.ContinuesBelowNoiseStreak);
-            s3 = MonitorSignals.S3Trajectory(percentile, trackDays, pNoise.At(trackDays), pEdge.At(trackDays), priorBelow, pNoise.SustainEvals);
+            var priorAbove = TrailingStreak(strategyId, "S3", asOf, runKind, MonitorSignals.ContinuesAboveEdgeStreak);
+            s3 = MonitorSignals.S3Trajectory(percentile, trackDays, pNoise.At(trackDays), pEdge.At(trackDays),
+                priorBelow, pNoise.SustainEvals, priorAbove);
             s3Thresholds = new
             {
                 p_noise_at = pNoise.At(trackDays), p_edge_at = pEdge.At(trackDays),
