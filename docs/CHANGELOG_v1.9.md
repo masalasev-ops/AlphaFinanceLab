@@ -456,3 +456,33 @@ Hard rule 8 says a change to a live strategy forks a new `strategy_id` and incre
 That entry recorded **1,318 tests**; the measured figure was **1,317**. Corrected in place. The delta is one test and changes nothing, but a stated count that was not the counted one is the defect class this whole checkpoint is about.
 
 *Verification: `check-register` green at **153 rows, D1..D153**; `ci.ps1` green — **1,323 tests**, zero skipped.*
+
+---
+
+## v1.9.113 — Phase 6.5a (review remediation, PR 13): an unwired universe registers no provider (2026-08-12)
+
+*Recorded 2026-08-12. **Phase 6 checkpoint 6.5a, PR 13 — the last of the review-remediation queue.** Decision **D154** new. Finding **426** (fixed), **427** (recorded, not fixed), both with the rule-26 Consequences field. No migration, no schema change, no config key added, no stored row altered, no D144 arithmetic bump. Next-free finding after this entry: **428**.*
+
+### finding 426 — the comment described a branch the code did not have
+
+`Program.cs`'s forward membership factory said the pair was *"UNIVERSE-DRIVEN so the rule-22 widen stays a config flip: sp500 selects IVV + the S&P 500 cross-check. An unknown universe registers NOTHING rather than guessing a provider"*.
+
+**Every clause was false against the twelve lines underneath.** The primary was `Oef()` unconditionally; the cross-check URL was the S&P 100 page unconditionally; the universe token was read but used only as a source label; there was no branch of any kind; and the factory could not return null. `Ivv()` has **zero production call sites** — the "sp500 selects IVV" clause names a preset nothing calls.
+
+**The third state D140 forbids, and the clearest instance the review found:** the claim's own evidence is `MembershipRefreshStep`'s "no provider composition" branch, which is **unreachable in every composition that exists**. The sentence describes a behaviour nothing can produce, and the branch documenting it can never fail.
+
+**What an sp500 flip would actually have done**, which is why this is not cosmetic: `MembershipRefreshStep` *does* consume the token correctly, passing `CountBandFor(Bootstrap.Universe)` alongside the fetched roster — so the count band flips to `[495,510]` while the providers do not, and the day would fetch ~101 OEF names, label them `wikipedia_sp100`, and **fail closed at the count-sanity gate with a data-shaped error for an unwired-code cause**. Exactly the failure `BackfillRunner` was fixed to prevent on the CLI side, where an sp500 bootstrap now throws at parse naming the real reason. The Worker had no such refusal.
+
+**Consequences:** the factory becomes `MembershipComposition.TryCreate`, a pure function returning `null` for any universe but `sp100`. **The extraction is the point** — `Program.cs` is top-level statements in an exe with no test seam, so the claim was not merely wrong but *unfalsifiable where it stood*, and there were no tests for the factory, for `MembershipRefreshStep`, or for `CatchupRunner`'s membership call. `IsWired` answers the same question at registration time so the Worker need not build a DbContext and an HTTP client for a universe it will not serve, and a fixture pins that the two predicates agree for every value — two predicates drifting is the shape of the original defect, one layer up. **Nothing is registered, rather than something being refused:** `GetService<MembershipRefresh>()` was already written to detect absence, so making the service absent turns that branch from documentation into behaviour. **Not a throw** like `BackfillRunner`'s, because that is a one-shot operator command while this runs inside the daily Worker — a composition-time throw would take the D53 pipeline down over a roster-refresh feature, and stale-and-visible is the proportionate failure the surrounding code already expects.
+
+**The sp500 arm is deliberately not wired, and D154 lists what it needs** so the widen is a checklist rather than a rediscovery: a `Backfill:WikipediaSp500Url` key (it exists nowhere, and the Worker's appsettings has no `Backfill` section at all, so the hardcoded fallback was already always taken); evidence that `WikipediaMembershipCrossCheck` parses the S&P 500 table (its only fixture is the S&P 100 page); and the `Source` label moving off `Bootstrap.MembershipCrossCheck`, since a naive flip would keep stamping S&P 500 rows `wikipedia_sp100` — false provenance under D137, worse than honest absence.
+
+**No behaviour changes for the committed configuration** (`sp100`, by default — the key is absent from appsettings and is deliberately not materialized). `Ivv()` is **not** deleted: `OefSliceTests` pins it and REBUILD names it as the widening mechanism, so removing it would resolve a dead-code symptom by discarding the mechanism rule 22 still points at. `CountBandFor` and `SliceScopedMembershipRead` are untouched — they are the seam's *correct* members — and a new fixture pins that the wired universe and the slice band agree about which universe is the slice. **Falsifier run:** removing the branch reddens 6 of the 8 new fixtures.
+
+### finding 427 — a third declared-but-uncalled affordance (recorded, not fixed)
+
+`AiSeat.Advisor` is CHECK-allowed in the schema with zero production call sites — the same family as `Ivv()` and the unreachable null branch.
+
+**Consequences:** none here. It belongs to whoever wires the contestant phase; naming it now means the next reader of that enum knows it is unwired rather than assuming it is used somewhere.
+
+*Verification: `check-register` green at **154 rows, D1..D154**; `ci.ps1` green.*
