@@ -40,7 +40,20 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     "HistoricalMembershipSource": "community_csv",// D49/D70 launch: fja05680/sp500; post-upgrade: eodhd
     "Exclusions": ["SUN"],                        // finding 266 — canonical symbols permanently OUT of the universe. TWO consumers read this ONE list: the historical backfill SKIPS them on ingest (skip-and-record, like a ticker-reuse suspect) and the replay composition DENIES them from the roster (ExclusionScopedMembershipRead). The escape hatch for single-spell symbol reuse the >2y disjoint-spell heuristic cannot see (SUN = old Sunoco's ticker reused by Sunoco LP, whose in-window bars are the wrong company). Case-insensitive. MUST match across the Worker + Backfill appsettings (ConfigConsistencyTests). Default [].
     "Bootstrap": {                                // D65/D70 — the S&P 100 slice (forward universe through Phase 4 sign-off)
-      "Universe": "sp100",                        // consumed by the backfill CLI and Stage-1 eligibility until the post-Phase-4 widen
+      "Universe": "sp100",                        // consumed by the backfill CLI, Stage-1 eligibility, AND
+                                                  // (D154) MembershipComposition.IsWired/TryCreate: sp100 is
+                                                  // the ONLY wired forward membership universe, so any other
+                                                  // token registers NO provider, the refresh reports "no
+                                                  // provider composition" and freshness goes visibly stale
+                                                  // rather than fetching ~101 OEF names against [495,510].
+                                                  // The widen needs three things first, none of which exist:
+                                                  // a Backfill:WikipediaSp500Url key; evidence the cross-check
+                                                  // parses the S&P 500 table (its only fixture is sp100); and
+                                                  // the cross-check Source moved to Universe.MembershipCrossCheck,
+                                                  // NOT Bootstrap.* - else S&P 500 rows stamp 'wikipedia_sp100'
+                                                  // in index_membership_log.source: false provenance (D137).
+                                                  // NOTE: this key is ABSENT from the Worker's appsettings and
+                                                  // defaults to sp100; it is shown here as the effective value.
       "MembershipPrimary": "oef_csv",             // iShares OEF holdings CSV (same BlackRock pattern as IVV)
       "MembershipCrossCheck": "wikipedia_sp100",  // en.wikipedia.org/wiki/S%26P_100 constituents table
       "CountSanity": [99, 103]                    // fail-closed band for the slice
@@ -135,7 +148,11 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     "WeightFloorPct": 5.0, "WeightCeilingPct": 60.0
     // v1.9.7 finding 116: floors apply PRE-renormalization and scale down proportionally when Σfloors
     // would exceed 100% (equivalently the promotable roster caps at floor(100/WeightFloorPct) — 20 at
-    // the default). MASTER §20.2 carries the normative sentence.
+    // the default). D150 (v1.9.109) carries the OTHER half of that sentence, which nothing enforced:
+    // renormalization is FLOOR-AWARE — a row whose final `applied` still IS the scaled floor keeps it
+    // and the remainder spreads pro rata, so the last step of the chain can no longer undo the first.
+    // The pin is on the VALUE, never on the `floor` token, so a Suspect-decayed row is not lifted back.
+    // There is deliberately NO symmetric ceiling guarantee. MASTER §20.2 carries the normative sentence.
   },
 
   "Regime": {                                      // D50 — full spec: MASTER §20.1
@@ -240,7 +257,12 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
 
   "Verdicts": {                                    // D63 — separation state (read-models)
     "SeparationMinTrackDays": 252,                 // chip renders past this track length
-    "SeparationBandCentralFrac": 0.50              // 'none' = inside the 25th–75th pct region
+    "SeparationBandCentralFrac": 0.50              // 'none' = NEITHER sustained above the monitor's own
+                                                   // edge bar NOR sustained outside this 25th-75th pct
+                                                   // region (D148). The sustain LENGTH is the monitor's
+                                                   // own `sustain_evals`, read off the row it wrote -
+                                                   // deliberately not a second knob that could drift
+                                                   // from the signal it is defined to mirror.
   },
 
   "Kpi": {                                         // D88 - cohort maturation curve (read-model; descriptive only, never a gate/monitor/allocator input)

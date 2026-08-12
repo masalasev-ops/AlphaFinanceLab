@@ -6,7 +6,7 @@
 
 ## 1. The daily cycle (automatic)
 1. **Trigger — you launch `AlphaLab.Worker` in the evening (OnDemand default, D61), or a Scheduled run fires at session close + `Calendar.RunAfterCloseOffsetMinutes` (D54; ET-anchored, DST-safe).** Either way, `AlphaLab.Worker` (the sole DB writer, D59) first catches up any missed completed sessions, then runs the **staged pipeline (D53)** for each:
-   - **Stage 1 — fetch (no DB writes):** all provider calls; raw payloads to `tools/raw-cache/`; quality gate validates staged data; a hard failure aborts before any row is written (tomorrow's catch-up recovers).
+   - **Stage 1 — fetch (no DB writes):** all provider calls; raw payloads to `tools/raw-cache/`; quality gate validates staged data; a hard failure aborts before any row is written (tomorrow's catch-up recovers). **Which failures abort is severity- AND difference-aware since D145**, not date-only: a `warn` on an already-gated date is still dropped (the fetch window carries a ~40-session context tail, so re-emitting them is duplicate spam), while a `reject` survives when the fetched bar DIFFERS from the stored latest-visible one — `BarIngestionService.Differs`, the writer's own definition — or when no stored bar exists at all. An identical re-fetch of a gate-rejectable stored bar is an idempotent no-op rather than a permanent wedge; P7 remains open for the ~488k never-gated backfilled bars.
    - **Stage 2 — commit (ONE atomic write transaction):** new-run row (watermark stamped) → bars delta (versioned) → corporate actions → membership refresh + cross-check → features → regime label (D50) → per-account funnel (all strategies + populations) → fills at next-open queue → metrics/MDE → monitor/gate/allocator (cadence days) → run row `ok`.
    - **Stage 3 — LLM (post-commit):** the Batches job is submitted after Stage 2 commits; results land in their own small transaction whenever ready; a late/failed batch is a no-read day (never a blocker).
 2. **Backup (§3):** in OnDemand mode (the default) the backup runs as the final step of each Worker launch; in Scheduled mode a resident 02:00 job performs it. Either way there is at most one backup file per calendar day.
@@ -21,7 +21,7 @@ On next start the orchestrator detects missed trading days and replays them stri
 - **Off-machine (weekly):** `pwsh tools/backup-offsite.ps1 -Arena sp500 -Destination <UNC | external drive | cloud-mount>` copies the arena's newest local backup (chosen **by the date in the filename**, the same rule `LocalBackup` prunes by — never mtime, which a copy or a restore rewrites) and **verifies** it by size + SHA-256, printing the hash. It never opens the database, so it is safe to run while the Worker is running. It fails loudly on a missing/blank destination, a missing backups directory, no backup files, or a hash mismatch — an off-site routine that silently does nothing is worse than none, because it also removes your reason to check. Log each copy in PROGRESS.md monthly.
 - **Nightly, unattended:** `pwsh tools/register-nightly-backup.ps1 -Arena sp500` prints the exact `Register-ScheduledTask` commands for an 02:00 daily task, and registers them only if you add `-Install`. The task runs the Worker's **OnDemand** launch (`dotnet run --project src/AlphaLab.Worker`, no `--serve`), which drives the whole D72 order — stale-run recovery → catch-up → job drain → `LocalBackup` → exit — so a backup lands even on a day you never open the lab. **Not `--serve`:** Scheduled mode currently registers Quartz with zero jobs, so a resident Worker would idle and never back up (tracked in PROGRESS as a Phase-2/D61 leftover). Safe nightly: `LocalBackup` is idempotent per calendar day and catch-up is a no-op once current.
 - **Verify WAL end to end:** `dotnet run --project src/AlphaLab.Worker -- verify-wal --arena sp500` asserts `journal_mode=wal` **and** that a checkpoint completes — the assumption `LocalBackup` rests on when it folds the WAL into the main file so a plain file copy is a consistent snapshot. It reads the pragma, never sets it (a verifier that repaired what it checks could never report the defect), and exits non-zero with a named reason otherwise.
-- **Prove a past day still reproduces:** `dotnet run --project src/AlphaLab.Worker -- reproduce-day --date <yyyy-MM-dd> [--arena sp500]` re-runs that committed session from its stored watermark into a throwaway copy and compares decisions, fills, equity and population draws byte for byte (NFR-1, MASTER §13.5). Read-only against the arena and needs no API token. Worth running after any restore, and after any incident that touched the store.
+- **Prove a past day still reproduces:** `dotnet run --project src/AlphaLab.Worker -- reproduce-day --date <yyyy-MM-dd> [--arena sp500]` re-runs that committed session from its stored watermark into a throwaway copy and compares decisions, fills, equity and population draws byte for byte (NFR-1, MASTER §13.5). Read-only against the arena and needs no API token. Worth running after any restore, and after any incident that touched the store. **ONE STANDING EXCEPTION (D142):** on the nine generation-2 sessions that carried a pending order through a corporate action, `reproduce-day` legitimately DIVERGES — the stored rows were produced by pre-D142 arithmetic and the current build restates the order. That is the defect's fingerprint, not an NFR-1 failure; the dates and the method are in `docs/calibration/2026-08-11-d142-pending-order-corporate-action-probe.md`.
 
 ## 4. Restore drill (rehearse quarterly — logged in PROGRESS.md)
 1. Stop the app (nothing may hold the store — the Worker is the sole writer, but stop the Api too). 2. Copy the target backup over `alphalab.db`, keeping the broken file as `alphalab-broken-{date}.db`, **and delete the `alphalab.db-wal` / `alphalab.db-shm` sidecars**: the backup is taken after a `wal_checkpoint(TRUNCATE)`, so it is complete on its own, and a surviving newer WAL would replay exactly the transactions you are restoring away. 3. Start the Worker; it detects the store is behind and catch-up replays the missing sessions automatically (D47). 4. Verify: equity curves continuous, `runs` gapless after catch-up, `position_snapshots` present for each recovered session (D90 — without it the recovered days are not reproducible), and spot-check one account's trades vs the go-live log. Then run `verify-wal` and a `reproduce-day` on a recovered session (§3).
@@ -34,7 +34,7 @@ The drill *is* the test that backups work; an unrehearsed backup is a hope, not 
 | Daily run failed: provider HTTP errors | Nothing lost (transaction rolled back). Check EODHD status/plan limits; rerun or let tomorrow's catch-up recover. Persistent ⇒ switch `Data.Provider` fallback for bars; membership fails closed on its own |
 | Membership cross-check divergence alert | Usually IVV lag (T+1) or an index change mid-flight. If it persists > 2 days: inspect `index_membership_log` diffs, confirm against the S&P press release, apply via the **D55 membership-override admin action** (typed confirmation, audit row) |
 | Frozen position (unmapped corporate action) | Look up the event (issuer IR / EDGAR), then use the **D55 admin-intervention panel** (Risk screen): typed confirmation → row preview → validated write with `source='manual'` + `admin_actions` audit row → scoped ledger re-run; the freeze clears when the action processes. No direct DB edits (Golden Rule 29) |
-| LLM budget exhausted / batch failed | Reads degrade per D24 order automatically; a missed day is a no-read day (neutral), never a blocker. Check `llm_budget_log` |
+| LLM budget exhausted / batch failed | The day's cost and token ceilings now ACCUMULATE across a batch (D151), so an over-budget batch is refused per request rather than admitted N-wide. A missed day is a no-read day (neutral), never a blocker. Check `llm_budget_log`. **Do not expect D24's priority order:** `Llm.DegradationOrder` is read by nothing in `src`, and mid-batch refusal is currently ARRIVAL-ordered (finding 421, open) |
 | Factor refresh checksum/continuity failure | Attribution panel shows stale-data note automatically (D41); retry next day; the trading path is unaffected (diagnostic-only) |
 | Bar cross-check tolerance alarm | Inspect the sampled names; if EODHD revised, versions arrive naturally (D40); if systematic, open a provider ticket and widen the sample temporarily |
 | DB corruption / disk failure | §4 restore drill, latest backup + catch-up |
@@ -124,8 +124,8 @@ run_kind='replay', quarantined).
    >
    > `--reset` calls `ReplayRunner.DeleteReplayGeneration`: it **deletes every committed replay session**
    > before starting over. Pressing Up-Enter after a crash therefore throws away the entire run — days of
-   > work — and silently begins a new generation. The run **is** genuinely resumable: sessions commit one
-   > at a time and already-committed days are skipped, so at worst you lose the in-flight day.
+   > work — and silently begins a new generation. Sessions commit one at a time and already-committed days
+   > are skipped, so at worst you lose the in-flight day — but see the D144 rail below before resuming.
    >
    > **Resume with:**
    > ```
@@ -134,11 +134,25 @@ run_kind='replay', quarantined).
    > It never emits `--reset` by construction, pins the generation's frozen watermark (D95 — a re-resolved
    > watermark that has moved because new bars arrived would otherwise be refused as a mixed vintage),
    > holds the build at `-c Release` to match the report's build stamp (finding 278), and refuses to launch
-   > if a Worker is already running or if `src/` has uncommitted changes (resuming one generation with two
-   > code vintages is invisible to every watermark check).
+   > if a Worker is already running or if `src/` has uncommitted changes.
    >
-   > The equivalent raw command, if you are not using the script, is the launch command **with `--reset`
-   > removed** and `--watermark <the generation's frozen watermark>` added.
+   > **D144 NOW REFUSES BOTH RESUME PATHS ON THIS ARENA, AND THAT IS DELIBERATE.** The sentence above used
+   > to end "resuming one generation with two code vintages is invisible to every watermark check" — D144
+   > is the mechanism that made it visible, so the caveat became an enforcement. `ReplayRunner` stamps the
+   > `LedgerArithmetic.Version` that produced a generation and refuses, before simulating anything, when a
+   > COMMITTED generation's stamp differs from the current build's. sp500 generation 2 predates the marker
+   > entirely, so it carries none — and "no marker" means "produced under arithmetic this build cannot
+   > identify", which fails closed rather than being assumed compatible. The build is now `la-3` (D147).
+   >
+   > So for generation 2 there are exactly two lawful moves: **regenerate the window WHOLE with `--reset`**,
+   > or **leave it alone**. There is no correct partial re-run — committed sessions are SKIPPED, so
+   > continuing would leave those days on the old rules while every new session used the new ones, one
+   > generation containing two arithmetics, which is what D95 forbids. To re-simulate a window for a
+   > confirmation slice, COPY the store to a scratch arena and run there with `--reset --report-only`;
+   > never `--reset` the arena holding the frozen generation. The guard's own message says all of this.
+   >
+   > The resume script remains correct for a generation this build STAMPED — i.e. any generation created
+   > from here — where the vintages match and the guard is silent.
    `--learn-through` is the FR-42 learn/validate split (a runtime parameter, deliberately no CONFIG key);
    the curves build from the learn side, the curve-based validate checks read the validate side.
 6. **Review the archived report** (`docs/calibration/sp500/<date>-calibration.md`): the verification table

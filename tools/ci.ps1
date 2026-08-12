@@ -342,6 +342,25 @@ try {
     Assert-NoMatch -Files $judgingCs -Pattern 'ai_context_packs|ai_decisions|AiContextPacks\b|AiDecisions\b|AiDecisionRow|AiContextPackRow|AiDecisionRecord|ContextPack\b|IAiDecisionStore' `
         -Message 'Golden rule 32 (MASTER 23.8.4): no monitor signal, gate input, allocator term, population comparison or read-model may read the AI-seat artefacts (ai_context_packs / ai_decisions).'
 
+    # 4c. NO CONTROL CHARACTERS IN THE DOC CORPUS (D155, finding 428). The documents ARE the sources of
+    #     truth, and a stray control byte in one is invisible in every renderer while silently corrupting
+    #     the sentence around it. Two were found by a corpus sweep and BOTH arrived the same way - a
+    #     PowerShell escape sequence surviving into a file because the text was assembled inside a
+    #     DOUBLE-QUOTED string: `f (form feed) ate the backtick of `floor` in DESIGN_IMPROVEMENTS, leaving
+    #     "the presence of the loor token"; `a (bell) ate a path separator in PROGRESS, leaving
+    #     "sp500<BEL>lphalab.db". Neither is visible on screen and neither failed anything.
+    #
+    #     THIS IS A TOOLING HAZARD, NOT A TYPO CLASS, which is why it gets a guard rather than a proofread:
+    #     every doc edit in this repo goes through a .ps1, the repo already mandates ASCII-only .ps1 files
+    #     for a related reason (PS 5.1 decodes .ps1 as ANSI), and the same escape set will keep firing.
+    #     Tab (0x09), LF (0x0A) and CR (0x0D) are legitimate; everything else below 0x20 is not.
+    $docFiles = @(Get-ChildItem -Path (Join-Path $repoRoot 'docs') -Recurse -File -Include *.md -ErrorAction SilentlyContinue |
+        ForEach-Object { $_.FullName })
+    $docFiles += @('CLAUDE.md', 'PROGRESS.md', 'START_HERE.md') |
+        ForEach-Object { Join-Path $repoRoot $_ } | Where-Object { Test-Path $_ }
+    Assert-NoMatch -Files $docFiles -Pattern '[\x00-\x08\x0B\x0C\x0E-\x1F]' `
+        -Message 'A control character is present in the documentation corpus - almost certainly a PowerShell escape (`f, `a, `b, `e, `0) that survived into the file from a double-quoted string. Rewrite the edit using a single-quoted string or a UTF-8 data file.'
+
     # 5. Ledger money is C# decimal persisted as TEXT, NEVER double/REAL (rule 20 / D69). Added at
     #    v1.9.85 (finding 365) for the same reason as 1c: the invariant was held by review alone.
     #

@@ -3,7 +3,7 @@
 > **What this doc is, and is not.** This is the *visual assembly layer* only — the anatomy of the recurring UI components and how they read the honesty read-models. It is the bridge between two documents that already exist and are authoritative:
 >
 > - **Colour, type, and their meaning** live in `UX_GUIDELINES_v1.9.md` → "Visual system — design tokens". This doc **does not restate the palette**; it references those tokens (`--gold`, `--cyan`/`--band`, `--violet`, `--replay`, `--up`/`--down`, `--amber`, `--disp`/`--body`/`--mono`) by name and never redefines a value. If a colour question arises, UX_GUIDELINES wins.
-> - **What each screen must render** lives in `UX_GUIDELINES_v1.9.md` rules UX-1…UX-16. This doc **does not restate a rule's behaviour**; it says which component satisfies it and what the component looks like.
+> - **What each screen must render** lives in `UX_GUIDELINES_v1.9.md` rules UX-1…UX-20. This doc **does not restate a rule's behaviour**; it says which component satisfies it and what the component looks like.
 >
 > The one thing neither of those documents carries is *component anatomy* — "given the backend hands me a `verdict_chip` field, exactly what element renders it, in which token colours, at what size." That gap is what this doc fills. Nothing here introduces new honesty behaviour; if a rule here and a UX-rule ever disagree, UX_GUIDELINES is authoritative and this doc is the bug.
 
@@ -89,7 +89,7 @@ Days-accrued vs days-needed for the current gap to clear the NW-MDE, plus the im
 Expands in place: status → each signal in **plain language** ("backtest gap," "above its noise floor?," "edge decay") with the S-code and threshold as secondary text → evidence chart one level deeper. **Icon + text always, never colour alone.** Strong `--up`/`--down` only for verdict/warning, never raw P&L.
 
 ### 11. `AllocationBar` / `DerivationRow` — binds the allocation read-model incl. each `clamp_bound` (UX-9, D51)
-One horizontal stacked bar (`--gold` = Live; baselines/populations never appear — they are not allocatable). Below it, one derivation row per strategy: `α̂ ± se → α̃ (shrunk) → target → applied`, with any clamp that bound rendered as a labelled chip **on the arrow it affected** (the read-model attributes the clamp to the arrow; the row places it).
+One horizontal stacked bar (`--gold` = Live; baselines/populations never appear — they are not allocatable). Below it, one derivation row per strategy: `α̂ ± se → α̃ (shrunk) → target → applied`, with any clamp that bound rendered as a labelled chip **on the arrow it affected** (the read-model attributes the clamp to the arrow; the row places it). **Open exception (finding 417):** the `floor` chip is currently emitted on rows the Suspect decay drove far below the floor — 354 of 400 rows on the last replay evaluation, at weights down to 4.7e-33 — so the chip does not yet mean "this clamp bound the final weight". See UX-9.
 
 ### 12. `ReplayField` — binds `quarantined: true` (UX-8a, D65)
 Any replay content sits on the hatched slate-grey `--replay` field with the standing watermark ("REPLAY — validates the machinery · never evidence a strategy works"). **Never co-plotted with forward lines; never on Strategies or the Go-live log.** The component is a wrapper: if `quarantined`, it applies the field and watermark unconditionally. This is a honesty rail, not a style choice.
@@ -154,6 +154,6 @@ merges the two dates, or renders `unknown` as blank or as stale is a bug.
 ## What this doc deliberately does not do
 
 - It does not redefine any colour, font, or semantic-colour meaning — those are UX_GUIDELINES' Visual-system table.
-- It does not restate any UX-rule's behaviour — those are UX-1…UX-16.
+- It does not restate any UX-rule's behaviour — those are UX-1…UX-20.
 - It does not put any honesty logic in a component — that is D58's read-models.
 - It is a look/assembly reference; the enforcement points remain the read-model tests (`AlphaLab.Evaluation.Tests`), not browser tests.

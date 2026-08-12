@@ -51,6 +51,7 @@ function Add-Violation {
 # One row per decision: | D<n> | ... | ... | <status> |
 $registerStatus = @{}
 $registerLine = @{}
+$registerBody = @{}
 $lineNo = 0
 foreach ($line in Get-Content -LiteralPath $register -Encoding UTF8) {
     $lineNo++
@@ -61,6 +62,7 @@ foreach ($line in Get-Content -LiteralPath $register -Encoding UTF8) {
     $status = ($cells[$cells.Length - 2]).Trim()
     $registerStatus[$num] = $status
     $registerLine[$num] = $lineNo
+    $registerBody[$num] = $line
 }
 
 if ($registerStatus.Count -eq 0) { throw 'check-register: parsed zero register rows - the table shape changed.' }
@@ -155,6 +157,49 @@ foreach ($d in $declared) {
         if (-not $named) {
             $rel = $hit.Path.Substring($repoRoot.Length + 1)
             Add-Violation '3b' ("D$d is $status but is cited without naming its successor at ${rel}:" + $hit.LineNumber)
+        }
+    }
+}
+
+$amendWarnings = @()
+# ---------------------------------------------------------------- 3g: an amendment claim is reflected
+# in the AMENDED row's Status cell (D155, finding 429).
+#
+# THE CHECK THAT WOULD HAVE CAUGHT D150. Rule 25 requires the named row's Status cell to be updated in
+# the same commit as the row that amends it. D150's headline says "amends D51"; D51's Status cell still
+# read `active` for a full version pass, and every check in this file passed the whole time - 3a only
+# asks whether a cited row EXISTS, 3b covers `superseded-by` and deliberately not `amended-by`, and
+# nothing looked at the relationship in the other direction. So the register asserted an amendment its
+# own target did not acknowledge, which is precisely the relational defect rule 25 was written about and
+# which a per-row read cannot see: D150 was correct and D51 was correct, and the PAIR was not.
+#
+# DIRECTION: from the amending row's PROSE to the amended row's STATUS. The claim lives in the body
+# ("amends D51"), so that is the authority; the Status cell is the thing that must catch up.
+#
+# WHY NON-ACTIVE RATHER THAN NAME-THE-AMENDER: a row can be amended more than once and the cell holds
+# one value - D89 is amended by both D116 and D121 and its cell names only D121, which is correct and
+# must not be a violation. Requiring the cell to NAME the amender would fail that legitimate case, so
+# the hard check is "not active" and the name check is a WARNING, matching 3f's shape.
+#
+# KNOWN LIMITATION, found by this check firing on the row that introduced it: the scan reads the phrase,
+# so a row that QUOTES another row's amendment claim ("D150's headline says 'amends D51'") is
+# indistinguishable from one making it. D155 was reworded rather than the regex loosened - a narrower
+# pattern would have to model quotation, and the warning tier already makes a false positive cheap.
+foreach ($d in $declared) {
+    $row = $registerBody[$d]
+    if (-not $row) { continue }
+    foreach ($m in [regex]::Matches($row, '(?i)\bamends\s+D(\d+)\b')) {
+        $target = [int]$m.Groups[1].Value
+        if (-not $registerStatus.ContainsKey($target)) {
+            Add-Violation '3g' ("D$d says it amends D$target, but D$target has no row in the register")
+            continue
+        }
+        $targetStatus = $registerStatus[$target]
+        if ($targetStatus -eq 'active') {
+            Add-Violation '3g' ("D$d's body says 'amends D$target' but D$target's Status cell still reads 'active' - rule 25 requires the named row's Status to be updated in the SAME commit")
+        }
+        elseif ($targetStatus -notmatch ("\bD" + $d + "\b")) {
+            $amendWarnings += "D$d says it amends D$target, whose Status is '$targetStatus' (non-active, so not a violation) but does not name D$d - fine when a row has several amenders, worth a look otherwise"
         }
     }
 }
@@ -346,6 +391,7 @@ if (Test-Path -LiteralPath $changelogPath) {
         elseif ($curr -gt 0 -and $clLines[$i] -match '(?i)\bconsequences\s*:') { $hasField = $true }
     }
 }
+foreach ($w in $amendWarnings)  { Write-Host ('WARNING [3g] ' + $w) -ForegroundColor Yellow }
 foreach ($w in $findingWarnings) { Write-Host ('WARNING [3f] ' + $w) -ForegroundColor Yellow }
 
 # ---------------------------------------------------------------- report
