@@ -53,7 +53,7 @@ public sealed class ResearchJobExecutor(
 
     /// <summary>The researcher seat's frozen prompt-policy version (D81 rule 2's discipline applied to a
     /// seat with no fork lifecycle): any edit to the instruction blocks below bumps this.</summary>
-    public const string PromptVersion = "rs-1.1";
+    public const string PromptVersion = "rs-1.2";   // rs-1.1 -> rs-1.2: D153 added the skeptic's report-only/thin-context rail
 
     // The per-arm pairing estimate moved to Ai.Researcher.EstimatedArmCostUsd at v1.9.94 (finding 381):
     // an authored dollar figure gating a budget check belongs in CONFIG_REFERENCE, not in a const here.
@@ -345,11 +345,29 @@ public sealed class ResearchJobExecutor(
             ? (AnalysisTask.ResearchBrief, "decision_note", BriefInstructions)
             : (AnalysisTask.Skeptic, "skeptic_review", SkepticInstructions);
 
+        // THE SKEPTIC NEEDS A SUBJECT, AND THE BRIEF LEGITIMATELY DOES NOT (D153, finding 425). §23.4's
+        // three actions are not symmetric: UX-10 lists "today's regime brief" as an arena-level action and
+        // MASTER §199 scopes "feed it a strategy's stats" to the SKEPTIC alone. So the rail is skeptic-only
+        // and the "(arena-level ...)" fallback below stays for the brief.
+        //
+        // Refused here as well as at the API (AnalysisEndpoints returns 422) because a job may ALREADY be
+        // queued with no subject, and because the API is not the only way to reach the queue. The throw
+        // shape is the one at :371 below: the drainer marks the job 'failed' with the reason, which is
+        // rule 10's "reject with a logged reason" rather than an unattributed blank in the record.
+        if (kind == "analysis_skeptic" && string.IsNullOrWhiteSpace(req.StrategyId))
+        {
+            throw new InvalidOperationException(
+                "analysis_skeptic: no strategy_id — a skeptic review with no subject is an opinion about " +
+                "nothing (D52), and the L0 block tells the model to argue against 'the claim in front of " +
+                "you'. No journal entry written.");
+        }
+
         var fresh = string.Join("\n",
         [
             $"Date: {asOf}",
             $"Strategy: {req.StrategyId ?? "(arena-level — no single strategy)"}",
             $"Topic: {req.Topic ?? "(none)"}",
+            .. kind == "analysis_skeptic" ? SkepticEvidence(db, req.StrategyId!) : [],
         ]);
 
         var results = await analysis
@@ -382,6 +400,73 @@ public sealed class ResearchJobExecutor(
         logger.LogInformation(
             "{Kind}: job {JobId} wrote an unlocked '{JournalKind}' entry ({Cost:C4}).",
             kind, job.JobId, journalKind, result.Usage.CostUsd);
+    }
+
+    /// <summary>
+    /// The arena's own numbers for the strategy under review (D153, finding 425). MASTER §199 describes
+    /// the skeptic as *"feed it a strategy's stats and ask what leakage or overfitting story explains
+    /// this"* — the L2 block used to carry a date, an id and a topic, so the model was told to argue
+    /// against "the claim in front of you" and to name "what would have to be true for this result to be
+    /// luck" while being handed no claim, no result and no number.
+    ///
+    /// <para>Read from the FORWARD channel only (hard rule 1): a replay row judges the machinery, never a
+    /// strategy, and feeding one to a reviewer whose output an operator reads would put a quarantined
+    /// number into the record wearing a forward review's title.</para>
+    ///
+    /// <para>Assembled into the L2 fresh block rather than an <c>ai_context_packs</c> recipe on purpose.
+    /// The pack recipe is closed at eight fields and an eighth costs a discontinuity in the D110 margin
+    /// series; the advisory kinds are deliberately not pack-routed (v1.9.70) and this does not change
+    /// that. It also means no D80 pack record exists for a skeptic review, which is stated rather than
+    /// implied.</para>
+    ///
+    /// <para>ABSENCE IS REPORTED, NOT PAPERED OVER. A strategy with no forward evidence yet is a real and
+    /// common state, and the honest response is to say so and let the L0 thin-context rail apply, not to
+    /// refuse the job (there IS a subject) and not to leave the model guessing (there are no numbers).</para>
+    /// </summary>
+    private static List<string> SkepticEvidence(AlphaLabDbContext db, string strategyId)
+    {
+        const string Forward = "live";
+        var lines = new List<string> { "", "Arena evidence for this strategy (forward channel only — replay is quarantined, rule 1):" };
+
+        var report = db.PowerReports
+            .Where(p => p.StrategyA == strategyId && p.RunKind == Forward)
+            .OrderByDescending(p => p.AsOf)
+            .Select(p => new { p.AsOf, p.StrategyB, p.ObservedGapAnn, p.MdeAnn, p.TDays, p.Verdict })
+            .FirstOrDefault();
+
+        if (report is null)
+        {
+            lines.Add("- No forward power_reports row exists for this strategy. There is no measured gap, no MDE, and no verdict.");
+        }
+        else
+        {
+            lines.Add($"- Latest forward pair ({report.AsOf}) vs {report.StrategyB}: observed gap {report.ObservedGapAnn?.ToString("P2", CultureInfo.InvariantCulture) ?? "(none)"}/yr, "
+                    + $"NW-corrected MDE {report.MdeAnn.ToString("P2", CultureInfo.InvariantCulture)}/yr, track {report.TDays} days, verdict {report.Verdict}.");
+        }
+
+        var status = db.OverfittingStatus
+            .Where(o => o.StrategyId == strategyId && o.RunKind == Forward)
+            .OrderByDescending(o => o.AsOf)
+            .Select(o => new { o.AsOf, o.Status })
+            .FirstOrDefault();
+        lines.Add(status is null
+            ? "- No forward overfitting_status row exists: the eight-signal monitor has not yet judged this strategy."
+            : $"- Overfitting monitor ({status.AsOf}): {status.Status}.");
+
+        var trials = db.TrialsRegistry.Count(t => t.StrategyId == strategyId);
+        lines.Add($"- Trials registered against this strategy id: {trials} (multiple-testing exposure).");
+
+        // Trades are keyed by account, so the strategy's forward account is the join.
+        var accountIds = db.Accounts
+            .Where(a => a.StrategyId == strategyId && a.RunKind == Forward)
+            .Select(a => a.AccountId)
+            .ToList();
+        var trades = accountIds.Count == 0 ? 0 : db.Trades.Count(t => accountIds.Contains(t.AccountId) && t.RunKind == Forward);
+        lines.Add(accountIds.Count == 0
+            ? "- No forward account exists for this strategy: it has never traded."
+            : $"- Forward trades executed: {trades}.");
+
+        return lines;
     }
 
     private static T Parse<T>(JobRow job) =>
@@ -451,6 +536,10 @@ public sealed class ResearchJobExecutor(
         - Do not hedge into balance. If the claim survives your best attack, say exactly which attack it
           survived and why — that is a stronger statement than "it seems reasonable".
         - No trading recommendations, no numeric scores.
+        - Report only what the supplied evidence supports. Do not speculate beyond it, and do not invent
+          a number, a track length or a verdict that is not in front of you.
+        - If the evidence is thin or absent, say so plainly and stop. A strategy with no measured gap has
+          not survived anything, and an attack written against numbers you were not given is not a review.
 
         Output: markdown prose, under 400 words.
         """;

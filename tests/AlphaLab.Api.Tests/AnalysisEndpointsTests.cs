@@ -68,6 +68,42 @@ public class AnalysisEndpointsTests
     };
 
     [Fact]
+    public async Task D153_Skeptic_WithoutASubject_Is422_AndNothingIsEnqueued()
+    {
+        using var f = new ApiArenaFactory();
+
+        var response = await f.CreateClient().PostAsync("/api/v1/analysis/skeptic",
+            Body("""{"topic":"is momentum real?"}"""));
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        var json = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"code\":\"unprocessable_entity\"", json);
+        Assert.Contains("strategy_id", json, StringComparison.OrdinalIgnoreCase);
+
+        // Refused before enqueue AND before the budget check: a review that can never have a subject
+        // must not reach the Worker, and must not spend the day's headroom on the way there.
+        using var db = f.Open();
+        Assert.Empty(db.Jobs.ToList());
+    }
+
+    [Fact]
+    public async Task D153_TheSubjectRailIsSkepticOnly_AnArenaLevelBriefStillDispatches()
+    {
+        // THE CONTROL, and the reason the rail is not symmetric. UX-10 lists "today's regime brief" as an
+        // arena-level action and MASTER §199 scopes "feed it a strategy's stats" to the SKEPTIC alone, so
+        // a brief with no strategy_id is a legitimate request. A symmetric guard would break it, which is
+        // exactly the over-correction this test exists to catch.
+        using var f = new ApiArenaFactory();
+
+        var response = await f.CreateClient().PostAsync("/api/v1/analysis/brief",
+            Body("""{"topic":"how did the arena behave this month?"}"""));
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        using var db = f.Open();
+        Assert.Single(db.Jobs.ToList());
+    }
+
+    [Fact]
     public async Task FR23_Hypotheses_RequireParentEvidence()
     {
         using var f = new ApiArenaFactory();

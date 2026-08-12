@@ -165,6 +165,80 @@ public class ResearchJobExecutorTests
         Assert.Contains("numeric score", ResearchJobExecutor.BriefInstructions, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task D153_ASkepticWithNoSubject_FailsClosed_AndWritesNoEntry()
+    {
+        // The API refuses this with a 422, but the API is not the only way into the queue and a job may
+        // ALREADY be queued from before the rail existed. Rule 10's shape: reject with a logged reason.
+        using var h = Harness(new StubProvider("prose"));
+        Queue(h, "analysis_skeptic", """{"Topic":"is momentum real?"}""");
+
+        var outcome = await h.RunJobDrainAsync();
+
+        Assert.Equal(1, outcome.Failed);
+        using var db = h.Open();
+        Assert.Empty(db.JournalEntries.ToList());
+        var job = Assert.Single(db.Jobs.ToList());
+        Assert.Equal("failed", job.Status);
+        Assert.Contains("no strategy_id", job.ErrorJson!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task D153_AnArenaLevelBriefStillRuns_TheRailIsSkepticOnly()
+    {
+        // The control for the asymmetry. A brief with no strategy_id is a legitimate arena-level request
+        // (UX-10's "today's regime brief"), and the "(arena-level — no single strategy)" fallback stays.
+        using var h = Harness(new StubProvider("prose"));
+        Queue(h, "analysis_brief", """{"Topic":"how did the arena behave this month?"}""");
+
+        var outcome = await h.RunJobDrainAsync();
+
+        Assert.Equal(1, outcome.Done);
+        using var db = h.Open();
+        var entry = Assert.Single(db.JournalEntries.ToList());
+        Assert.Equal("decision_note", entry.Kind);
+        Assert.Null(entry.StrategyId);
+    }
+
+    [Fact]
+    public async Task D153_TheSkepticIsHandedTheArenasOwnNumbers_NotJustAnId()
+    {
+        // MASTER §199: "feed it a strategy's stats". The L2 block used to be three lines — date, id,
+        // topic — so the model was told to argue against "the claim in front of you" and to say what
+        // would have to be true for "this result" to be luck, while being handed no claim, no result and
+        // no number. This asserts the prompt the provider ACTUALLY receives, not the intent.
+        var capture = new CapturingProvider("prose");
+        using var h = Harness(capture);
+        Queue(h, "analysis_skeptic", """{"StrategyId":"cand:a"}""");
+
+        var outcome = await h.RunJobDrainAsync();
+        Assert.Equal(1, outcome.Done);
+
+        var fresh = Assert.Single(capture.FreshBlocks);
+        Assert.Contains("Arena evidence for this strategy", fresh, StringComparison.Ordinal);
+        Assert.Contains("power_reports", fresh, StringComparison.Ordinal);        // absence is REPORTED
+        Assert.Contains("overfitting_status", fresh, StringComparison.Ordinal);
+        Assert.Contains("Trials registered", fresh, StringComparison.Ordinal);
+
+        // Rule 1: the evidence block is forward-only, so it can never carry a replay number under a
+        // forward review's title. Asserted on the text so the channel is visible in the record itself.
+        Assert.Contains("forward channel only", fresh, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void D153_TheSkepticBlockCarriesTheReportOnlyRail_AndThePromptVersionMovedWithIt()
+    {
+        // The brief's block has had "Report only what the context supports" and "If the context is thin,
+        // say so plainly" since it was written; the skeptic's had neither, while being told not to hedge.
+        // An instruction to attack, with no rail against inventing what to attack, is worse than silence.
+        Assert.Contains("Report only what the supplied evidence supports", ResearchJobExecutor.SkepticInstructions, StringComparison.Ordinal);
+        Assert.Contains("thin or absent", ResearchJobExecutor.SkepticInstructions, StringComparison.Ordinal);
+
+        // D81 rule 2: an L0 edit is a prompt-version event, never a tidy-up. Asserted so a future edit
+        // that forgets the bump fails here rather than silently sharing a cache key with a different prompt.
+        Assert.Equal("rs-1.2", ResearchJobExecutor.PromptVersion);
+    }
+
     private sealed class StubProvider(
         string output,
         AnalysisOutcome outcome = AnalysisOutcome.Succeeded,
@@ -177,5 +251,26 @@ public class ResearchJobExecutorTests
 
         public Task<AnalysisResult> RunAsync(AnalysisRequest request, CancellationToken ct = default)
             => Task.FromResult(new AnalysisResult(request.CustomId, outcome, output, TokenUsage.Zero, "m", detail));
+    }
+
+    /// <summary>A stub that records the L2 block it was handed, so a test can assert what the model
+    /// actually received rather than what the code meant to send.</summary>
+    private sealed class CapturingProvider(string output) : IAnalysisProvider
+    {
+        public List<string> FreshBlocks { get; } = [];
+
+        public Task<IReadOnlyList<AnalysisResult>> RunBatchAsync(
+            IReadOnlyList<AnalysisRequest> requests, CancellationToken ct = default)
+        {
+            FreshBlocks.AddRange(requests.Select(r => r.Prompt.Fresh));
+            return Task.FromResult<IReadOnlyList<AnalysisResult>>(
+                [.. requests.Select(r => new AnalysisResult(r.CustomId, AnalysisOutcome.Succeeded, output, TokenUsage.Zero, "m"))]);
+        }
+
+        public Task<AnalysisResult> RunAsync(AnalysisRequest request, CancellationToken ct = default)
+        {
+            FreshBlocks.Add(request.Prompt.Fresh);
+            return Task.FromResult(new AnalysisResult(request.CustomId, AnalysisOutcome.Succeeded, output, TokenUsage.Zero, "m"));
+        }
     }
 }
