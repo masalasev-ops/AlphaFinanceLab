@@ -17,9 +17,16 @@ public class StrategyRosterTests
     /// <summary>The run watermark for <see cref="AsOf"/> (D141: the capital read is now as-of).</summary>
     private const string Wm = "2024-01-02T22:00:00Z";
 
+    /// <summary>`threshold:sma50`'s `config_json` verbatim from the live sp500 store. It used to be
+    /// <c>"{}"</c>, which under D152's rule-8 binding check now correctly refuses: a row that records
+    /// nothing cannot certify what the funnel executes. Copied from the store rather than rebuilt from
+    /// <c>ThresholdModel.Create()</c> so the fixture compares code to the STORE, not code to code.</summary>
+    private const string FrozenThreshold =
+        """{"seed":0,"selection":{"mode":"threshold","n":40,"min_score":0.6,"max_concurrent":60},"sizing":"equal","params":{"lookback":50},"unregistered":true}""";
+
     private static StrategyRow Row(string id, string status) => new()
     {
-        StrategyId = id, Family = "passive", ConfigJson = "{}", ExitPolicyJson = "{}",
+        StrategyId = id, Family = "passive", ConfigJson = FrozenThreshold, ExitPolicyJson = "{}",
         CreatedOn = AsOf, Status = status,
     };
 
