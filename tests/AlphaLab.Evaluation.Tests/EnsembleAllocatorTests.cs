@@ -171,6 +171,83 @@ public class EnsembleAllocatorTests
         var inputs = Enumerable.Range(0, 30).Select(i => In($"s{i}", i % 5, 3.0)).ToList();
         var outcome = EnsembleAllocator.Allocate(inputs, Opts);
         Assert.Equal(1.0, outcome.Rows.Sum(r => r.Weight), 9);
+
+        // finding 116's sentence has TWO clauses and this fixture only ever checked one. "Weights sum to 1"
+        // is true by construction of the rescale for any input, so it could not fail on the half it was
+        // written to defend — while 18 of these 30 rows sat at 3.1545% under a 3.3333% scaled floor. D150
+        // adds the other clause here rather than in a separate test, so the regression stays one fixture.
+        var effectiveFloor = Math.Min(Opts.WeightFloorPct / 100.0, 1.0 / inputs.Count);
+        Assert.All(outcome.Rows.Where(r => r.Applied == effectiveFloor),
+            r => Assert.True(r.Weight >= effectiveFloor - 1e-12,
+                $"{r.StrategyId}: floored to {effectiveFloor:G17} then renormalized to {r.Weight:G17}"));
+    }
+
+    [Fact]
+    public void FR27_D150_RenormalizationNeverPushesAFlooredWeightBelowItsFloor()
+    {
+        // MASTER §20.2 clause 3, final sentence. Three rows are enough: the trigger is Σapplied > 1, which
+        // the band produces at ANY roster size by holding two priors at 0.50 while the floor lifts the third.
+        // Pre-D150 'c' renormalized to 4.7619% under a 5% floor while still reporting clamps_bound=["floor"].
+        var rows = EnsembleAllocator.Allocate(
+        [
+            In("a", 5.0, 0.5, prior: 0.50), In("b", 5.0, 0.5, prior: 0.50), In("c", -20.0, 0.5),
+        ], Opts).Rows.ToDictionary(r => r.StrategyId);
+
+        var floor = Opts.WeightFloorPct / 100.0;
+        Assert.Contains("floor", rows["c"].ClampsBound);
+        Assert.Equal(floor, rows["c"].Applied, 12);
+        Assert.True(rows["c"].Weight >= floor - 1e-12, $"floored row renormalized to {rows["c"].Weight:G17}");
+        Assert.Equal(1.0, rows.Values.Sum(r => r.Weight), 9);
+    }
+
+    [Fact]
+    public void FR27_D150_ASuspectDecayedRowIsNotLiftedBackToTheFloor()
+    {
+        // THE CONTROL FOR THE FIX ITSELF. The pin is on the VALUE (applied == effectiveFloor), never on the
+        // presence of the "floor" token — a row the floor lifted and the suspect decay then pushed back down
+        // still carries "floor", and re-pinning it would reverse a deliberate de-risk (DESIGN_IMPROVEMENTS
+        // §3.5 step 3 clause 3, "decay only, never a new tilt"). Prior 0.02 decays to 0.015, below the 5%
+        // floor, and must STAY there.
+        var rows = EnsembleAllocator.Allocate(
+        [
+            In("s", -10.0, 0.5, suspect: true, prior: 0.02), In("t", 5.0, 0.5, prior: 0.50),
+        ], Opts).Rows.ToDictionary(r => r.StrategyId);
+
+        var floor = Opts.WeightFloorPct / 100.0;
+        Assert.Contains("suspect_decay", rows["s"].ClampsBound);
+        Assert.True(rows["s"].Applied < floor, $"applied {rows["s"].Applied:G17} should be below the floor");
+        Assert.True(rows["s"].Weight < floor, $"a decayed row was lifted back to the floor: {rows["s"].Weight:G17}");
+    }
+
+    [Fact]
+    public void FR27_D150_TheCeilingIsDeliberatelyNotSymmetric()
+    {
+        // NOT A BUG, AND PINNED SO IT IS NOT "FIXED". No document asserts a post-renormalization ceiling:
+        // DESIGN_IMPROVEMENTS §3.5 orders the clamps at step 3 and the renormalization at step 5, and a
+        // symmetric treatment is infeasible anyway — n=2 under a 60% cap cannot sum to 1. This case yields
+        // 60.34% on the ceiling-clamped row, and that is the specified outcome.
+        var rows = EnsembleAllocator.Allocate(
+        [
+            In("a", 1.0, 1.0), In("b", 3.0, 1.0), In("c", 5.0, 1.0),
+        ], Opts).Rows.ToDictionary(r => r.StrategyId);
+
+        var ceiling = Opts.WeightCeilingPct / 100.0;
+        Assert.Contains("ceiling", rows["c"].ClampsBound);
+        Assert.True(rows["c"].Applied <= ceiling + 1e-12);      // the CLAMP binds, at step 3
+        Assert.True(rows["c"].Weight > ceiling);                 // and the renormalization is allowed past it
+    }
+
+    [Fact]
+    public void FR27_D150_WithNoFlooredRow_TheRenormalizationIsTheUnchangedProportionalRescale()
+    {
+        // The no-op arm, asserted bit-exactly rather than approximately: when the floor clamp binds on no
+        // row, every weight must still be exactly applied/Σapplied, so the fix provably cannot perturb the
+        // ordinary path.
+        var outcome = EnsembleAllocator.Allocate([In("a", 1.0, 1.0), In("b", 3.0, 1.0), In("c", 5.0, 1.0)], Opts);
+        Assert.DoesNotContain(outcome.Rows, r => r.ClampsBound.Contains("floor"));
+
+        var appliedSum = outcome.Rows.Sum(r => r.Applied);
+        Assert.All(outcome.Rows, r => Assert.Equal(r.Applied / appliedSum, r.Weight));
     }
 
     [Fact]

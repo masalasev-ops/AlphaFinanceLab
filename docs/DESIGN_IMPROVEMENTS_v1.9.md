@@ -132,7 +132,7 @@ A strategy with three months of track has a huge `se_i` and lands at ~equal weig
 2. `TooEarly` against the benchmark (D131) ⇒ `|t_i − current_i| ≤ TooEarlyTiltCapPts`;
 3. Suspect ⇒ `t_i = current_i × (1 − SuspectDecayPctPerEval)` — decay only, never a new tilt;
 4. banded movement: only move if `|t_i − current_i| > BandPts`, and then **to the band edge**, not to `t_i`;
-5. renormalize. Baselines and control populations never receive weight.
+5. renormalize, **floor-aware** (D150): the rows step 1's floor clamp actually produced keep the floor afterwards, and the remainder is spread pro rata over the rest — a plain division by the sum pushes them back under it whenever Sigma applied > 1, which the floor and the band routinely cause. The pin is on the VALUE, not on the presence of the loor token, so a row clause 3 subsequently decayed is NOT lifted back. There is deliberately NO symmetric ceiling treatment; see MASTER 20.2 clause 3. Baselines and control populations never receive weight.
 
 **Persistence (NFR-2):** every evaluation writes the full input vector `{α̂, se, α̃, w, target, applied, clamps_bound}` per strategy to `allocation_log` — every weight on screen (UX-9) reconstructs from the log.
 

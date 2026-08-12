@@ -27,6 +27,11 @@ public readonly record struct AllocationOutcome(IReadOnlyList<AllocationRow> Row
 ///
 /// finding 116: floors apply PRE-renormalization and scale down proportionally when Σfloors > 100% (so a
 /// roster larger than ⌊100/WeightFloorPct⌋ = 20 degrades gracefully instead of over-allocating).
+///
+/// D150 (finding 416): the renormalization is FLOOR-AWARE — the rows the floor clamp produced keep the floor
+/// afterwards. There is deliberately NO symmetric ceiling treatment: §3.5 orders clamps at step 3 and
+/// renormalization at step 5, so a post-renormalization weight MAY exceed the ceiling, and
+/// `FR27_D150_TheCeilingIsDeliberatelyNotSymmetric` pins that so it is not "completed" by a later reader.
 /// </summary>
 public static class EnsembleAllocator
 {
@@ -115,10 +120,43 @@ public static class EnsembleAllocator
             applied[i] = w;
         }
 
-        // ---- renormalize ----
+        // ---- renormalize, FLOOR-AWARE (D150) ----
+        // MASTER §20.2 clause 3 ends "renormalization never pushes a floored weight back below its (scaled)
+        // floor". A plain applied[i]/Σapplied breaks that whenever Σapplied > 1 — which is the ordinary case,
+        // because the floor ADDS mass and the band HOLDS priors. So the rows the floor clamp produced are
+        // PINNED at effectiveFloor and the remainder is spread pro rata over the rest. One pass, no iteration.
+        //
+        // THE PIN IS ON THE VALUE, NOT ON THE TOKEN, and that distinction is the whole safety of this step:
+        // a row whose applied was subsequently moved off the floor by the suspect decay still CARRIES the
+        // "floor" token, and lifting it back would reverse a deliberate de-risk — DESIGN_IMPROVEMENTS §3.5
+        // step 3 clause 3, "decay only, never a new tilt". `applied[i] == effectiveFloor` is exact equality on
+        // purpose: it is the very double the clamp assigned at step 1, so the bits match iff nothing later
+        // overwrote it. Feasibility is guaranteed upstream — :39 caps effectiveFloor at 1/n, so k·effectiveFloor
+        // ≤ 1 for any k ≤ n and the remainder can never be negative.
         var appliedSum = applied.Sum();
         var weight = new double[n];
-        for (var i = 0; i < n; i++) weight[i] = appliedSum > 0 ? applied[i] / appliedSum : 1.0 / n;
+
+        var pinned = new bool[n];
+        var pinnedCount = 0;
+        for (var i = 0; i < n; i++)
+            if (applied[i] == effectiveFloor && clamps[i].Contains("floor")) { pinned[i] = true; pinnedCount++; }
+
+        var freeSum = 0.0;
+        for (var i = 0; i < n; i++) if (!pinned[i]) freeSum += applied[i];
+
+        // Fall back to the plain rescale when the pin cannot express anything: nothing floored (invariant is
+        // vacuous), every row floored (Σtarget = 1 makes that unreachable, but 1/n each satisfies the floor
+        // anyway), or no free mass to spread the remainder over.
+        if (pinnedCount == 0 || pinnedCount == n || freeSum <= 0)
+        {
+            for (var i = 0; i < n; i++) weight[i] = appliedSum > 0 ? applied[i] / appliedSum : 1.0 / n;
+        }
+        else
+        {
+            var remainder = 1.0 - pinnedCount * effectiveFloor;
+            for (var i = 0; i < n; i++)
+                weight[i] = pinned[i] ? effectiveFloor : remainder * applied[i] / freeSum;
+        }
 
         var rows = new AllocationRow[n];
         for (var i = 0; i < n; i++)
