@@ -94,24 +94,25 @@ builder.Services.AddScoped<IRegimeProxyProvider>(sp =>
 // The FORWARD membership refresh (finding 197, 6.4): the same OEF + Wikipedia pair the bootstrap CLI
 // composes (tools/Backfill/Program.cs), so the Worker refreshes the roster the same way it was seeded.
 // This is what DailyPipeline's old "the daily OEF/Wikipedia refresh is a stated seam" comment deferred.
-// The pair is UNIVERSE-DRIVEN so the rule-22 widen stays a config flip: sp500 selects IVV + the S&P 500
-// cross-check. An unknown universe registers NOTHING rather than guessing a provider - the refresh then
-// reports "no provider composition" and freshness goes stale, which is visible; a guessed roster is not.
-builder.Services.AddScoped(sp =>
+//
+// THE DECISION LIVES IN MembershipComposition.TryCreate, NOT HERE (D154, finding 426). This block used to
+// carry a comment claiming the pair was universe-driven, that sp500 selected IVV + the S&P 500
+// cross-check, and that an unknown universe registered nothing — while the factory below it called Oef()
+// unconditionally, hardcoded the S&P 100 page, had no branch of any kind, and could not return null.
+// Program.cs is top-level statements in an exe with no test seam, so the claim was unfalsifiable where it
+// stood; the point of the extraction is that a test can now assert it. TryCreate returns null for any
+// universe whose providers are not wired (everything except sp100 today), so the service is ABSENT rather
+// than wrong, and MembershipRefreshStep's "no provider composition" branch — previously unreachable in
+// every composition in the repo — is what actually fires.
+if (MembershipComposition.IsWired(builder.Configuration.GetSection(UniverseOptions.SectionName).Get<UniverseOptions>() ?? new UniverseOptions()))
 {
-    var universe = sp.GetRequiredService<UniverseOptions>();
-    var http = sp.GetRequiredService<IResilientHttpClient>();
-    var raw = sp.GetService<IRawCache>();
-    var wikiUrl = builder.Configuration["Backfill:WikipediaSp100Url"] ?? "https://en.wikipedia.org/wiki/S%26P_100";
-    return new MembershipRefresh(
+    builder.Services.AddScoped(sp => MembershipComposition.TryCreate(
+        sp.GetRequiredService<UniverseOptions>(),
         sp.GetRequiredService<AlphaLabDbContext>(),
-        new ISharesHoldingsMembershipProvider(http, ISharesHoldingsOptions.Oef(), raw),
-        new WikipediaMembershipCrossCheck(http, new WikipediaMembershipOptions
-        {
-            Url = wikiUrl,
-            Source = universe.Bootstrap.MembershipCrossCheck,
-        }, raw));
-});
+        sp.GetRequiredService<IResilientHttpClient>(),
+        sp.GetService<IRawCache>(),
+        builder.Configuration["Backfill:WikipediaSp100Url"])!);
+}
 builder.Services.AddSingleton<MembershipRefreshStep>();
 
 // TimeProvider is injectable so run timestamps are deterministic under test (never a bare UtcNow in
