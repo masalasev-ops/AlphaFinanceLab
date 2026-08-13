@@ -644,7 +644,7 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
             e.ToTable("journal_entries", t =>
             {
                 t.HasCheckConstraint("ck_journal_entries_kind",
-                    "kind IN ('hypothesis','observation','decision_note','skeptic_review','outcome')");
+                    "kind IN ('hypothesis','observation','decision_note','skeptic_review','outcome','warning_ack')");
                 t.HasCheckConstraint("ck_journal_entries_outcome",
                     "outcome IN ('confirmed','refuted','inconclusive')");
             });

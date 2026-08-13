@@ -436,40 +436,6 @@ public class EvaluationStepTests
     }
 
     /// <summary>
-    /// THE HOLE, PINNED ON PURPOSE — this test asserts behaviour that is WRONG by the specification, and
-    /// exists so the next PR has a red to turn green.
-    ///
-    /// <para>OVERFITTING_MONITOR §3 says a Warning permits promotion "only with explicit operator
-    /// acknowledgment (logged)". No acknowledgment surface exists yet, so a Warning strategy still
-    /// promotes silently, exactly as it did before D156. That is not a side effect of the veto — it is
-    /// the untouched half of the rule, and item (b) of 6.5 PR 2 is what closes it.</para>
-    ///
-    /// <para>It is pinned rather than left implied because 123 of the frozen generation's 144 promotions
-    /// were made under Warning: the hole is the DOMINANT path, not a corner. When the acknowledgment rail
-    /// lands, this test must be rewritten to assert a refusal — its failure is the signal that (b) worked,
-    /// and its continued passing is the signal that (b) did not.</para>
-    /// </summary>
-    [Fact]
-    public void D156_AWarningStillPromotes_TheAcknowledgmentRailIsNotBuiltYet()
-    {
-        using var arena = new EvalArena();
-        var dates = EvalArena.Dates(100, new DateOnly(2026, 1, 5));
-        arena.SeedStrategy("buyhold:cw", "baseline", dates, Enumerable.Repeat(0.0, 99).ToArray());
-        arena.SeedStrategy("cand:win", "candidate", dates, Enumerable.Repeat(0.001, 99).ToArray());
-
-        using var db = arena.Open();
-        db.OverfittingStatus.Add(new OverfittingStatusRow
-        {
-            AsOf = dates[^1], StrategyId = "cand:win", Status = "warning", RunKind = "live", TriggerJson = "{}",
-        });
-        db.SaveChanges();
-
-        new EvaluationStep(db, new GateOptions()).Run(dates[^1]);
-
-        Assert.Contains(db.GoLiveLog.ToList(), g => g.Promoted == "cand:win");
-    }
-
-    /// <summary>
     /// The veto is SAME-EVALUATION, not "has ever been suspect". A strategy suspect on a PRIOR evaluation
     /// but healthy on this one is promotable — the monitor's own recovery path would be meaningless
     /// otherwise, and D156's whole subject is that the gate reads THIS evaluation's row.
@@ -496,5 +462,188 @@ public class EvaluationStepTests
         new EvaluationStep(db, new GateOptions()).Run(dates[^1]);
 
         Assert.Contains(db.GoLiveLog.ToList(), g => g.Promoted == "cand:win");
+    }
+    // ---------------------------------------------------------------------------------------------
+    // D157 (6.5 PR 2, item b): a Warning promotes only with a logged operator acknowledgment.
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>Seed a locked operator acknowledgment for one strategy on one evaluation, recording WHAT
+    /// was acknowledged rather than merely that acknowledgment occurred.</summary>
+    private static void SeedAck(AlphaLabDbContext db, string strategyId, string asOf, string what)
+    {
+        db.JournalEntries.Add(new JournalEntryRow
+        {
+            CreatedOn = asOf,
+            Kind = EvaluationStep.WarningAckKind,
+            Title = $"Warning acknowledged ({asOf}, {strategyId})",
+            BodyMd = what,
+            StrategyId = strategyId,
+            Locked = true,
+        });
+        db.SaveChanges();
+    }
+
+    private static void SeedWarning(AlphaLabDbContext db, string strategyId, string asOf)
+    {
+        db.OverfittingStatus.Add(new OverfittingStatusRow
+        {
+            AsOf = asOf, StrategyId = strategyId, Status = "warning", RunKind = "live", TriggerJson = "{}",
+        });
+        db.SaveChanges();
+    }
+
+    /// <summary>
+    /// THE REFUSAL, PROVEN REACHABLE. OVERFITTING_MONITOR §3: a Warning permits promotion "only with
+    /// explicit operator acknowledgment (logged)". With no acknowledgment the winning strategy is refused
+    /// — and this fixture replaces `D156_AWarningStillPromotes_TheAcknowledgmentRailIsNotBuiltYet`, which
+    /// pinned the opposite on purpose so this PR would have a red to turn green.
+    /// </summary>
+    [Fact]
+    public void D157_AWarningWithNoAcknowledgment_IsRefusedPromotion()
+    {
+        using var arena = new EvalArena();
+        var dates = EvalArena.Dates(100, new DateOnly(2026, 1, 5));
+        arena.SeedStrategy("buyhold:cw", "baseline", dates, Enumerable.Repeat(0.0, 99).ToArray());
+        arena.SeedStrategy("cand:win", "candidate", dates, Enumerable.Repeat(0.001, 99).ToArray());
+
+        using var db = arena.Open();
+        SeedWarning(db, "cand:win", dates[^1]);
+
+        new EvaluationStep(db, new GateOptions()).Run(dates[^1]);
+
+        // The gate's arithmetic cleared the bar and the record still says so.
+        Assert.Equal("Promoted", db.PowerReports.Single(p => p.StrategyA == "cand:win").Verdict);
+        // The promotion did not happen.
+        Assert.DoesNotContain(db.GoLiveLog.ToList(), g => g.Promoted == "cand:win");
+        Assert.Equal("candidate", db.Strategies.Single(s => s.StrategyId == "cand:win").Status);
+    }
+
+    /// <summary>The other arm: the SAME strategy, the same Warning, with a locked acknowledgment for that
+    /// evaluation — promotes. Without this the refusal above would be indistinguishable from a gate that
+    /// simply blocks every Warning, which is the option §3 deliberately does not take.</summary>
+    [Fact]
+    public void D157_TheSameWarningWithALockedAcknowledgment_Promotes()
+    {
+        using var arena = new EvalArena();
+        var dates = EvalArena.Dates(100, new DateOnly(2026, 1, 5));
+        arena.SeedStrategy("buyhold:cw", "baseline", dates, Enumerable.Repeat(0.0, 99).ToArray());
+        arena.SeedStrategy("cand:win", "candidate", dates, Enumerable.Repeat(0.001, 99).ToArray());
+
+        using var db = arena.Open();
+        SeedWarning(db, "cand:win", dates[^1]);
+        SeedAck(db, "cand:win", dates[^1], "S6 elevated_neg_alpha, rolling alpha t = -2.4; reviewed and accepted.");
+
+        new EvaluationStep(db, new GateOptions()).Run(dates[^1]);
+
+        Assert.Contains(db.GoLiveLog.ToList(), g => g.Promoted == "cand:win");
+        Assert.Equal("live", db.Strategies.Single(s => s.StrategyId == "cand:win").Status);
+    }
+
+    /// <summary>
+    /// THE FORGERY GUARD. The gate reads only LOCKED rows, and `ResearchJobExecutor` can write journal
+    /// rows only with <c>Locked = false</c> (rule 30: the AI proposes, only the operator pre-registers).
+    /// So a seat cannot manufacture its own acknowledgment BY CONSTRUCTION — it has no code path that
+    /// produces a locked row — rather than by a convention someone must remember.
+    ///
+    /// <para>This is what keeps the journal becoming a gate input from breaching the two-loops wall:
+    /// without it, "the gate reads journal_entries" would mean "anything that can write a journal row can
+    /// promote a strategy", and the researcher seat can write journal rows.</para>
+    /// </summary>
+    [Fact]
+    public void D157_AnUnlockedAck_DoesNotSatisfyTheGate()
+    {
+        using var arena = new EvalArena();
+        var dates = EvalArena.Dates(100, new DateOnly(2026, 1, 5));
+        arena.SeedStrategy("buyhold:cw", "baseline", dates, Enumerable.Repeat(0.0, 99).ToArray());
+        arena.SeedStrategy("cand:win", "candidate", dates, Enumerable.Repeat(0.001, 99).ToArray());
+
+        using var db = arena.Open();
+        SeedWarning(db, "cand:win", dates[^1]);
+        db.JournalEntries.Add(new JournalEntryRow
+        {
+            CreatedOn = dates[^1],
+            Kind = EvaluationStep.WarningAckKind,
+            Title = "unlocked - the shape a seat could write",
+            BodyMd = "S6 elevated",
+            StrategyId = "cand:win",
+            Locked = false,       // <- the only difference from the promoting fixture above
+        });
+        db.SaveChanges();
+
+        new EvaluationStep(db, new GateOptions()).Run(dates[^1]);
+
+        Assert.DoesNotContain(db.GoLiveLog.ToList(), g => g.Promoted == "cand:win");
+    }
+
+    /// <summary>
+    /// THE ACK BINDS TO THE EVALUATION, NOT THE STRATEGY — the difference between a control and a
+    /// signature. An operator who acknowledged an S2 Warning on an earlier evaluation has not seen the
+    /// S6 Warning firing on this one, and a strategy-bound acknowledgment would silently cover it.
+    /// </summary>
+    [Fact]
+    public void D157_AnAckFromAnEarlierEvaluation_DoesNotCoverThisOne()
+    {
+        using var arena = new EvalArena();
+        var dates = EvalArena.Dates(100, new DateOnly(2026, 1, 5));
+        arena.SeedStrategy("buyhold:cw", "baseline", dates, Enumerable.Repeat(0.0, 99).ToArray());
+        arena.SeedStrategy("cand:win", "candidate", dates, Enumerable.Repeat(0.001, 99).ToArray());
+
+        using var db = arena.Open();
+        SeedWarning(db, "cand:win", dates[^1]);
+        SeedAck(db, "cand:win", dates[^40], "S2 deflated Sharpe elevated; reviewed on an earlier evaluation.");
+
+        new EvaluationStep(db, new GateOptions()).Run(dates[^1]);
+
+        Assert.DoesNotContain(db.GoLiveLog.ToList(), g => g.Promoted == "cand:win");
+    }
+
+    /// <summary>An acknowledgment does not launder a SUSPECT. §3 separates the two deliberately: a
+    /// Warning is acknowledgeable, a Suspect is "vetoed regardless of P&amp;L" and cannot be signed away.
+    /// Without this, (b) would quietly weaken (a).</summary>
+    [Fact]
+    public void D157_AnAcknowledgmentDoesNotOverrideTheSuspectVeto()
+    {
+        using var arena = new EvalArena();
+        var dates = EvalArena.Dates(100, new DateOnly(2026, 1, 5));
+        arena.SeedStrategy("buyhold:cw", "baseline", dates, Enumerable.Repeat(0.0, 99).ToArray());
+        arena.SeedStrategy("cand:win", "candidate", dates, Enumerable.Repeat(0.001, 99).ToArray());
+
+        using var db = arena.Open();
+        db.OverfittingStatus.Add(new OverfittingStatusRow
+        {
+            AsOf = dates[^1], StrategyId = "cand:win", Status = "suspect", RunKind = "live", TriggerJson = "{}",
+        });
+        db.SaveChanges();
+        SeedAck(db, "cand:win", dates[^1], "operator acknowledgment - must not launder a Suspect");
+
+        new EvaluationStep(db, new GateOptions()).Run(dates[^1]);
+
+        Assert.DoesNotContain(db.GoLiveLog.ToList(), g => g.Promoted == "cand:win");
+    }
+
+    /// <summary>
+    /// THE RAIL IS FORWARD-ONLY, and this fixture is why the D64 plant machinery still works. Replay has
+    /// no operator, and 123 of the frozen generation's 144 promotions were made under Warning — a rail
+    /// applied to both channels would refuse 85% of calibration's own promotions. Same run-kind carve-out
+    /// D37 already makes for the strategies.status mutation.
+    /// </summary>
+    [Fact]
+    public void D157_InReplayAWarningPromotesWithoutAnAck_BecauseReplayHasNoOperator()
+    {
+        using var arena = new EvalArena();
+        var dates = EvalArena.Dates(100, new DateOnly(2026, 1, 5));
+        arena.SeedStrategy("buyhold:cw", "baseline", dates, Enumerable.Repeat(0.0, 99).ToArray(), runKind: "replay");
+        arena.SeedStrategy("cand:win", "candidate", dates, Enumerable.Repeat(0.001, 99).ToArray(), runKind: "replay");
+
+        using var db = arena.Open();
+        db.OverfittingStatus.Add(new OverfittingStatusRow
+        {
+            AsOf = dates[^1], StrategyId = "cand:win", Status = "warning", RunKind = "replay", TriggerJson = "{}",
+        });
+        db.SaveChanges();
+
+        new EvaluationStep(db, new GateOptions()).Run(dates[^1], runKind: "replay");
+
+        Assert.Contains(db.GoLiveLog.ToList(), g => g.Promoted == "cand:win" && g.RunKind == "replay");
     }
 }
