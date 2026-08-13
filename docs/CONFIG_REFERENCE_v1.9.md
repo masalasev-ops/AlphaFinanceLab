@@ -448,7 +448,26 @@ Config keys are unchanged (`Secrets:EodhdApiToken`, `Secrets:AnthropicApiKey`, `
     "AlertSink": "log+gui"                        // extend: email/webhook later (Phase 7 alerting)
   },
 
-  "FactorData": { "RefreshDayOfMonth": 5 },        // D41 French library pull
+  "FactorData": {                                  // D41 French library pull — BOUND since checkpoint 6.6
+    "RefreshDayOfMonth": 5,                        //   monthly due-day. Documented since v1.9 and read by NOTHING until 6.6
+                                                   //   (the finding-437 shape: a documented section an operator can edit while
+                                                   //   nothing binds it). Closed by binding, not by deleting the key.
+                                                   //   The step is due when the last successful refresh is in an EARLIER month
+                                                   //   and today has reached this day — a launch-scoped test, so it survives the
+                                                   //   D61 OnDemand default where no resident scheduler holds a monthly trigger.
+    "FiveFactorDailyUrl":                          //   INTEGRATIONS §3. The `ftp/` segment is REQUIRED: without it the host
+      "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_5_Factors_2x3_daily_CSV.zip",
+    "MomentumDailyUrl":                            //   the UMD file; its column is published as `Mom` and stored as `UMD`
+      "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Momentum_Factor_daily_CSV.zip",
+                                                   //   Both are KEYS rather than constants on the precedent already set for
+                                                   //   ingestion endpoints (Backfill:WikipediaSp100Url, Backfill:IvvHoldingsUrl):
+                                                   //   a source URL that moves is an operator edit, not a rebuild.
+    "MaxMissingSessions": 5                        //   continuity tolerance: trading sessions inside the fetched window that may
+                                                   //   have no factor row before the ingest refuses. NOT zero — the library's
+                                                   //   calendar and the NYSE calendar disagree on a handful of historical days,
+                                                   //   and a bar-for-bar match was never the claim. The check exists to catch a
+                                                   //   TRUNCATED or misaligned file, which fails by orders of magnitude.
+  },
 
   "Ai": {                                          // D79-D82 (v1.9.21) — the AI seats; budgets are per-seat hard caps (D24)
     "PackRecipeVersion": "cp-1.1",                 // context-pack recipe id; a frozen param (D80) — a change forks candidates
