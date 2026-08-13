@@ -731,3 +731,71 @@ Filed as the second-order finding the S3 precondition check was required to look
 ---
 
 *Verification: no `src/`, no test and no document under a "source of truth" mandate is edited by this entry; `check-register` green at **158 rows, D1..D158** with no new or amended row; `ci.ps1` green.*
+
+---
+
+## v1.9.119 — Phase 6 checkpoint 6.6: French factors + RF, and the attribution panel (2026-08-13)
+
+*Recorded 2026-08-13. **Checkpoint 6.6 CLOSED.** Decision **D159** new. Findings **442–447**. Migration **M13** (`factor_returns`, `factor_refresh_log`). Three new config keys under `FactorData`, plus the binding of one that had been documented since v1.9 and read by nothing. No stored row altered in any arena; `LedgerArithmetic.Version` stays `la-3`. Tests **1,346 → 1,408**. Next-free finding after this entry: **448**.*
+
+**The checkpoint's one-line description hid three from-scratch builds.** "French factors + RF ingested; the attribution panel; the RF placeholder swapped out" assumes machinery that did not exist: no multivariate regression and no numerics package anywhere in the solution, no ZIP handling and a text-only HTTP port that would corrupt a zip before an unzip could run, and a "placeholder" whose own comment was false. Six commits, one PR.
+
+### finding 442 — `NeweyWest.Ols`'s degenerate-design guard cannot fire on realistic data
+
+The check is `Math.Abs(det) < 1e-12` — an **absolute** epsilon on `det = n·Σx² − (Σx)²`, a quantity that scales like n²·x². On a mathematically singular design (a constant regressor) the true determinant is zero, but rounding leaves a residue far above 1e-12, so the guard does not fire and the closed form returns `β = (n·Σxy − Σx·Σy)/det` — **a slope divided by pure noise, reported as a fit, silently.** Measured: x ≡ 0.42 gives |det| = 6.0E−11 at n=300 (β = 0.909) and 1.2E−06 at n=5000 (β = 0.310); x ≡ 0.001 at n=5000 gives 1.65E−12 (β = −11.03). **It gets worse with more data**, and it catches the singular case only when the arithmetic cancels exactly (x ≡ 1.0 gives det exactly 0) — which is why a casually chosen fixture value shows the guard working.
+
+Surfaced by `HacOls`'s stricter, scale-relative pivot floor. **Not fixed here, deliberately:** correcting it changes the arithmetic under the gate, the MDE and the monitor's alpha t-stat, which needs its own measured divergence and its own commit. The fixture pins the **difference** rather than asserting agreement, so the defect is executable rather than prose — and if someone later fixes the oracle, that test goes red and points at this finding.
+
+**Consequences:** names **D48** and OVERFITTING_MONITOR Appendix C; no register row is amended, since none of them states this threshold. **Trigger:** the first commit that touches `NeweyWest.Ols`'s guard.
+
+### finding 443 — `factor_returns` cannot express the rule-4 watermark read
+
+SCHEMA specifies three columns and no availability field, so nothing in the table can answer *"was this row publishable as of X"* — which **D83** requires the moment residual momentum reads the series as a SIGNAL, and which OVERFITTING_MONITOR §4 requires for S5's PSI baseline and S8. It is the same defect `SchemaFidelityTests` already records for the unbuilt `features` table, with one difference that decides the treatment: `features` has no specified shape and Phase 6 gets to choose it, while `factor_returns`' shape is already written down and `phase6/README` is explicit that changing a specified shape is a DECISION.
+
+So it was built verbatim and **the absence is asserted** (`FR5_D41_M13_FactorReturnsHasNoAvailabilityColumn_finding443`), so adding the column later turns that fixture red and points here instead of arriving quietly.
+
+**Consequences:** names **D83**, **D41** and OVERFITTING_MONITOR §4; no register row amended. **Trigger:** checkpoint **6.13**, the first use that is not diagnostic-only. Related: `ScratchStore`'s classification of both tables as Untouched carries the same trigger, because "carried across unchanged" is safe only while the series is used at a DATE rather than at a WATERMARK.
+
+### finding 444 — a count stated in prose drifts from the count that is checked
+
+Found **twice** while making room for two tables. `SchemaFidelityTests`' method was named `Schema_ExactlyTheThirtyEightTables_Exist` while its own expected list held **43** — the name went stale when the Phase-5 tables landed and nothing noticed, because a number in a test NAME is a claim no assertion checks. `SchemaStartupTests`' lead-in comment said "41 tables" above `Assert.Equal(43, …)`.
+
+**Renaming to "FortyFive" would only reset the same trap**, so the claim moved into the enforcement: the method name no longer carries a number, the count is asserted on its own line, and the prose keeps only the per-phase breakdown — which says WHERE the tables came from, the part prose is actually good for.
+
+**Consequences:** `none` for any decision row or design section. Test hygiene of the shape the 6.5a remediation exists to find, fixed rather than filed because the fix is one line and the drift was two versions old.
+
+### finding 445 — `MetricsConstants`' comment asserted something nothing checked, and it was false
+
+It read: *"It is read in EXACTLY ONE place — `StrategyMetrics.RiskFreeDaily` — never as a bare 0 in metric code."* In fact `RiskFreeDaily` had **zero production callers** (its only caller anywhere was a unit test) and **five** production sites passed a bare `0.0`. True when written, quietly false after; nothing could go red, so nothing did. **The D140 shape, sitting in the very comment that scoped the work to replace it** — and three independent research agents repeated it as fact, which is what a comment doing a guard's job costs.
+
+**Consequences:** names **D140**; no register row amended — D140 describes exactly this and needs no correction. The constant is kept for the narrow honest job of the no-data case, and the comment now says so.
+
+### finding 446 — the recompute harness cannot see an input-level change, and its zero does not mean what it looks like
+
+Run B of the RF measurement reported `ParityHolds: true` — statuses, promotions and would-reverts all zero differing against the frozen generation, with 121,297 RF rows loaded. Read at face value that says the swap is inert.
+
+**It is not.** `MonitorRecompute` re-derives `overfitting_status` **from the STORED check rows** — its input unit is `StoredCheck(Signal, Value, Contribution, ThresholdJson)`. It reads the S2/S3/S6 values **as persisted** and re-applies threshold rules; it never recomputes a Sharpe or an α from an equity curve. **A change to those signals' inputs — which is exactly what RF is — is invisible to it by construction**, at any tier.
+
+**This is a fourth kind of zero**, distinct from the three already named: not D148's *code that never ran*, not D156's *path that executed and refused nothing*, not D158's *precondition the data never satisfied*, but **an instrument that cannot observe the quantity**. Measured directly instead, off the curves: **400 of 400 subjects moved** — Sharpe median **−0.0840** annualized, α median **+0.000932**/yr, β median 1.0564 with every subject above 1, so the α shift is positive exactly as `−(1−β)·r̄f` requires. The signs are the wiring's own audit and they pass.
+
+**Consequences:** names **D106**, **D117** and MASTER §25 — **no register row is amended**, because none of them claims the harness recomputes signal inputs; the defect is in reading a parity result as broader than its scope, and `FX-RecomputeParity`'s guarantee remains correct for what it covers. **Trigger:** the next change to a monitor signal's INPUTS (rather than its thresholds) scored with this harness — which is the gate-side RF change D118 still owes.
+
+### finding 447 — the mockup contradicts every source of truth about the factor feed's lag
+
+`docs/alphalab_ux_mockups.html` shows this feed as `'2-day lag · expected'` and `'current · 2d lag ok'`. INTEGRATIONS §3 says *"the publication lag of weeks is fine"*; D83 says *"weeks of publication lag, so the most recent weeks of a formation window routinely have no factor data"*; DESIGN_IMPROVEMENTS §1.4 says *"the library's publication lag (weeks…)"*. The live fetch confirms the real cadence — the series ends **2026-06-30** against a fetch made in August. **A freshness rule built from the mockup would sit permanently amber.**
+
+So the panel publishes the **through-date and no freshness verdict at all**. The honest statement is "here is how current the data is", not "here is whether that is acceptable" — the latter needs a threshold no document states, and inventing one is how the mockup's two days got there. The DTO has no Fresh/Stale field and a fixture asserts their **absence by reflection**, so adding one later is a deliberate act rather than a drift.
+
+**Consequences:** names **D41**, **D83**, INTEGRATIONS §3 and DESIGN_IMPROVEMENTS §1.4 — no register row amended, since all four agree and only the mockup disagrees. **The mockup is NOT corrected here:** CLAUDE.md records that it is regenerated wholesale at the next UI workstream, and editing one cell of a file due for replacement would leave the same trap in its other screens. **Trigger:** that regeneration.
+
+### D159 — "fail-closed" binds the ingest, not the trading day
+
+Three documents disagreed and none reconciled them: the checkpoint text says the pull is fail-closed, RUNBOOK §38 says a failure shows a stale-data note with *"the trading path is unaffected"*, and `DataQualityGate` splits gaps from unusable values. The ruling and its full reasoning are in the register row; the sharp end is that **the checksum was given a comparison subject**, because a hash of bytes just downloaded has nothing to fail against — which would have reproduced finding 445's defect inside its own remedy.
+
+### What 6.6 did NOT close
+
+- **D118 is not discharged.** Its subject is the gate's estimator, and the gate's α is still RF-free. RF cancels in the raw-gap arm and **not** in the Jensen arm D118 moved the gate onto. Deliberate: moving it shifts α → promotions → α\*(H) → the frozen floor, a calibration decision owed **before 6.11**.
+- **The monitor-side divergence is unmeasured** (finding 446). Inputs bounded; threshold crossings not.
+- **Attribution persistence and the Data-health feed cells** were settled by recording rather than building — the fit is cheap and re-derivable, and `/data-health` is still a `NoRunYet` stub that one wired cell would make worse rather than better.
+
+*Verification: `ci.ps1` green — **1,408 tests** across seven projects, zero skipped, thirteen guard families; `check-register` green at **159 rows, D1..D159**. The divergence measurement is archived at `docs/calibration/sp500/2026-08-13-d41-rf-divergence-results.md`, with its predictions committed beforehand in the sibling `-predictions.md`.*
