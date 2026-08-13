@@ -66,6 +66,19 @@ public sealed class EvaluationStep(AlphaLabDbContext db, GateOptions gate)
             .Where(s => effective.GetValueOrDefault(s.StrategyId) is "candidate" or "live")
             .ToList();
 
+        // THIS EVALUATION'S MONITOR STATUS, read the same way AllocationStep reads it (D156).
+        // OVERFITTING_MONITOR §3: "Suspect ⇒ promotion vetoed regardless of P&L". Until D156 the gate ran
+        // BEFORE the monitor, so it could only ever have seen the PREVIOUS evaluation's status — and the
+        // veto was therefore unimplementable in the place the rule names. DailyPipeline now runs the
+        // monitor first; this is the same-eval coupling the allocator has had since 3.7, deliberately in
+        // the same shape rather than a second pattern.
+        //
+        // The monitor reads no `power_reports`, so the reorder introduces no cycle: it reads accounts,
+        // trials, the PRIOR status, strategies and control_equity, and writes status the gate then reads.
+        var statusThisEval = db.OverfittingStatus
+            .Where(o => o.AsOf == asOf && o.RunKind == runKind)
+            .ToDictionary(o => o.StrategyId, o => o.Status, StringComparer.Ordinal);
+
         var results = new List<PairEvaluation>();
         foreach (var strat in promotable)
         {
@@ -119,7 +132,30 @@ public sealed class EvaluationStep(AlphaLabDbContext db, GateOptions gate)
             // The strategies.status MUTATION is forward-only (D37): a replay promotion is recorded in its
             // quarantined go_live_log row — which EffectiveStatus reads as replay-'live' next evaluation —
             // and never reaches the shared column ("replay is never a promotion input").
-            if (verdict == PromotionVerdict.Promoted && effective.GetValueOrDefault(strat.StrategyId) == "candidate")
+            // THE SUSPECT VETO (D156). OVERFITTING_MONITOR §3 states it without qualification —
+            // "promotion vetoed REGARDLESS OF P&L" — so it is checked here, after the verdict is computed
+            // and persisted, and before the promotion acts on it. The power_reports row still records
+            // Promoted: the gate's arithmetic DID clear the bar, and rewriting the verdict would destroy
+            // the evidence that a vetoed strategy was winning on P&L, which is the only thing that makes
+            // the veto worth having. What the veto changes is whether the promotion HAPPENS.
+            //
+            // A 'retired' status vetoes too, and for a different reason: the monitor auto-retired the
+            // strategy in THIS evaluation, so promoting it would resurrect a strategy the arena just
+            // killed. Before the reorder this was impossible to express and was instead patched on the
+            // monitor's side by writing an offsetting demotion row after the fact.
+            //
+            // WARNING IS DELIBERATELY NOT HANDLED HERE, AND THAT IS A HOLE UNTIL (b) LANDS. §3 says a
+            // Warning permits promotion "only with explicit operator acknowledgment (logged)"; nothing
+            // implements that acknowledgment yet, so a Warning strategy still promotes silently — as it
+            // did before D156. This is stated rather than left implied, because "the gate now reads the
+            // monitor's status" would otherwise read as "the gate now honours every status", and 123 of
+            // the frozen generation's 144 promotions were made under Warning. `D156_AWarningStillPromotes_
+            // TheAcknowledgmentRailIsNotBuiltYet` pins the hole so the next PR has a red to turn green.
+            var monitorStatus = statusThisEval.GetValueOrDefault(strat.StrategyId);
+            var vetoed = monitorStatus is "suspect" or "retired";
+
+            if (verdict == PromotionVerdict.Promoted && !vetoed
+                && effective.GetValueOrDefault(strat.StrategyId) == "candidate")
             {
                 if (runKind == RunKindLive)
                 {

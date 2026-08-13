@@ -280,10 +280,16 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
 
             // The retire is a demotion EVENT in the go-live/retire audit (D31): write the go_live_log row
             // with the dedicated `demoted` column set (verdict 'Revert'). Without it the audit records only
-            // promotions and a retired strategy still reads as live/promoted there — in the same-eval case
-            // (EvaluationStep promotes a candidate, then the monitor retires it) the log would carry a
-            // Promoted row with no offsetting demotion. A retired strategy is not re-evaluated (it drops out
-            // of the promotable set), so exactly one demotion row is written.
+            // promotions and a retired strategy still reads as live/promoted there. A retired strategy is
+            // not re-evaluated (it drops out of the promotable set), so exactly one demotion row is written.
+            //
+            // THE SAME-EVAL RACE THIS USED TO COMPENSATE FOR IS GONE (D156). This note previously read
+            // "in the same-eval case (EvaluationStep promotes a candidate, then the monitor retires it) the
+            // log would carry a Promoted row with no offsetting demotion" — true while the gate ran FIRST.
+            // The monitor now runs first and the gate refuses to promote a strategy carrying 'suspect' or
+            // 'retired' this evaluation, so promote-then-retire-in-one-transaction can no longer arise. The
+            // demotion row is kept for its own sake (a retire is an auditable event regardless of what the
+            // gate did), not as compensation for an ordering the pipeline no longer has.
             db.GoLiveLog.Add(new GoLiveLogRow
             {
                 AsOf = asOf,
