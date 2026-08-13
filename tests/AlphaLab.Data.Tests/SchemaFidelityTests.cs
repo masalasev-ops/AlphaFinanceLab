@@ -95,8 +95,16 @@ public class SchemaFidelityTests
         finally { TryDelete(dbPath); }
     }
 
+    /// <summary>
+    /// **THE COUNT MOVED OUT OF THE NAME AND INTO AN ASSERTION — finding 444.** This was
+    /// `Schema_ExactlyTheThirtyEightTables_Exist` while its own expected list held **43**: the name went
+    /// stale when the Phase-5 M7/M8 tables landed and nothing noticed, because a number in a test NAME is
+    /// a claim no assertion checks. Renaming it to "FortyFive" would only reset the same trap for the next
+    /// table. So the name no longer carries a number and the count is asserted below, where a wrong one
+    /// goes red.
+    /// </summary>
     [Fact]
-    public void Schema_ExactlyTheThirtyEightTables_Exist()
+    public void Schema_ExactlyTheExpectedTables_Exist()
     {
         var dbPath = TempDb();
         try
@@ -145,8 +153,12 @@ public class SchemaFidelityTests
             //                       reader instead — leak-proof by construction. Phase 6 decides its shape.
             //   • trade_evidence                        — Phase 6 (the D44 trade-level track)
             //   • parameter_scans / feature_baselines   — later monitor signals (S4/S5), not S2/S3/S6
-            //   • factor_returns / factor_refresh_log   — Phase 6 (French RF ingestion)
             //   • admin_actions                         — Phase 7 (the D55 admin commands)
+            // LANDED since this list was written: factor_returns / factor_refresh_log (M13, checkpoint
+            // 6.6, D41) — both now appear in the expected set below, SCHEMA-verbatim. `factor_returns`
+            // shares `features`' defect above (no observed_at/version, so no watermark read rule), but
+            // unlike `features` its shape is ALREADY SPECIFIED by SCHEMA, so it was built as specified and
+            // the gap filed as finding 443 rather than redesigned in passing.
             // The ux_runs_ok_forward partial index lands in checkpoint 2.10 (M3), where Stage 2
             // first writes runs.
             Assert.Equal(new[]
@@ -155,13 +167,19 @@ public class SchemaFidelityTests
                 "api_usage_log", "bars",
                 "capacity_rejections", "cash_events", "catchup_log", "config", "control_equity",
                 "control_populations", "corporate_actions", "data_quality_flags", "decisions",
-                "equity_curve", "go_live_log", "index_membership", "index_membership_log", "jobs",
+                "equity_curve", "factor_refresh_log", "factor_returns",
+                "go_live_log", "index_membership", "index_membership_log", "jobs",
                 "journal_entries", "llm_budget_log", "news_items", "overfitting_checks",
                 "overfitting_status", "position_snapshots", "positions", "power_reports", "regime_episodes",
                 "regime_labels", "replay_regime_outcomes", "runs", "sector_changes", "securities",
                 "signal_ic", "signals", "strategies", "ticker_history", "trades", "trading_calendar",
                 "trials_registry", "worker_state"
             }, tables);
+
+            // The count, asserted rather than named (finding 444). 43 before M13, + factor_returns and
+            // factor_refresh_log = 45. Redundant with the set comparison above ON PURPOSE: this is the
+            // line a future editor must consciously change, which is what the old name failed to be.
+            Assert.Equal(45, tables.Count);
         }
         finally { TryDelete(dbPath); }
     }

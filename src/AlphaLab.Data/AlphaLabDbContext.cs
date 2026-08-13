@@ -31,6 +31,10 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
     public DbSet<ApiUsageLogRow> ApiUsageLog => Set<ApiUsageLogRow>();
     public DbSet<DataQualityFlagRow> DataQualityFlags => Set<DataQualityFlagRow>();
 
+    // ---- Phase 6 factor tables (D41, M13): the Ken French daily series + its refresh log ----
+    public DbSet<FactorReturnRow> FactorReturns => Set<FactorReturnRow>();
+    public DbSet<FactorRefreshLogRow> FactorRefreshLog => Set<FactorRefreshLogRow>();
+
     // ---- Phase 2 regime tables (D34/D45/D50) ----
     public DbSet<RegimeLabelRow> RegimeLabels => Set<RegimeLabelRow>();
     public DbSet<RegimeEpisodeRow> RegimeEpisodes => Set<RegimeEpisodeRow>();
@@ -282,6 +286,31 @@ public sealed class AlphaLabDbContext(DbContextOptions<AlphaLabDbContext> option
             // ALTER ADD COLUMN and never a table rebuild (finding 324).
             e.Property(x => x.ObservedAt).HasColumnName("observed_at");
             e.Property(x => x.Source).HasColumnName("source");
+        });
+
+        // ---- factor_returns (D41, M13) ---- SCHEMA verbatim: three columns, composite PK (date,
+        // factor), no CHECK on `factor` (SCHEMA declares none — the token list is a comment), and no
+        // observed_at/version (finding 443's subject; NOT invented here, per phase6/README's rule that
+        // changing a specified shape is a decision).
+        modelBuilder.Entity<FactorReturnRow>(e =>
+        {
+            e.ToTable("factor_returns");
+            e.HasKey(x => new { x.Date, x.Factor });
+            e.Property(x => x.Date).HasColumnName("date").IsRequired();
+            e.Property(x => x.Factor).HasColumnName("factor").IsRequired();
+            e.Property(x => x.Value).HasColumnName("value").IsRequired();
+        });
+
+        // ---- factor_refresh_log (D41, M13) ---- SCHEMA verbatim: refreshed_at TEXT PK, three nullable
+        // columns. TEXT PK, so EF generates no AUTOINCREMENT (rule 14) — same reason as `signals`.
+        modelBuilder.Entity<FactorRefreshLogRow>(e =>
+        {
+            e.ToTable("factor_refresh_log");
+            e.HasKey(x => x.RefreshedAt);
+            e.Property(x => x.RefreshedAt).HasColumnName("refreshed_at");
+            e.Property(x => x.FilesJson).HasColumnName("files_json");
+            e.Property(x => x.Checksum).HasColumnName("checksum");
+            e.Property(x => x.RowsAdded).HasColumnName("rows_added");
         });
 
         // ---- index_membership ---- as-of state; PK (security_id, added_on).

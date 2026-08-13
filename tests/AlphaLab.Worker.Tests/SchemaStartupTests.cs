@@ -90,15 +90,21 @@ public class SchemaStartupTests
             // The happy path: schema is current, so the Worker proceeds to do its actual work.
             Assert.False(lifetime.StopApplicationCalled);
 
-            // 41 tables: Phase-0 infra(5) + Phase-1 data(9) + data_quality_flags(1) + ledger(8) + regime(2)
+            // 45 tables — and the number is in ONE place, the assertion. This lead-in said "41" while the
+            // assertion below said 43, the second instance of finding 444 (a count stated in prose drifts
+            // from the count that is checked; the first was SchemaFidelityTests' method NAME). The
+            // breakdown is kept because it says WHERE the tables came from, which is the part prose is
+            // actually good for; the total is not restated.
+            // Phase-0 infra(5) + Phase-1 data(9) + data_quality_flags(1) + ledger(8) + regime(2)
             // + the Phase-3 honest-arena tables(9): control_populations, control_equity, trials_registry,
             // power_reports, go_live_log, allocation_log, overfitting_checks, overfitting_status,
             // journal_entries + the Phase-3.5 D90 position_snapshots(1) + the Phase-4 M5
             // replay_regime_outcomes(1) + the Phase-4.5 M6 Signal Library(2): signals + signal_ic
             // + the Phase-5 M7 LLM tables(3): analysis_cache, llm_budget_log, news_items
-            // + the Phase-5 M8 AI-seat tables(2): ai_context_packs, ai_decisions.
+            // + the Phase-5 M8 AI-seat tables(2): ai_context_packs, ai_decisions
+            // + the Phase-6 M13 factor tables(2): factor_returns, factor_refresh_log (D41, checkpoint 6.6).
             var tables = await UserTablesAsync(dbPath);
-            Assert.Equal(43, tables.Count);
+            Assert.Equal(45, tables.Count);
             Assert.Contains("trades", tables);
             Assert.Contains("equity_curve", tables);
             Assert.Contains("regime_labels", tables);
@@ -111,6 +117,8 @@ public class SchemaStartupTests
             Assert.Contains("analysis_cache", tables);
             Assert.Contains("llm_budget_log", tables);
             Assert.Contains("news_items", tables);
+            Assert.Contains("factor_returns", tables);
+            Assert.Contains("factor_refresh_log", tables);
             Assert.Contains("ai_context_packs", tables);
             Assert.Contains("ai_decisions", tables);
         }
