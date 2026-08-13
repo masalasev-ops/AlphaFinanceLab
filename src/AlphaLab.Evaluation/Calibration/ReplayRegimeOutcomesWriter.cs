@@ -28,6 +28,11 @@ public sealed class ReplayRegimeOutcomesWriter(AlphaLabDbContext db)
         if (benchAccount is null) return 0;
         var benchCurve = Curve(benchAccount.AccountId);
 
+        // The D41 risk-free series, once per write (checkpoint 6.6). Replay-only table under the D37
+        // quarantine, but the arithmetic must match the monitor's or the regime decomposition and the
+        // signal it decomposes would be computed on different definitions of alpha.
+        var riskFree = RiskFreeSeries.Load(db);
+
         var written = 0;
         var accounts = db.Accounts.Where(a => a.RunKind == Replay).ToList();
         foreach (var account in accounts)
@@ -49,7 +54,7 @@ public sealed class ReplayRegimeOutcomesWriter(AlphaLabDbContext db)
                         string.CompareOrdinal(c.AsOf, episode.StartDate) >= 0
                         && (episode.EndDate is null || string.CompareOrdinal(c.AsOf, episode.EndDate) <= 0))
                     .ToList();
-                var (sr, br) = AlignedReturns(span, benchSpan);
+                var (sr, br) = AlignedExcessReturns(span, benchSpan, riskFree);
                 if (sr.Count < 2) continue;
 
                 var edgeAnn = SafeAlphaAnn(sr, br);
@@ -99,22 +104,21 @@ public sealed class ReplayRegimeOutcomesWriter(AlphaLabDbContext db)
             .Select(e => (e.AsOf, e.Equity))
             .ToList();
 
-    private static (List<double> Strat, List<double> Bench) AlignedReturns(
-        IReadOnlyList<(string AsOf, decimal Equity)> strat, IReadOnlyList<(string AsOf, decimal Equity)> bench)
+    /// <summary>
+    /// Aligned EXCESS returns for an episode span (D41, checkpoint 6.6).
+    ///
+    /// This was a THIRD hand-copy of the common-date-intersection + `prev ≤ 0` skip rule — the same
+    /// duplication `BandInputs` carried under a comment warning that an off-by-one "would silently window
+    /// the wrong days". It now delegates to `CurveMath.AlignedReturnsDated`, so the rule lives in one
+    /// place, and the dates it returns are what make the per-day risk-free subtraction possible at all.
+    /// </summary>
+    private static (List<double> Strat, List<double> Bench) AlignedExcessReturns(
+        IReadOnlyList<(string AsOf, decimal Equity)> strat, IReadOnlyList<(string AsOf, decimal Equity)> bench,
+        RiskFreeSeries riskFree)
     {
-        var benchByDate = bench.ToDictionary(b => b.AsOf, b => b.Equity, StringComparer.Ordinal);
-        var common = strat.Where(s => benchByDate.ContainsKey(s.AsOf)).ToList();
-        var sr = new List<double>();
-        var br = new List<double>();
-        for (var i = 1; i < common.Count; i++)
-        {
-            var sPrev = common[i - 1].Equity;
-            var bPrev = benchByDate[common[i - 1].AsOf];
-            if (sPrev <= 0 || bPrev <= 0) continue;
-            sr.Add((double)(common[i].Equity / sPrev) - 1.0);
-            br.Add((double)(benchByDate[common[i].AsOf] / bPrev) - 1.0);
-        }
-        return (sr, br);
+        var (sr, br, dates) = CurveMath.AlignedReturnsDated(strat, bench);
+        var rf = riskFree.For(dates);
+        return (RiskFreeSeries.Excess(sr, rf), RiskFreeSeries.Excess(br, rf));
     }
 
     // Per-episode Jensen's alpha, with the monitor's degenerate-safe fallback (a constant-benchmark

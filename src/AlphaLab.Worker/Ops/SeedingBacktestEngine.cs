@@ -74,7 +74,8 @@ public sealed class SeedingBacktestEngine(
                 $"'{request.StrategyId}' produced fewer than two replay equity points — nothing to summarize (fail closed).");
         }
 
-        var (sr, br) = Aligned(curve, bench);
+        // Excess of the D41 per-day risk-free rate, like every other alpha/Sharpe site (checkpoint 6.6).
+        var (sr, br) = AlignedExcess(curve, bench, RiskFreeSeries.Load(db));
         var sharpe = sr.Count >= 2 ? StrategyMetrics.Sharpe(sr, 0.0) : 0.0;
         var alpha = 0.0;
         if (sr.Count >= 2)
@@ -104,13 +105,21 @@ public sealed class SeedingBacktestEngine(
             .ToList();
     }
 
-    private static (List<double> Strat, List<double> Bench) Aligned(
-        IReadOnlyList<(string AsOf, decimal Equity)> strat, IReadOnlyList<(string AsOf, decimal Equity)> bench)
+    /// <summary>
+    /// Aligned EXCESS returns (D41, checkpoint 6.6). The alignment rule is a local copy because
+    /// `CurveMath` is internal to AlphaLab.Evaluation and this engine lives in the Worker; the copy is
+    /// pre-existing and is left in place rather than widened, but it now returns the step DATES so the
+    /// per-day risk-free rate can be subtracted here as it is everywhere else.
+    /// </summary>
+    private static (List<double> Strat, List<double> Bench) AlignedExcess(
+        IReadOnlyList<(string AsOf, decimal Equity)> strat, IReadOnlyList<(string AsOf, decimal Equity)> bench,
+        RiskFreeSeries riskFree)
     {
         var benchByDate = bench.ToDictionary(b => b.AsOf, b => b.Equity, StringComparer.Ordinal);
         var common = strat.Where(s => benchByDate.ContainsKey(s.AsOf)).ToList();
         var sr = new List<double>();
         var br = new List<double>();
+        var dates = new List<string>();
         for (var i = 1; i < common.Count; i++)
         {
             var sPrev = common[i - 1].Equity;
@@ -118,7 +127,10 @@ public sealed class SeedingBacktestEngine(
             if (sPrev <= 0 || bPrev <= 0) continue;
             sr.Add((double)(common[i].Equity / sPrev) - 1.0);
             br.Add((double)(benchByDate[common[i].AsOf] / bPrev) - 1.0);
+            dates.Add(common[i].AsOf);
         }
-        return (sr, br);
+
+        var rf = riskFree.For(dates);
+        return (RiskFreeSeries.Excess(sr, rf), RiskFreeSeries.Excess(br, rf));
     }
 }

@@ -1,4 +1,5 @@
 using AlphaLab.Data;
+using AlphaLab.Evaluation.Metrics;
 using AlphaLab.Evaluation.Monitor;
 using AlphaLab.Evaluation.Numerics;
 using AlphaLab.Evaluation.Populations;
@@ -70,6 +71,7 @@ public sealed class BandInputs
         if (matches.Count == 0 || matches[0].PopulationId is not { } pid) return null;
 
         var inputs = new BandInputs();
+        var riskFree = RiskFreeSeries.Load(db);
 
         // The subjects' own curves.
         foreach (var strategyId in subjects)
@@ -78,7 +80,7 @@ public sealed class BandInputs
             if (account is null) continue;
             var curve = CurveMath.Curve(db, account.AccountId, runKind);
             if (curve.Count < 2) continue;
-            if (Align(curve, benchCurve) is { } aligned) inputs._subjects[strategyId] = aligned;
+            if (Align(curve, benchCurve, riskFree) is { } aligned) inputs._subjects[strategyId] = aligned;
         }
 
         // The matched population's members — ordered exactly as OverfittingMonitor.PopulationReturns reads
@@ -93,7 +95,7 @@ public sealed class BandInputs
         foreach (var member in members)
         {
             var curve = member.Select(e => (e.AsOf, e.Equity)).ToList();
-            if (Align(curve, benchCurve) is { } aligned) inputs._members.Add(aligned);
+            if (Align(curve, benchCurve, riskFree) is { } aligned) inputs._members.Add(aligned);
         }
 
         return inputs;
@@ -129,24 +131,24 @@ public sealed class BandInputs
     // ---- helpers ---------------------------------------------------------------------------------------
 
     private static AlignedSeries? Align(
-        List<(string AsOf, decimal Equity)> curve, List<(string AsOf, decimal Equity)> benchCurve)
+        List<(string AsOf, decimal Equity)> curve, List<(string AsOf, decimal Equity)> benchCurve,
+        RiskFreeSeries riskFree)
     {
-        // AlignedReturns drops the first common date and any prev<=0 step, so the RETURN at index i belongs
-        // to the (i+1)-th common date. Rebuild that date list on the same rule so a session maps to the
-        // right slice — an off-by-one here would silently window the wrong days.
-        var benchByDate = new Dictionary<string, decimal>(benchCurve.Count, StringComparer.Ordinal);
-        foreach (var (asOf, equity) in benchCurve) benchByDate[asOf] = equity;
+        // The dates used to be REBUILT here, on a hand-copy of AlignedReturns' rule, with a comment
+        // warning that an off-by-one "would silently window the wrong days". `AlignedReturnsDated`
+        // (checkpoint 6.6) returns them from the one implementation, so the copy is gone and the two
+        // cannot drift — which is the same D118 one-function-two-callers discipline `SafeAlpha` is
+        // internal for.
+        var (strat, bench, dates) = CurveMath.AlignedReturnsDated(curve, benchCurve);
+        if (strat.Count < 2) return null;
 
-        var common = curve.Where(c => benchByDate.ContainsKey(c.AsOf)).ToList();
-        var dates = new List<string>(Math.Max(0, common.Count - 1));
-        for (var i = 1; i < common.Count; i++)
-        {
-            if (common[i - 1].Equity <= 0m || benchByDate[common[i - 1].AsOf] <= 0m) continue;
-            dates.Add(common[i].AsOf);
-        }
-
-        var (strat, bench) = CurveMath.AlignedReturns(curve, benchCurve);
-        return dates.Count == strat.Count && strat.Count >= 2 ? new AlignedSeries(dates, strat, bench) : null;
+        // THE HARNESS TAKES THE SAME RF TREATMENT AS PRODUCTION, and that is the whole point of this
+        // line. `OverfittingMonitor` now judges on excess returns; a harness that judged on RAW returns
+        // would report a divergence on every strategy for a reason that has nothing to do with the rule
+        // being tested. That is exactly the defect D138 had to correct once already for S6, and it is
+        // cheaper to prevent here than to diagnose from a parity report.
+        var rf = riskFree.For(dates);
+        return new AlignedSeries(dates, RiskFreeSeries.Excess(strat, rf), RiskFreeSeries.Excess(bench, rf));
     }
 
     /// <summary>The last <see cref="OverfittingMonitor.RollingWindowDays"/> returns at or before
