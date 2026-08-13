@@ -102,6 +102,80 @@ public class MonitorSignalsTests
         Assert.Equal(MonitorStatus.Suspect, MonitorSignals.Aggregate([MonitorStatus.Warning, MonitorStatus.Suspect, MonitorStatus.Healthy]));
         Assert.Equal(MonitorStatus.Warning, MonitorSignals.Aggregate([MonitorStatus.Warning, MonitorStatus.Healthy]));
     }
+
+    /// <summary>
+    /// D158 — OVERFITTING_MONITOR §3's SECOND arm: "Suspect = ≥1 signal critical, <b>or ≥3 elevated</b>".
+    /// The aggregate was a bare max, so three elevated signals produced Warning and the escalation existed
+    /// only in the specification.
+    ///
+    /// <para><b>This fixture is necessarily SYNTHETIC, and that is the finding rather than a shortcut.</b>
+    /// Only S2/S3/S6 are implemented, so "≥3 elevated" demands unanimity among all three, and across the
+    /// frozen generation's 95,769 stored status rows the concurrent-elevated count never exceeded TWO.
+    /// There is no stored row that could exercise this, which is exactly why the rule survived unbuilt:
+    /// nothing could have gone red.</para>
+    /// </summary>
+    [Fact]
+    public void D158_ThreeElevatedSignalsEscalateToSuspect_EvenWithNoCriticalSignal()
+    {
+        Assert.Equal(MonitorStatus.Suspect, MonitorSignals.Aggregate(
+            [MonitorStatus.Warning, MonitorStatus.Warning, MonitorStatus.Warning]));
+    }
+
+    /// <summary>The boundary, in both directions: TWO elevated signals stay Warning — the escalation is
+    /// "≥3", not "more than one". Without this the rule above could be satisfied by an implementation that
+    /// escalated on any two, which is a different rule that happens to pass the same test.</summary>
+    [Fact]
+    public void D158_TwoElevatedSignalsStayWarning()
+    {
+        Assert.Equal(MonitorStatus.Warning, MonitorSignals.Aggregate(
+            [MonitorStatus.Warning, MonitorStatus.Warning, MonitorStatus.Healthy]));
+        Assert.Equal(MonitorStatus.Warning, MonitorSignals.Aggregate(
+            [MonitorStatus.Warning, MonitorStatus.Warning]));
+    }
+
+    /// <summary>
+    /// The count arm must not flatten the severity ORDER: checking the critical arm FIRST is what
+    /// preserves it, and an implementation that evaluated the count first would demote a retire to Suspect.
+    ///
+    /// <para><b>Every case here carries ≥3 elevated AND a higher severity, because that is the only shape
+    /// that exercises the ordering.</b> The first version of this fixture used two Warnings plus a Retired
+    /// — under which the count arm never fires, so a deliberately count-first implementation passed it.
+    /// It asserted its own name and checked nothing; the falsifier run is what exposed that.</para>
+    /// </summary>
+    [Fact]
+    public void D158_TheCountArmNeverFlattensAHigherSeverity()
+    {
+        // 3 elevated AND a Retired: count-first returns Suspect, which would silently demote the retire.
+        Assert.Equal(MonitorStatus.Retired, MonitorSignals.Aggregate(
+            [MonitorStatus.Warning, MonitorStatus.Warning, MonitorStatus.Warning, MonitorStatus.Retired]));
+
+        // 3 elevated AND a Suspect: the answer is the same either way, but it pins that the critical arm
+        // is not weakened by the count arm sharing its result.
+        Assert.Equal(MonitorStatus.Suspect, MonitorSignals.Aggregate(
+            [MonitorStatus.Warning, MonitorStatus.Warning, MonitorStatus.Warning, MonitorStatus.Suspect]));
+
+        // And the plain ordering still holds below the escalation threshold.
+        Assert.Equal(MonitorStatus.Retired, MonitorSignals.Aggregate(
+            [MonitorStatus.Warning, MonitorStatus.Warning, MonitorStatus.Retired]));
+    }
+
+    /// <summary>
+    /// THE WIDENING, PINNED (P27). §3 specifies S1–S8 and three are built, so "≥3" is a UNANIMITY bar
+    /// today and a MINORITY bar at eight signals — the rule tightens sharply, and silently, as each new
+    /// signal lands. This asserts the constant is the specification's literal 3 rather than a count
+    /// derived from the whitelist, so a future widening is a deliberate re-derivation of both this and the
+    /// auto-retire patience that sits on it, not a drift nobody noticed.
+    /// </summary>
+    [Fact]
+    public void D158_TheEscalationCountIsTheSpecificationsLiteralThree()
+    {
+        Assert.Equal(3, MonitorSignals.ElevatedEscalationCount);
+
+        // Five elevated signals — the shape the whitelist reaches once S1/S4/S5/S7/S8 land — is Suspect
+        // under the same constant, which is the behaviour P27 exists to make someone re-derive.
+        Assert.Equal(MonitorStatus.Suspect, MonitorSignals.Aggregate(
+            [MonitorStatus.Warning, MonitorStatus.Warning, MonitorStatus.Warning, MonitorStatus.Warning, MonitorStatus.Warning]));
+    }
 }
 
 public class OverfittingMonitorTests

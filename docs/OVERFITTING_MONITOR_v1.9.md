@@ -34,7 +34,7 @@ Forward paper trading removes *backtest* overfitting but not *selection* overfit
 |---|---|---|
 | **Healthy** | no signal elevated | eligible for promotion & full allocator tilt |
 | **Warning** | ≥1 signal elevated | promotion allowed only with explicit operator acknowledgment (logged); allocator tilt capped. **ENFORCED since D157:** a `journal_entries` row with `kind='warning_ack'`, `locked=1`, bound to (strategy, THAT evaluation's as_of) and recording WHICH signal fired at WHAT value. Locked-only is what stops the researcher seat forging one - it can write journal rows but only unlocked (rule 30). FORWARD-ONLY: replay has no operator, and 123 of the frozen generation's 144 promotions were made under Warning, so a rail on both channels would refuse 85% of calibration's own promotions |
-| **Suspect** | ≥1 signal critical, or ≥3 elevated | **promotion vetoed regardless of P&L**; allocator freezes/decays weight; strategy flagged on every screen |
+| **Suspect** | ≥1 signal critical, or ≥3 elevated | **ENFORCED since D158** - the aggregate was a bare max until then, so the ≥3-elevated arm existed only here. It is INERT at today's three signals (it needs unanimity; the frozen generation never exceeded two concurrent elevated across 95,769 rows) and becomes a MINORITY bar at S1-S8, which is P27's tripwire. **promotion vetoed regardless of P&L**; allocator freezes/decays weight; strategy flagged on every screen |
 
 Additional wiring:
 - A head-to-head gap **inside the pair's NW-MDE ⇒ verdict `TooEarly`** (not a status — a gate outcome; the common case per DESIGN_IMPROVEMENTS_v1.9 §6).
