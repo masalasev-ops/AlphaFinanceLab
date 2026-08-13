@@ -48,6 +48,14 @@ public static class ScreenEndpoints
         group.MapGet("/health/overfitting", () => TypedResults.Ok(OverfittingHealthReadModel.NoRunYet))
             .WithName("GetOverfittingHealth").WithSummary("Overfitting monitor (eight signals) read-model.");
 
+        // D41 factor attribution. A real builder rather than a NoRunYet stub, and thin by construction:
+        // the regression lives in AlphaLab.Evaluation (rule 17 — no statistics in the API), so this line
+        // projects and serializes. The panel is per strategy because the decomposition is.
+        group.MapGet("/strategies/{id}/attribution", (string id, AttributionReadModelBuilder b) =>
+                TypedResults.Ok(b.Build(id)))
+            .WithName("GetStrategyAttribution")
+            .WithSummary("Factor-attribution read-model (D41) — diagnostic only; carries its own 'factor data through <date>' note.");
+
         group.MapGet("/regimes", () => TypedResults.Ok(RegimesReadModel.NoRunYet))
             .WithName("GetRegimes").WithSummary("Regime episodes read-model.");
 
