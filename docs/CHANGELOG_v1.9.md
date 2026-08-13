@@ -641,3 +641,93 @@ OVERFITTING_MONITOR §3 states the aggregate as **two** rules — *"Suspect = �
 (c) **D158** — the escalation arm exists, and the patience that sits on it is reconciled.
 
 *Verification: `check-register` green at **158 rows, D1..D158**; `ci.ps1` green — **1,346 tests**, zero skipped.*
+
+---
+
+## v1.9.118 — the drift findings, filed with numbers (2026-08-13)
+
+*Recorded 2026-08-13. **PROGRESS + CHANGELOG only — no `src/`, no test, no schema, no migration, no config key, no decision row.** Findings **435–441**. Findings **436** and **437** become stated **preconditions on checkpoint 6.11**; **441** is the second-order finding the closure check asked for and did not assume. Next-free finding after this entry: **442**.*
+
+**Why these are filed rather than fixed.** Each was found during the 6.5 / 6.5a work and left parked in a review artefact, where a finding is invisible to `check-register`, to the ledger, and to anyone who reads PROGRESS to learn what is known. **Filing is the deliverable.** Three of them are dormant today and armed by a specific future commit, so each carries its **trigger** rather than an urgency ranking it has not earned. Rule 26's `Consequences:` field is carried by all seven, explicitly `none` where that is the truth.
+
+**The first three name checkpoint 6.11 as their TRIGGER, which is not their priority.** 6.11 is *"THE FIRST REGISTRATION — day one admits these two ONLY … with a committed forward run"*. Each of the three is inert precisely until a real strategy is registered and a forward day commits, and each becomes load-bearing on that same commit.
+
+### finding 435 — the pack's per-field admissibility check is self-referential for seven of its eight producers (trigger: 6.11)
+
+`ContextPackBuilder.cs:102-103` refuses any field whose `observed_at` postdates the pack's `asOf`, and its own comment (`:100-101`) states the job: *"A pack assembled at the right watermark can still hold ONE field resolved through a path that ignored it, which a pack-level check would not see."* That is a per-field promise. **Seven of the eight `PackField` construction sites stamp `observed_at` with the pack's own `asOf`** — `ResearchJobExecutor.cs:295, 296, 300, 304, 305, 306, 307` — so for those seven the comparison evaluates `CompareOrdinal(asOf, asOf) > 0`, false by construction, **regardless of what the field's value was actually derived from**. Only `EvidencePriorSeam.cs:89` sources the stamp independently (`readModel.AsOf`), and its comment says so deliberately: *"stamping it lets FX-PackNoLeak check this field like any other."* On the production path the rail is **one field wide, not eight**.
+
+**It is not an untested check, and that is the point.** `ContextPackTests.cs:50`, `:63` and `:257` prove the throw reachable by *constructing* fields with a future stamp, so the check is live and green on its own terms. And the one real-path leak it is credited with on the researcher path — a hypothesis closed after the anchor entering `closed_outcomes` — is actually prevented by the **query bound on the outcome entry's `created_on`** (`PaperControlTests.cs:245-249`), not by `observed_at` at all. **The protection is real; the attribution is wrong.** A reader who trusts the per-field rail believes seven fields are checked, when one is protected elsewhere and six are not checked by this mechanism at all.
+
+**Why 6.11 and not now.** Today's seven self-stamped fields are registry and config scalars (`trials_count`, `fork_budget_remaining`, the detectability band) whose leak surface is small, and the one point-in-time-derived field is the digest, which is correctly stamped. 6.11 is the first commit that puts a **strategy's own point-in-time features** into a pack, which is when a genuinely leak-capable producer exists and a self-referential stamp starts hiding something.
+
+**Consequences:** names **D104** (the leakage invariant) and TEST_PLAN's `FX-PackNoLeak` row, neither of which is amended here — the mechanism is unchanged and the finding is about producer conformance, not about the rail's definition. No decision row changes. No schema, migration or config key. The remedy shape (a producer stamps the as-of its value was *resolved at*, never the pack's) is recorded with the precondition, not built.
+
+### finding 436 — an unresolvable population family renders a permanently-green S3 (trigger: 6.11; **a 6.11 PRECONDITION**)
+
+`OverfittingMonitor.cs:174-177`: when the matched population has no members, S3 is emitted as
+
+```
+new SignalOutcome("S3", null, "undefined", MonitorStatus.Healthy)
+```
+
+**The value channel is honest and the status channel is not.** The comment at `:112-114` states the intent exactly — *"renders S3 'undefined' — catalog §5.2's own answer, never a silent substitution of the daily null"* — and the contribution token `undefined` delivers it. But `MonitorStatus.Healthy` does not mean "undefined", it means "fine", and **the status is the load-bearing channel**: it feeds `MonitorSignals.Aggregate` → `overfitting_status` → **D156**'s promotion veto → the **D158** count arm → `AutoRetireConsecutiveSuspect`. A strategy whose population cannot be resolved is therefore scored as *passing* the signal that exists to catch it.
+
+**D148's Healthy-arm tightening does not reach this path**, and the reason is structural rather than incidental: `:174` returns **before** both branches that carry a streak — the trajectory branch at `:185` (`priorAbove`, `ContinuesAboveEdgeStreak`) and the flat-anchor branch at `:200`. The sustain requirement D148 added to the favourable arm is bypassed entirely, so this is a Healthy that no amount of persistence-checking can qualify.
+
+**What makes it a precondition rather than a queue item is rule 8.** `frozen.population_family` is a **frozen param** under **D135**, stamped by `CandidateFactory` at creation. Under hard rule 8, changing a frozen param on a live strategy **forks a new `strategy_id` and increments `trials_registry`**. So a mistyped or not-yet-spawned family token cannot be corrected in place — **correcting a typo costs a fork and pays the trials tax**, permanently, against the §12 arithmetic that 6.11's first registration is explicitly counted under. The window in which this is cheap closes at 6.11.
+
+**`CadenceFamily.IsKnown` already exists for this and has zero callers** — `CadenceFamily.cs:76`, one occurrence in `src/` and `tests/`, its own declaration. The validation was written and never wired.
+
+**Consequences:** names **D135** (the frozen param), **D148** (whose tightening this path bypasses), **D156** and **D158** (which consume the status), hard **rule 8** (why in-place correction is not free), and OVERFITTING_MONITOR §3 (the signal's definition). **No register row is amended** — none of them is wrong; the defect is that an undefined signal is given a *passing* status, which no row states. Fix shape recorded on the 6.11 precondition: **refuse an unresolvable family at registration, or render a state that cannot read as a pass**, and wire `CadenceFamily.IsKnown`. Not built here.
+
+### finding 437 — `Sizing` and `Guardrails` are present in `appsettings.json` and bound by nothing (trigger: 6.11; **a 6.11 PRECONDITION**)
+
+`PipelineComposition.cs:54-118` binds eleven configuration sections. **`Sizing` and `Guardrails` are not among them, and both sections exist in `src/AlphaLab.Worker/appsettings.json`.** This is worse than an unbound section: an unbound section that is *absent* from the file gives the operator nothing to edit, while a section that is present, documented in CONFIG_REFERENCE, and read by nothing invites an edit that **silently does nothing** and leaves the C# defaults in force. There is no error, no warning, and no way to tell from the outside.
+
+**Why 6.11.** Sizing and guardrail constants are inert until orders are sized and risk limits are applied against a real book. 6.11 is the checkpoint whose definition of done includes *"a committed forward run"* — the first moment these values are load-bearing, and the first moment an operator would reasonably reach for them.
+
+**The `new` is not the defect and must not be removed.** `StrategyRunPlan`'s two per-account overrides are deliberate and documented. The fix shape is: **bind the sections, make the BOUND values the base, and layer the two documented overrides on top of them** — the overrides survive, they just stop being layered over a hardcoded base instead of a configured one. Recorded on the precondition; not built here.
+
+**Consequences:** names CONFIG_REFERENCE_v1.9.md (the source of truth for keys and defaults — the keys it documents are real, so no correction is owed there) and `ConfigConsistencyTests`, which guards connection-string edit spots and arena agreement but does not assert that a documented section is reachable. **No decision row changes.** No schema, migration, or new config key — the keys already exist, which is precisely the finding.
+
+### finding 438 — Stage 1 fetches three endpoints per member, sequentially, and the bulk endpoint is priced but unwired (trigger: the S&P 500 widening under D109/rule 22)
+
+`Stage1Fetch.FetchAsync` loops `foreach (var target in request.Securities)` and awaits **three** calls per member in sequence — `GetEodAsync` (`:68`), `GetDividendsAsync` (`:69`), `GetSplitsAsync` (`:70`) — with no batching and no concurrency. At the S&P 100 slice that is ~300 sequential round trips per session; at the S&P 500 it is ~1,500.
+
+**`EodhdEndpoint.BulkLastDay` exists, is priced, and is never called.** It is declared at `EodhdEndpointCost.cs:10`, given a cost of 100 at `:31`, wired into the cost map at `:39`, and asserted by `EodhdEndpointCostTests.cs:14` — **and there is no other reference to it anywhere in `src/`.** The cost model knows about a bulk endpoint the fetch path does not use, so the API-cost accounting is correct about a call that is never made.
+
+**Consequences:** `none` for correctness — this is a latency and API-quota finding, not an honesty or arithmetic one, and nothing it touches is a decision row or a documented threshold. Named so the S&P 500 widening (rule 22 / **D109**) does not discover it as a surprise: the widening multiplies the round-trip count by five against a daily window that has to close before the session's write transaction opens. INTEGRATIONS_v1.9.md remains correct — it documents the endpoint set, not which of them the pipeline calls.
+
+### finding 439 — one member's reject aborts the whole day for every account (trigger: the S&P 500 widening under D109/rule 22)
+
+`StagedDay.HasRejects` is `All.Any(s => s.Report.HasRejects)` (`StagedDay.cs:37`), over `All` = every security **plus the regime proxy** (`:34`). `DailyPipeline.cs:136-145` aborts the entire day on it, before the run row is written.
+
+**This is the designed behaviour, and the finding is not that it is wrong.** It is FR-29 and hard rule 10 working exactly as specified: fail closed, leave literally zero rows, never price a day you cannot trust. **The finding is that its blast radius scales with the universe and its tolerance does not.** One bad vendor tick on one member of five hundred wedges the arena for every account, and the probability of at least one reject per session grows with breadth — the rule was specified when the forward universe was the S&P 100 slice. Filed now, before the widening, because after the widening it presents as an outage rather than as a known property.
+
+**Consequences:** names hard **rule 10**, **FR-29**, and rule 22 / **D109** (the widening that changes the arithmetic). **No register row is amended and none should be** — fail-closed is correct, and any remedy (per-security quarantine, an operator-acknowledged proceed, a reject budget) is a *new* decision that would have to argue its way past rule 10, not a correction to an existing one. Recorded with its trigger so that argument happens deliberately. RUNBOOK_v1.9.md §1 already documents the abort; no correction owed.
+
+### finding 440 — four documents state "eight signals"; three are computed (trigger: checkpoint 6.15)
+
+`MonitorSignals` implements **S2** (`:44`), **S3** (`:59`), **S3Trajectory** (`:78`, an arm of S3 rather than a fourth signal) and **S6** (`:142`). Four documents state the count as eight without qualification: `CLAUDE.md:22`, `MASTER_DESIGN_v1.9.md:251` (*"Eight signals — …"*), `BUILD_AND_PROMPTS_v1.9.md:48` (FR-18), and `OVERFITTING_MONITOR_v1.9.md:46` (§3's heading, *"The eight signals"*).
+
+**This is a specification stating its target, which is legitimate — the drift is that nothing states the gap.** OVERFITTING_MONITOR §3 is a spec and is entitled to specify eight. `CLAUDE.md`'s documentation map and MASTER §251 read as descriptions of what the monitor *is*, and a reader who takes them at face value over-reads every aggregate result. This is also the mechanism behind **P27**: *"≥3 elevated"* is a unanimity bar at three signals and a minority bar at eight, and the count moving silently is exactly what makes the aggregate's meaning drift without a test able to notice.
+
+**Consequences:** names checkpoint **6.15** (*"Monitor S1/S4/S5/S7/S8 complete"*) as the commit that resolves it, and **P27**, whose tripwire — *"the first commit that adds a signal to the whitelist"* — fires at the same moment. No decision row is amended: no D-row asserts the count. Deliberately **not** fixed by editing the four documents to say "three of eight", because the honest form of that edit is a build (6.15) and a per-document count would then need updating five more times as signals land — which is the drift, restated. Recorded as one finding with one trigger instead.
+
+### finding 441 — the D148 enumeration's closure argument is over WRITERS, not over the value domain
+
+Filed as the second-order finding the S3 precondition check was required to look for, and it is not the miss that was anticipated.
+
+**The question:** does the producing-side closure argument in `docs/calibration/2026-08-11-separation-state-path-enumeration.md` cover an undefined S3? **The answer: the chip is safe, and the argument is not what makes it safe.**
+
+`SeparationState.cs:50` filters `c.Value != null`. An undefined S3 writes `Value = null` (`OverfittingMonitor.cs:176`), so it never enters the chip's percentile path. **But §4's five closure clauses close over *writers*** — clause 4 reads *"Every input's writer set was enumerated by grepping the table's `.Add(` sites"* — and the undefined S3 is written by `OverfittingMonitor.AddCheck` — the already-enumerated, only S3 writer. **Every clause of §4 remains literally true with this path present.**
+
+*(The enumeration cites that writer as `:341`; it is now `:348`, moved by D156's commit two days after the artefact was written. A minor instance of the same class, worth one clause: an enumeration that closes by **line citation** decays against the file it closes over, and nothing checks it. The method name is stable and the line number is not, which is why this entry cites the name.)* Remove the `Value != null` predicate tomorrow and §4 still reads as sound while the chip begins moving on undefined rows. A writer-closure cannot see a value its enumerated writer emits.
+
+**The enumeration came within one sentence of it.** §4's *"One consequence worth stating"* records that inputs (1) and (2) can **clear** the chip with no change to the separation logic at all. That is the same class of observation in the mirror image — it found the **withholding** direction and not the **asserting** one, because the question it was asking was about writers rather than about values.
+
+**Consequences:** names **D148** and its enumeration artefact, neither amended — D148's conclusion is correct and the enumeration's stated result holds. What is owed is one line in §4 recording that the closure is over writers and that the value-domain protection for input (3) is `SeparationState.cs:50`'s null filter, so a future edit to that predicate is visibly load-bearing rather than incidental. **The live damage of finding 436 is on the aggregate path, which this enumeration never claimed to cover** — its subject is the separation chip, and it says so. Recorded here so the two are not conflated: 436 is a monitor-status defect, 441 is a closure-argument shape.
+
+---
+
+*Verification: no `src/`, no test and no document under a "source of truth" mandate is edited by this entry; `check-register` green at **158 rows, D1..D158** with no new or amended row; `ci.ps1` green.*

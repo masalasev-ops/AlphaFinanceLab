@@ -66,6 +66,22 @@ withhold it silently by keeping `Days` below the minimum. That is correct behavi
 day count, so it must have one), but it means "the chip is missing" has a benign explanation that looks
 identical to a defect, and no current fixture distinguishes them.
 
+> **Addendum, 2026-08-13 (finding 441) — the closure above is over WRITERS, not over the VALUE DOMAIN.**
+> Clause 4 enumerates each input's `.Add(` sites. That establishes *who can write* a row, and deliberately
+> not *what a row may contain*. The case that surfaced it: `OverfittingMonitor.cs:174-177` emits an
+> **undefined** S3 (`Value = null`, contribution `undefined`, status `Healthy`) when the matched population
+> has no members. It is written by `OverfittingMonitor.AddCheck` — the already-enumerated, **only** S3
+> writer — so **every clause of §4 remains literally true with that path present**. What actually keeps it
+> off the chip is `SeparationState.cs:50`'s `c.Value != null` predicate, which no clause above cites; delete
+> that predicate and §4 would still read as sound while the chip began moving on undefined rows. **The
+> predicate is therefore load-bearing, and is named here so a future edit to it is visibly so.**
+> The original body is left as written: the *result* holds, and the limit is in the argument's shape.
+> The consequence immediately above came within one sentence of this — it found the **withholding**
+> direction (inputs that silently clear the chip) and not the **asserting** one (a value that could
+> silently set it). The live damage of the undefined S3 is on the **aggregate/status** path
+> (`Aggregate` → `overfitting_status` → D156's veto → D158's count arm), which this enumeration never
+> claimed to cover; that is **finding 436**, a 6.11 precondition, and is not the same defect as this one.
+
 ## 5. What is NOT closed, recorded rather than glossed
 
 **The rendering path has no guard.** This enumeration covers what can SET or CLEAR the state. It does not
