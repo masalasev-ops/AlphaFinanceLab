@@ -121,6 +121,22 @@ public sealed class ScratchStore : IDisposable
         "journal_entries", "replay_regime_outcomes", "signals",
         "analysis_cache", "llm_budget_log", "news_items",
         "ai_context_packs", "ai_decisions",
+        // FACTOR TABLES (factor_returns, factor_refresh_log — D41, M13, checkpoint 6.6): untouched, for
+        // the reason `index_membership` is. A daily run does not write them; the MONTHLY refresh does, in
+        // its own small transaction before the day loop (the MembershipRefreshStep shape), and the series
+        // is resolved by its own `date` column exactly as membership is resolved by `added_on`/`removed_on`.
+        // Rewinding would delete rows a reproduced session legitimately reads.
+        //
+        // **THE TRIGGER, recorded here because this is the classification that would silently go stale.**
+        // `factor_returns` has NO `observed_at` (finding 443), so "carried across unchanged" is safe only
+        // while the series is used at a DATE rather than at a WATERMARK. That holds today: attribution is
+        // diagnostic-only (D41) and the RF lookup is keyed by the session's own date. It STOPS holding the
+        // day D83's residual-momentum use lands (checkpoint 6.13) or S5/S8 read these rows as a signal
+        // feed (OVERFITTING_MONITOR §4) — at that point a reproduced session could see factor rows
+        // ingested AFTER it, which is a leak of exactly the shape `signal_ic`'s move to RewoundTables
+        // fixed at 5.4. Whichever of those arrives first, this entry must be revisited rather than
+        // assumed still correct.
+        "factor_returns", "factor_refresh_log",
     ];
 
     /// <summary>Handled by dedicated logic rather than a date filter: `positions` is restored from the

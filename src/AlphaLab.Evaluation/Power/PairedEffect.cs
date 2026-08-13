@@ -79,9 +79,25 @@ public static class PairedEffect
                 $"Unknown effect definition '{definition}'. Known: '{RawGap}', '{Jensen}'.", nameof(definition));
         }
 
-        // rfDaily: 0.0 — finding 285's recorded second-order note, unchanged here: no JensenAlpha call site
-        // is yet on the French RF series (Phase 6). It cancels in the paired difference and shifts α only
-        // through β ≠ 1, so it is a known bias of known sign rather than an unexamined one.
+        // **RF-FREE, AND AS OF CHECKPOINT 6.6 THIS IS THE LAST ESTIMATOR THAT IS — deliberately.**
+        //
+        // The previous note here said "no JensenAlpha call site is yet on the French RF series (Phase 6)".
+        // That stopped being true at 6.6: all three `JensenAlpha` call sites, and both `Sharpe` sites, now
+        // receive series with the D41 per-day rate already subtracted. Leaving the sentence would have made
+        // it the same kind of stale claim finding 445 records in `MetricsConstants` — a line asserting a
+        // fact it no longer examines — so it is corrected rather than left.
+        //
+        // **AND THE CANCELLATION HALF OF THAT NOTE WAS WRONG ABOUT THIS ARM.** RF cancels in a paired
+        // DIFFERENCE — the `RawGap` branch above, where d_t = (r_s − rf) − (r_b − rf) = r_s − r_b exactly.
+        // It does NOT cancel here: this is an OLS INTERCEPT, and subtracting rf from both sides shifts α by
+        // −(1 − β)·r̄f. D118 moved the gate onto this arm, so the gate's effect IS RF-sensitive.
+        //
+        // **WHY IT IS STILL 0.0.** Putting the gate on the RF series moves α, which moves promotions, which
+        // moves α*(H) — and α*(H) is where the FROZEN detectability floor the D89 gate reads comes from
+        // (`RecomputeHarness` builds it from the recomputed promotions). That is a calibration decision with
+        // its own measurement and its own register row, not a line item in the commit that wired the
+        // diagnostics. It is owed BEFORE checkpoint 6.11, which is the first registration the floor judges.
+        // **D118 IS THEREFORE NOT DISCHARGED BY 6.6** — see its row.
         OlsFit fit;
         try
         {

@@ -115,6 +115,17 @@ if (MembershipComposition.IsWired(builder.Configuration.GetSection(UniverseOptio
 }
 builder.Services.AddSingleton<MembershipRefreshStep>();
 
+// Factor data (D41, checkpoint 6.6). Registered unconditionally: unlike membership, the French series
+// is universal — it is not keyed to an arena's universe, so there is no "unwired token" case for it to
+// be absent for. The concrete type is IResilientBinaryFetcher rather than IResilientHttpClient, because
+// the payload is a zip and the text port would corrupt it before an unzip could run.
+builder.Services.AddSingleton(
+    builder.Configuration.GetSection(FactorDataOptions.SectionName).Get<FactorDataOptions>() ?? new FactorDataOptions());
+builder.Services.AddScoped<IFactorDataProvider>(sp => new FrenchFactorProvider(
+    (IResilientBinaryFetcher)sp.GetRequiredService<IResilientHttpClient>(),
+    sp.GetRequiredService<FactorDataOptions>()));
+builder.Services.AddSingleton<FactorRefreshStep>();
+
 // TimeProvider is injectable so run timestamps are deterministic under test (never a bare UtcNow in
 // the pipeline body); the forward Worker runs on the system clock.
 builder.Services.AddSingleton(TimeProvider.System);

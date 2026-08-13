@@ -46,6 +46,7 @@ builder.Services.AddScoped<ILlmBudgetLedger, LlmBudgetLedger>();
 builder.Services.AddScoped<StrategiesReadModelBuilder>();
 builder.Services.AddScoped<AllocationReadModelBuilder>();
 builder.Services.AddScoped<ReplayReadModelBuilder>();
+builder.Services.AddScoped<AttributionReadModelBuilder>();   // D41, checkpoint 6.6
 builder.Services.AddScoped<CohortMaturationBuilder>();
 builder.Services.AddSingleton(builder.Configuration.GetSection(SignalLibraryOptions.SectionName).Get<SignalLibraryOptions>() ?? new SignalLibraryOptions());
 builder.Services.AddScoped<SignalLibraryBuilder>();

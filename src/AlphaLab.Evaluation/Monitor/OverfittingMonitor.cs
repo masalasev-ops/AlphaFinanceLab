@@ -71,6 +71,13 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
 
         var autoRetireEvals = ResolveAutoRetirePatience(watermark);
 
+        // The D41 risk-free series, loaded ONCE for the whole Run (checkpoint 6.6). Every strategy and
+        // every population member is judged over the same session set, so this is one read rather than
+        // one per subject. An arena whose monthly refresh has never run gets an empty series, which
+        // yields all-zero windows — arithmetic identical to the pre-D41 behaviour, so an unrefreshed
+        // arena is unchanged rather than broken.
+        var riskFree = RiskFreeSeries.Load(db);
+
         var benchAccount = db.Accounts.FirstOrDefault(a => a.StrategyId == benchmarkStrategyId && a.RunKind == runKind);
         if (benchAccount is null) return [];
         var benchCurve = CurveMath.Curve(db, benchAccount.AccountId, runKind);
@@ -106,8 +113,18 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
             var stratCurve = CurveMath.Curve(db, account.AccountId, runKind);
             if (stratCurve.Count < 2) continue;
 
-            var (stratReturns, benchReturns) = CurveMath.AlignedReturns(stratCurve, benchCurve);
-            if (stratReturns.Count < 2) continue;
+            var (rawStrat, rawBench, stepDates) = CurveMath.AlignedReturnsDated(stratCurve, benchCurve);
+            if (rawStrat.Count < 2) continue;
+
+            // The D41 per-day risk-free rates for THIS strategy's steps, subtracted HERE so every
+            // statistic below is on excess returns (checkpoint 6.6). The series is loaded once per Run
+            // call and sliced per strategy: every strategy is judged over the same session set, so a
+            // per-strategy query would be the same rows N times. An arena whose refresh has never run
+            // gets an all-zero, zero-coverage window — arithmetic identical to the pre-D41 behaviour, and
+            // REPORTED as uncovered rather than presented as measured.
+            var rf = riskFree.For(stepDates);
+            var stratReturns = RiskFreeSeries.Excess(rawStrat, rf);
+            var benchReturns = RiskFreeSeries.Excess(rawBench, rf);
 
             // THIS strategy's null (6.3). A declared family with no spawned population yields an empty
             // member set, and the memberAlphas.Count == 0 branch below renders S3 'undefined' — catalog
@@ -115,7 +132,7 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
             var match = matcher.For(strategyId);
             if (!seriesByFamily.TryGetValue(match.Family, out var memberSeries))
             {
-                memberSeries = match.PopulationId is { } pid ? PopulationReturns(pid, benchCurve, runKind) : [];
+                memberSeries = match.PopulationId is { } pid ? PopulationReturns(pid, benchCurve, runKind, riskFree) : [];
                 seriesByFamily[match.Family] = memberSeries;
             }
             if (!curvesByFamily.TryGetValue(match.Family, out var curves))
@@ -161,7 +178,11 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
         Calibration.S3Curve? pNoise = null, Calibration.S3Curve? pEdge = null,
         int autoRetireEvals = AutoRetireConsecutiveSuspect)
     {
-        // S2 — deflated Sharpe.
+        // S2 — deflated Sharpe. The 0.0 here is CORRECT rather than a placeholder: the series arriving
+        // at this method are already EXCESS of the D41 per-day risk-free rate (subtracted once at the
+        // alignment boundary in Run / PopulationReturns, checkpoint 6.6), so subtracting a second rate
+        // would double-count it. Sharpe is the site where RF matters most — unlike the paired MDE it does
+        // not difference RF away at all, so a zero rate biases it by the whole level of rates.
         var rawSharpe = StrategyMetrics.Sharpe(stratReturns, 0.0);
         var deflated = StrategyMetrics.DeflatedSharpeAnnualized(rawSharpe, stratReturns.Count, Math.Max(1, trialsCount));
         var s2 = MonitorSignals.S2(rawSharpe, deflated);
@@ -415,7 +436,15 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
     // Each population member's aligned (member, benchmark) return series over the forward window. Returned
     // as SERIES (not reduced to a single alpha) so the caller can window them to each strategy's track
     // length for the horizon-matched S3 rank.
-    private List<(List<double> Mr, List<double> Br)> PopulationReturns(long populationId, List<(string AsOf, decimal Equity)> benchCurve, string runKind)
+    //
+    // **THE MEMBERS GET THE SAME RF TREATMENT AS THE SUBJECT, AND THAT IS NOT OPTIONAL (D41, 6.6).** S3
+    // ranks the strategy's α inside this population's α distribution, so the two sides must be computed
+    // on the same basis. RF does not cancel out of α — it shifts it by −(1 − β)·rf̄ — and members have
+    // different βs from the strategy and from each other, so subtracting RF on one side only would tilt
+    // the whole percentile by an amount that varies per member. Each member is excess-adjusted on ITS OWN
+    // dates rather than the subject's, because a member with a shorter curve has a shorter aligned window.
+    private List<(List<double> Mr, List<double> Br)> PopulationReturns(
+        long populationId, List<(string AsOf, decimal Equity)> benchCurve, string runKind, RiskFreeSeries riskFree)
     {
         var members = db.ControlEquity
             .Where(e => e.PopulationId == populationId && e.RunKind == runKind)
@@ -428,9 +457,10 @@ public sealed class OverfittingMonitor(AlphaLabDbContext db, GateOptions gate)
         foreach (var member in members)
         {
             var curve = member.Select(e => (e.AsOf, e.Equity)).ToList();
-            var (mr, br) = CurveMath.AlignedReturns(curve, benchCurve);
+            var (mr, br, dates) = CurveMath.AlignedReturnsDated(curve, benchCurve);
             if (mr.Count < 2) continue;
-            series.Add((mr, br));
+            var rf = riskFree.For(dates);
+            series.Add((RiskFreeSeries.Excess(mr, rf), RiskFreeSeries.Excess(br, rf)));
         }
         return series;
     }
