@@ -100,12 +100,43 @@ public interface IResilientHttpSender : IResilientHttpClient
 }
 
 /// <summary>
+/// The binary-fetch contract — one member, for feeds whose payload is not text.
+///
+/// **A NARROW EXTENSION rather than a member on <see cref="IResilientHttpClient"/>, for the reason the
+/// sender interface above already records.** Four test stubs implement the base contract today
+/// (`BackfillPreflightTests.StubHttp`, `BackfillRunnerTests.FixtureHttpClient`,
+/// `RawCacheArchivalTests.StubHttp`, `MembershipCompositionTests.FakeHttp`) and none of them has any
+/// reason to know what a zip is; widening the shared contract would make all four fake or throw on a
+/// capability exactly one consumer needs. That is the outcome the POST split was made to avoid, and the
+/// stub count has grown since — the argument is stronger now, not weaker.
+///
+/// **THE RESILIENCE POLICY IS STILL IN EXACTLY ONE PLACE (INTEGRATIONS §9), which is the point.** This
+/// interface is implemented by the SAME <see cref="ResilientHttpClient"/>, and its member runs the SAME
+/// private retry loop as the text path — one breaker, one backoff schedule, one rate-limit cooldown, one
+/// failure counter. Narrow CONTRACT, shared IMPLEMENTATION: a second policy would be the defect, a second
+/// interface is not.
+///
+/// **WHY A BYTE CHANNEL HAD TO EXIST AT ALL.** Every other member returns <c>Task&lt;string&gt;</c> via
+/// <c>ReadAsStringAsync</c>, which is a LOSSY TEXT DECODE. The Ken French factor files are zips
+/// (INTEGRATIONS §3), so fetching one through the text path corrupts it before any unzip or latin1 step
+/// could run — the failure would surface as a malformed archive, not as an encoding bug, and would be
+/// mis-diagnosed accordingly. The encoding is not the blocker (<c>Encoding.Latin1</c> is in-box); the
+/// byte channel is.
+/// </summary>
+public interface IResilientBinaryFetcher : IResilientHttpClient
+{
+    /// <summary>GET the URL as raw bytes, undecoded. Same retry/backoff/breaker policy as the text path
+    /// because it is the same loop — see the interface remarks.</summary>
+    Task<byte[]> GetBytesAsync(string url, string source, CancellationToken ct = default);
+}
+
+/// <summary>
 /// Hand-rolled resilient HTTP wrapper (no Polly — decision #2). 30s timeout, N retries with
 /// exponential backoff + jitter, and a consecutive-failure circuit breaker. The delay and jitter
 /// sources are injectable so unit tests are deterministic and never actually sleep. Single-threaded
 /// per provider during backfill, so the failure counter needs no locking.
 /// </summary>
-public sealed class ResilientHttpClient : IResilientHttpSender
+public sealed class ResilientHttpClient : IResilientHttpSender, IResilientBinaryFetcher
 {
     private readonly HttpClient _http;
     private readonly ResilientHttpOptions _opts;
@@ -142,12 +173,23 @@ public sealed class ResilientHttpClient : IResilientHttpSender
 
     public Task<string> GetStringAsync(
         string url, string source, IReadOnlyDictionary<string, string>? headers, CancellationToken ct = default)
-        => SendAsync(() => Build(HttpMethod.Get, url, headers, body: null, contentType: null), url, source, ct);
+        => SendAsync(() => Build(HttpMethod.Get, url, headers, body: null, contentType: null), ReadText, url, source, ct);
 
     public Task<string> PostStringAsync(
         string url, string body, string contentType, string source,
         IReadOnlyDictionary<string, string>? headers = null, CancellationToken ct = default)
-        => SendAsync(() => Build(HttpMethod.Post, url, headers, body, contentType), url, source, ct);
+        => SendAsync(() => Build(HttpMethod.Post, url, headers, body, contentType), ReadText, url, source, ct);
+
+    /// <summary>GET as raw bytes. Identical policy to the text path — the SAME <see cref="SendAsync"/>
+    /// loop, differing only in the content reader, so there is no second breaker to drift.</summary>
+    public Task<byte[]> GetBytesAsync(string url, string source, CancellationToken ct = default)
+        => SendAsync(() => Build(HttpMethod.Get, url, headers: null, body: null, contentType: null), ReadBytes, url, source, ct);
+
+    // The two content readers. Deliberately the ONLY difference between the text and binary paths: making
+    // the reader the parameter is what keeps retry, backoff, jitter, the breaker and the rate-limit
+    // cooldown in one loop rather than in two that must be kept in step by hand.
+    private static Task<string> ReadText(HttpContent c, CancellationToken ct) => c.ReadAsStringAsync(ct);
+    private static Task<byte[]> ReadBytes(HttpContent c, CancellationToken ct) => c.ReadAsByteArrayAsync(ct);
 
     /// <summary>Builds a FRESH request per attempt — an <see cref="HttpRequestMessage"/> cannot be sent
     /// twice, so the retry loop takes a factory rather than an instance.</summary>
@@ -167,8 +209,13 @@ public sealed class ResilientHttpClient : IResilientHttpSender
         return req;
     }
 
-    private async Task<string> SendAsync(
-        Func<HttpRequestMessage> request, string url, string source, CancellationToken ct)
+    /// <summary>The one retry/breaker/throttle loop, generic ONLY in how the response body is read
+    /// (<paramref name="read"/>). Everything a caller could get wrong by re-implementing — the attempt
+    /// count, the backoff schedule, the jitter, the shared consecutive-failure counter, the rate-limit
+    /// cooldown, the redaction on failure — is above that seam and identical for text and bytes.</summary>
+    private async Task<T> SendAsync<T>(
+        Func<HttpRequestMessage> request, Func<HttpContent, CancellationToken, Task<T>> read,
+        string url, string source, CancellationToken ct)
     {
         if (_consecutiveFailures >= _opts.CircuitBreakThreshold)
         {
@@ -183,7 +230,7 @@ public sealed class ResilientHttpClient : IResilientHttpSender
                 using var req = request();
                 using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
                 resp.EnsureSuccessStatusCode();
-                var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                var body = await read(resp.Content, ct).ConfigureAwait(false);
                 _consecutiveFailures = 0; // success resets the breaker
 
                 // Honour the 1,000/min limit (INTEGRATIONS §1): read remaining, and if it is running low
