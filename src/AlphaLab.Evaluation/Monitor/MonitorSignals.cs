@@ -214,14 +214,51 @@ public static class MonitorSignals
     public static bool ContinuesBelowAnchorStreak(string contribution) =>
         contribution is "below_anchor" or "suspect";
 
-    /// <summary>The aggregate status = the max severity over the MONITOR signals ONLY (the whitelist).
-    /// Descriptive rows such as signal='turnover_match' are NOT passed here, so they can never move the
-    /// verdict (finding 115 / FX-TurnoverMatch-StatusNeutral).</summary>
+    /// <summary>
+    /// OVERFITTING_MONITOR §3's escalation count: <b>Suspect = ≥1 signal critical, OR ≥3 elevated</b>.
+    /// The literal number from the specification, not a derived one.
+    /// </summary>
+    public const int ElevatedEscalationCount = 3;
+
+    /// <summary>
+    /// The aggregate status over the MONITOR signals ONLY (the whitelist). Descriptive rows such as
+    /// signal='turnover_match' are NOT passed here, so they can never move the verdict (finding 115 /
+    /// FX-TurnoverMatch-StatusNeutral).
+    ///
+    /// <para><b>§3 IS TWO RULES AND THIS USED TO IMPLEMENT ONE (D158, finding 433).</b> "Suspect = ≥1
+    /// signal critical, or ≥3 elevated" — the first arm is a max, the second is a COUNT, and the function
+    /// was a bare max. Three elevated signals aggregated to Warning, never Suspect, so the escalation
+    /// existed only in the specification.</para>
+    ///
+    /// <para><b>IT IS INERT AT TODAY'S SIGNAL COUNT, AND THAT IS MEASURED RATHER THAN ARGUED.</b> Only
+    /// S2/S3/S6 are implemented, so "≥3 elevated" demands UNANIMITY among all three. Across the frozen
+    /// generation's 95,769 stored status rows the concurrent-elevated count never exceeded TWO (54,573
+    /// rows at 0, 37,905 at 1, 3,291 at 2, zero at 3), so switching this on changes nothing that has ever
+    /// been stored. `D158_ThreeElevatedSignalsEscalateToSuspect` is therefore necessarily a SYNTHETIC
+    /// fixture — without it the rule would be unfalsifiable, which is what it was before.</para>
+    ///
+    /// <para><b>THE WIDENING IS THE REAL SUBJECT (P27).</b> §3 specifies S1–S8; three are built. "≥3" is a
+    /// unanimity bar at three signals and a MINORITY bar at eight, so this rule tightens sharply — and
+    /// silently — as each new signal lands, with no test able to notice the transition because none can
+    /// fire today. The auto-retire patience (`AutoRetireConsecutiveSuspect`, 4 consecutive) sits directly
+    /// on this aggregate and was calibrated when Suspect-by-count was unreachable. Both must be re-derived
+    /// at the moment the whitelist grows; that is a tripwire recorded in PROGRESS, not a knob built now.</para>
+    /// </summary>
     public static MonitorStatus Aggregate(IEnumerable<MonitorStatus> monitorSignalStatuses)
     {
         var max = MonitorStatus.Healthy;
-        foreach (var s in monitorSignalStatuses) if (s > max) max = s;
-        return max;
+        var elevated = 0;
+        foreach (var s in monitorSignalStatuses)
+        {
+            if (s > max) max = s;
+            if (s == MonitorStatus.Warning) elevated++;
+        }
+
+        // The critical arm wins outright and is checked FIRST, so Retired keeps its own severity rather
+        // than being flattened to Suspect by the count arm.
+        if (max >= MonitorStatus.Suspect) return max;
+
+        return elevated >= ElevatedEscalationCount ? MonitorStatus.Suspect : max;
     }
 
     public static string ToToken(MonitorStatus s) => s switch

@@ -599,3 +599,45 @@ Extending `journal_entries.kind` is a whole-table **rebuild** (SQLite cannot ALT
 **Falsifiers, run independently rather than as one:** removing the Warning refusal reddens three fixtures; dropping the **lock** requirement reddens exactly the forgery guard; binding the ack to the **strategy** instead of the evaluation reddens exactly the cross-evaluation guard. Three conditions, three separable reds.
 
 *Verification: `check-register` green at **157 rows, D1..D157**; `ci.ps1` green — **1,342 tests**, zero skipped.*
+
+---
+
+## v1.9.117 — Phase 6.5 PR 2 (c): the aggregate's second arm, and 6.5 closes (2026-08-13)
+
+*Recorded 2026-08-13. **Phase 6 checkpoint 6.5, PR 2 — item (c) of three. 6.5 is now CLOSED.** Decision **D158** new; findings **433**, **434**; proposal **P27** opened. No schema change, no migration, no config key, no stored row altered, no D144 arithmetic bump. Next-free finding after this entry: **435**.*
+
+### finding 433 — half the aggregate's definition was missing for three phases
+
+OVERFITTING_MONITOR §3 states the aggregate as **two** rules — *"Suspect = ≥1 signal critical, **or ≥3 elevated**"* — and `MonitorSignals.Aggregate` implemented one. It was a bare `max`, so three elevated signals produced Warning and never Suspect. `AutoRetireConsecutiveSuspect = 4`, the patience that ends a strategy's life, has been sitting on an aggregate missing half its definition since Phase 3.
+
+**The prediction was stated before the code changed, and it was refuted.** Both the plan and the instruction that set it expected a genuine divergence — unlike D148's `S3Trajectory`, `Aggregate` has no structural exemption; it ran on every stored status row, so non-zero was expected. Measured at watermark `2026-07-24T22:00:00Z` across **95,769** stored replay status rows (all `trigger_json` parsed):
+
+| | count |
+|---|---|
+| status rows flipping `warning` → `suspect` | **0** |
+| additional auto-retires | **0** (263 either way) |
+| stored promotions the D156 veto would newly refuse | **0** of 144 |
+
+**The reason is the actual finding, not the number.** Only S2/S3/S6 are implemented, so "≥3 elevated" demands **unanimity among all three** — and the concurrent-elevated count never exceeded **two**: 54,573 rows at zero, 37,905 at one, 3,291 at two, **none at three**. The rule was not merely unimplemented; at today's signal count it is structurally near-unreachable, which is exactly how it survived unbuilt — nothing could have gone red.
+
+**This is a third kind of zero, and the distinction is worth keeping.** D148's zero was a path that never executed. D156's was a path that executed against all 144 promotions and refused none — a property of the *data*. D158's is a *precondition the data never satisfied*: weaker than D156's, stronger than D148's. The arm is live and correct; the generation simply never presented it with a case. The fixture is therefore **necessarily synthetic**, and that is stated rather than hidden.
+
+**Consequences:** both `OverfittingMonitor` and `MonitorRecompute` call the shared `Aggregate`, so the harness inherits the fix and cannot drift from production — the defect D138 had to correct separately for S6. `FX-RecomputeParity` is expected to stay at zero differing rows, now as a stated number rather than a hope.
+
+### finding 434 — a fixture that asserted its own name and checked nothing
+
+`D158_TheCountArmNeverFlattensRetired` was written with two elevated signals plus a Retired — a shape under which the count arm never fires — so a deliberately **count-first** implementation *passed it*. The falsifier run is what exposed it.
+
+**Consequences:** every case now carries ≥3 elevated **and** a higher severity, because that is the only shape that exercises the ordering. Re-falsified: a count-first implementation now reddens it. The lesson is the one this checkpoint keeps re-learning — a test named after a property is not a test of it, and only running the falsifier tells them apart.
+
+### P27 — the widening aggregate (tripwire, not a build)
+
+§3 specifies S1–S8; three are built. **"≥3" is a unanimity bar at three signals and a minority bar at eight**, so the rule tightens sharply — and silently — as each signal lands, with no test able to notice the transition because none can fire today. The constant is deliberately the specification's literal **3** rather than a fraction derived from the whitelist, so a future widening forces a *deliberate* re-derivation of both it and the auto-retire patience riding on it, instead of a drift nobody sees. **Trigger:** the first commit that adds a signal to the whitelist.
+
+### 6.5 is closed
+
+(a) **D156** — the monitor runs first; Suspect vetoes promotion regardless of P&L.
+(b) **D157** — a Warning promotes only with a locked, evaluation-bound acknowledgment recording *what* was acknowledged.
+(c) **D158** — the escalation arm exists, and the patience that sits on it is reconciled.
+
+*Verification: `check-register` green at **158 rows, D1..D158**; `ci.ps1` green — **1,346 tests**, zero skipped.*
