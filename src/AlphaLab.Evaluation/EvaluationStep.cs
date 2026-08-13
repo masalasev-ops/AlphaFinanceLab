@@ -38,6 +38,16 @@ public sealed class EvaluationStep(AlphaLabDbContext db, GateOptions gate)
 
     private const string RunKindLive = "live";
 
+    /// <summary>The D157 journal kind recording that an operator looked at a monitor Warning before
+    /// the gate promoted through it. A `journal_entries` row rather than an `admin_actions` one on a
+    /// semantic argument, not for convenience: an acknowledgment is EVIDENCE THAT A HUMAN LOOKED, not
+    /// a state change. Rule 15 routes operator STATE CHANGES to admin_actions; D52's journal is the
+    /// audited operator record, and an ack sits closer to decision_note and skeptic_review than to
+    /// pausing a strategy. (admin_actions is also a Phase-7 table SchemaFidelityTests guards against
+    /// early creation - but that is the lesser reason, and it is recorded so the phase boundary is
+    /// visible rather than implied.)</summary>
+    public const string WarningAckKind = "warning_ack";
+
     public IReadOnlyList<PairEvaluation> Run(string asOf, string benchmarkStrategyId = DefaultBenchmarkStrategyId, string runKind = RunKindLive)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(asOf);
@@ -78,6 +88,34 @@ public sealed class EvaluationStep(AlphaLabDbContext db, GateOptions gate)
         var statusThisEval = db.OverfittingStatus
             .Where(o => o.AsOf == asOf && o.RunKind == runKind)
             .ToDictionary(o => o.StrategyId, o => o.Status, StringComparer.Ordinal);
+
+        // THIS EVALUATION'S WARNING ACKNOWLEDGMENTS (D157). OVERFITTING_MONITOR §3: a Warning permits
+        // promotion "only with explicit operator acknowledgment (logged)".
+        //
+        // BOUND TO THE EVALUATION, NOT THE STRATEGY, and that is the whole difference between a control
+        // and a signature: a strategy-bound acknowledgment would let an operator who acknowledged an S2
+        // Warning in March silently cover a different S6 Warning in July. The key is (strategy, as_of),
+        // which is also the same shape as the status read above rather than a second pattern.
+        //
+        // LOCKED ONLY, and this is what keeps the journal becoming a gate input from breaching the
+        // two-loops wall. `ResearchJobExecutor` can write journal rows but only ever with Locked = false
+        // (rule 30: the AI proposes, only the operator pre-registers), so a seat cannot forge an
+        // acknowledgment BY CONSTRUCTION rather than by convention — it has no code path that produces a
+        // locked row. `D157_AnUnlockedAck_DoesNotSatisfyTheGate` pins that.
+        //
+        // FORWARD-ONLY, because replay has no operator. 123 of the frozen generation's 144 promotions
+        // were made under Warning, so a rail applied to both channels would refuse 85% of calibration's
+        // own promotions and disable the D64 plant machinery. This is the same run-kind carve-out D37
+        // already makes for the strategies.status mutation.
+        // The carve-out is applied to the REFUSAL below, not by emptying this set. Emptying it would make
+        // every replay Warning UNacknowledged and therefore refused — the exact inverse of the intent, and
+        // it would have disabled the plant machinery rather than exempting it. Caught by
+        // `D157_InReplayAWarningPromotesWithoutAnAck_BecauseReplayHasNoOperator`, which is why that fixture
+        // is a control and not a formality.
+        var ackedThisEval = db.JournalEntries
+            .Where(j => j.Kind == WarningAckKind && j.Locked && j.CreatedOn == asOf && j.StrategyId != null)
+            .Select(j => j.StrategyId!)
+            .ToHashSet(StringComparer.Ordinal);
 
         var results = new List<PairEvaluation>();
         foreach (var strat in promotable)
@@ -144,15 +182,14 @@ public sealed class EvaluationStep(AlphaLabDbContext db, GateOptions gate)
             // killed. Before the reorder this was impossible to express and was instead patched on the
             // monitor's side by writing an offsetting demotion row after the fact.
             //
-            // WARNING IS DELIBERATELY NOT HANDLED HERE, AND THAT IS A HOLE UNTIL (b) LANDS. §3 says a
-            // Warning permits promotion "only with explicit operator acknowledgment (logged)"; nothing
-            // implements that acknowledgment yet, so a Warning strategy still promotes silently — as it
-            // did before D156. This is stated rather than left implied, because "the gate now reads the
-            // monitor's status" would otherwise read as "the gate now honours every status", and 123 of
-            // the frozen generation's 144 promotions were made under Warning. `D156_AWarningStillPromotes_
-            // TheAcknowledgmentRailIsNotBuiltYet` pins the hole so the next PR has a red to turn green.
+            // WARNING IS NOW HANDLED TOO (D157), and it is a REFUSAL rather than a veto: §3 permits the
+            // promotion, conditional on a logged operator acknowledgment for THIS evaluation. Unacknowledged
+            // is refused; acknowledged proceeds exactly as Healthy does. The distinction from the Suspect
+            // veto is the point — Suspect cannot be acknowledged away at all.
             var monitorStatus = statusThisEval.GetValueOrDefault(strat.StrategyId);
-            var vetoed = monitorStatus is "suspect" or "retired";
+            var vetoed = monitorStatus is "suspect" or "retired"
+                || (monitorStatus == "warning" && runKind == RunKindLive
+                    && !ackedThisEval.Contains(strat.StrategyId));
 
             if (verdict == PromotionVerdict.Promoted && !vetoed
                 && effective.GetValueOrDefault(strat.StrategyId) == "candidate")

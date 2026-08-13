@@ -512,7 +512,7 @@ CREATE TABLE journal_entries (                     -- D52
   entry_id    INTEGER PRIMARY KEY,
   created_on  TEXT NOT NULL,
   kind        TEXT NOT NULL CHECK (kind IN
-    ('hypothesis','observation','decision_note','skeptic_review','outcome')),
+    ('hypothesis','observation','decision_note','skeptic_review','outcome','warning_ack')),
   title       TEXT NOT NULL,
   body_md     TEXT NOT NULL,
   strategy_id TEXT REFERENCES strategies(strategy_id),  -- NULL is legitimate for an arena-level brief
@@ -525,7 +525,14 @@ CREATE TABLE journal_entries (                     -- D52
   metric      TEXT,                                -- pre-declared confirm/refute metric
   evidence_window_days INTEGER,                    -- pre-declared window
   outcome     TEXT CHECK (outcome IN ('confirmed','refuted','inconclusive')),
-  locked      INTEGER NOT NULL DEFAULT 0,          -- 1 once linked at candidate creation
+  locked      INTEGER NOT NULL DEFAULT 0,        -- D157: the gate reads ONLY locked warning_ack rows.
+                                                -- ResearchJobExecutor writes journal rows but only
+                                                -- ever locked=0 (rule 30), so the researcher seat
+                                                -- cannot forge an acknowledgment BY CONSTRUCTION.
+                                                -- warning_ack binds to (strategy_id, created_on =
+                                                -- THAT evaluation's as_of) and records WHICH signal
+                                                -- fired at WHAT value. Forward-only: replay has no
+                                                -- operator (M12 added the kind),          -- 1 once linked at candidate creation
   expected_effect_ann REAL,                        -- D89 (v1.9.35): pre-declared expected annualized effect; the FR-40 detectability-at-admission gate reads it; EF migration LANDED with the Phase-4 build (M5, checkpoint 4.2)
   prior_prob REAL,                                 -- D110 (v1.9.57): the researcher's pre-registered
                                                    -- P(this claim is confirmed), in (0,1). NULL for an

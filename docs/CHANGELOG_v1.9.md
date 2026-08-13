@@ -564,3 +564,38 @@ OVERFITTING_MONITOR §3: a Suspect strategy's *"promotion is vetoed **regardless
 Item **(c)** — `MonitorSignals.Aggregate` is pure `max`, so §3's *"Suspect = ≥1 critical **or ≥3 elevated**"* escalation is not implemented at all, and `AutoRetireConsecutiveSuspect = 4` sits on top of that — stays isolated **for attribution**: it is the only one of the three that perturbs stored evaluation history, so it is the only one whose parity measurement must be interpretable, and a measurement is interpretable only when one thing changed.
 
 *Verification: `check-register` green at **156 rows, D1..D156**; `ci.ps1` green — **1,336 tests**, zero skipped.*
+
+---
+
+## v1.9.116 — Phase 6.5 PR 2 (b): a Warning promotes only with a logged acknowledgment (2026-08-13)
+
+*Recorded 2026-08-13. **Phase 6 checkpoint 6.5, PR 2 — item (b) of three.** Decision **D157** new; finding **432**. Migration **M12** (`journal_entries.kind` gains `warning_ack`). No config key, no D144 arithmetic bump, no stored row altered in any existing arena. Next-free finding after this entry: **433**.*
+
+### finding 432 — the acknowledgment the spec requires had no surface at all
+
+OVERFITTING_MONITOR §3 permits a Warning to promote *"only with explicit operator acknowledgment (logged)"*. Nothing implemented it — `Warning` existed solely as a status value, so a Warning strategy promoted **silently**. D156 made the gate read the monitor's status and vetoed Suspect while deliberately leaving this half open, pinning the wrong behaviour in a fixture so this entry would have a red to turn green. That fixture is retired here and replaced by its opposite.
+
+**Consequences:** the surface is `journal_entries`, on a semantic argument rather than a convenient one — an acknowledgment is **evidence that a human looked**, not a state change. Rule 15 routes operator *state changes* to `admin_actions`; D52's journal is the audited operator record, and an ack sits closer to `decision_note` and `skeptic_review` than to pausing a strategy.
+
+**A second, lesser reason is recorded so the phase boundary is visible rather than implied.** `admin_actions` is a **Phase-7 table that does not exist** — no entity, no migration — and `SchemaFidelityTests` lists it in a guard whose stated purpose is *"against a table appearing before the phase that earns it"*. The first draft of this design asserted that `admin_actions` meant "no new table, no new schema"; **that was false**, and the correct response to a guard firing is to satisfy its intent, not to edit its list.
+
+**Two bindings are what make this a control rather than a signature:**
+
+- **To the evaluation, not the strategy** — the key is `(strategy_id, created_on == the evaluation's as_of)`. A strategy-bound ack would let an operator who acknowledged an S2 Warning in March silently cover a different S6 Warning in July, attesting to a thing nobody had seen. It is also the same shape as D156's status read, not a second pattern.
+- **Locked only** — `ResearchJobExecutor` writes journal rows but only ever with `Locked = false` (rule 30: the AI proposes, only the operator pre-registers), so the researcher seat **cannot forge an acknowledgment by construction** — it has no code path that produces a locked row. Without this, *"the gate reads `journal_entries`"* would mean *"anything that can write a journal row can promote a strategy"*, and the seat can write journal rows.
+
+The row records **what** was acknowledged — which signal, at what value, in which evaluation — because a row saying only "acknowledged" is a logged click, and the audit trail it produces cannot answer the one question anyone asks of it later.
+
+**Forward-only, and the measurement is why:** 123 of the frozen generation's 144 promotions — 85% — were made under Warning, and **replay has no operator**. A rail on both channels would refuse 85% of calibration's own promotions and disable the D64 plant machinery. Same run-kind carve-out D37 already makes for the `strategies.status` mutation. **The first implementation of that carve-out was inverted and a fixture caught it:** emptying the acknowledgment set for replay makes every replay Warning *unacknowledged* and therefore *refused* — the exact opposite of exempting it. The carve-out belongs on the refusal, not on the set. Recorded because the inverted form is the one that looks right.
+
+An acknowledgment **never launders a Suspect** — §3 separates the two deliberately, and a fixture pins that (b) cannot weaken (a).
+
+### M12, and the cost measured before the design was chosen
+
+Extending `journal_entries.kind` is a whole-table **rebuild** (SQLite cannot ALTER a CHECK), hand-written per rule 14 for the reason M9 records rather than as a copied habit: a scaffolded rebuild re-adds the `AUTOINCREMENT` the InitialCreate hand-edit stripped.
+
+**Verified before the design was settled, not described afterwards:** the live sp500 arena holds **0** `journal_entries` rows (0 locked, 0 unlocked), and `sqlite_master` shows **nothing else referencing the table** — no foreign key, no index, no trigger. So the rebuild is the twelve-step in its short form and the risk collapses to nothing *here*. `FX-JournalAckRebuild-RowsSurvive` exists anyway, because the migration ships to **every** arena rather than the one that happens to be empty today, and it asserts `locked` survives in **both** directions — the gate's entire forgery guard rests on that column.
+
+**Falsifiers, run independently rather than as one:** removing the Warning refusal reddens three fixtures; dropping the **lock** requirement reddens exactly the forgery guard; binding the ack to the **strategy** instead of the evaluation reddens exactly the cross-evaluation guard. Three conditions, three separable reds.
+
+*Verification: `check-register` green at **157 rows, D1..D157**; `ci.ps1` green — **1,342 tests**, zero skipped.*

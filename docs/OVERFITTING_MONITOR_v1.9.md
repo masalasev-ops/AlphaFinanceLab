@@ -33,7 +33,7 @@ Forward paper trading removes *backtest* overfitting but not *selection* overfit
 | Status | Meaning | Hard consequences |
 |---|---|---|
 | **Healthy** | no signal elevated | eligible for promotion & full allocator tilt |
-| **Warning** | ≥1 signal elevated | promotion allowed only with explicit operator acknowledgment (logged); allocator tilt capped |
+| **Warning** | ≥1 signal elevated | promotion allowed only with explicit operator acknowledgment (logged); allocator tilt capped. **ENFORCED since D157:** a `journal_entries` row with `kind='warning_ack'`, `locked=1`, bound to (strategy, THAT evaluation's as_of) and recording WHICH signal fired at WHAT value. Locked-only is what stops the researcher seat forging one - it can write journal rows but only unlocked (rule 30). FORWARD-ONLY: replay has no operator, and 123 of the frozen generation's 144 promotions were made under Warning, so a rail on both channels would refuse 85% of calibration's own promotions |
 | **Suspect** | ≥1 signal critical, or ≥3 elevated | **promotion vetoed regardless of P&L**; allocator freezes/decays weight; strategy flagged on every screen |
 
 Additional wiring:
