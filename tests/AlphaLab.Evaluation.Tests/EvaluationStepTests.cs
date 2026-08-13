@@ -340,4 +340,161 @@ public class EvaluationStepTests
         var scored = results.Select(r => r.StrategyId).OrderBy(s => s).ToList();
         Assert.Equal(["cand:a", "live:b"], scored);   // both baselines excluded
     }
+    // ---------------------------------------------------------------------------------------------
+    // D156 (6.5 PR 2, item a): THIS evaluation's monitor status governs THIS evaluation's gate.
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// OVERFITTING_MONITOR §3, verbatim: "Suspect ⇒ promotion vetoed regardless of P&amp;L". The strategy
+    /// here is WINNING — its gap clears the MDE and the gate writes `Promoted` into `power_reports` —
+    /// and it is still not promoted, which is the whole content of "regardless of P&amp;L".
+    ///
+    /// <para>The `power_reports` verdict is deliberately still `Promoted`. Rewriting it would erase the
+    /// evidence that a vetoed strategy was beating the benchmark, which is the only thing that makes the
+    /// veto worth having; what the veto changes is whether the PROMOTION happens.</para>
+    /// </summary>
+    [Fact]
+    public void D156_ASuspectStrategyIsNotPromoted_EvenWhenItsGapClearsTheMde()
+    {
+        using var arena = new EvalArena();
+        var dates = EvalArena.Dates(100, new DateOnly(2026, 1, 5));
+        arena.SeedStrategy("buyhold:cw", "baseline", dates, Enumerable.Repeat(0.0, 99).ToArray());
+        arena.SeedStrategy("cand:win", "candidate", dates, Enumerable.Repeat(0.001, 99).ToArray());
+
+        using var db = arena.Open();
+
+        // The monitor's verdict for THIS evaluation, written before the gate runs — exactly the order
+        // DailyPipeline now uses. Seeded directly so the test pins the GATE's behaviour rather than
+        // re-deriving the monitor's, which has its own fixtures.
+        db.OverfittingStatus.Add(new OverfittingStatusRow
+        {
+            AsOf = dates[^1], StrategyId = "cand:win", Status = "suspect", RunKind = "live", TriggerJson = "{}",
+        });
+        db.SaveChanges();
+
+        new EvaluationStep(db, new GateOptions()).Run(dates[^1]);
+
+        // The gate's ARITHMETIC still cleared the bar, and the record says so.
+        var report = db.PowerReports.Single(p => p.StrategyA == "cand:win");
+        Assert.Equal("Promoted", report.Verdict);
+
+        // But the promotion did not happen: no go_live_log event, and the status never flipped.
+        Assert.DoesNotContain(db.GoLiveLog.ToList(), g => g.Promoted == "cand:win");
+        Assert.Equal("candidate", db.Strategies.Single(s => s.StrategyId == "cand:win").Status);
+    }
+
+    /// <summary>The control, and the reason the test above is not vacuous: the identical strategy with a
+    /// HEALTHY status on the same evaluation IS promoted. Without this, a bug that refused every promotion
+    /// would pass the veto test.</summary>
+    [Fact]
+    public void D156_TheSameStrategyWithAHealthyStatus_IsPromoted()
+    {
+        using var arena = new EvalArena();
+        var dates = EvalArena.Dates(100, new DateOnly(2026, 1, 5));
+        arena.SeedStrategy("buyhold:cw", "baseline", dates, Enumerable.Repeat(0.0, 99).ToArray());
+        arena.SeedStrategy("cand:win", "candidate", dates, Enumerable.Repeat(0.001, 99).ToArray());
+
+        using var db = arena.Open();
+        db.OverfittingStatus.Add(new OverfittingStatusRow
+        {
+            AsOf = dates[^1], StrategyId = "cand:win", Status = "healthy", RunKind = "live", TriggerJson = "{}",
+        });
+        db.SaveChanges();
+
+        new EvaluationStep(db, new GateOptions()).Run(dates[^1]);
+
+        Assert.Equal("Promoted", db.PowerReports.Single(p => p.StrategyA == "cand:win").Verdict);
+        Assert.Contains(db.GoLiveLog.ToList(), g => g.Promoted == "cand:win");
+        Assert.Equal("live", db.Strategies.Single(s => s.StrategyId == "cand:win").Status);
+    }
+
+    /// <summary>
+    /// A strategy the monitor auto-retired in THIS evaluation is not promoted either — otherwise the gate
+    /// would resurrect a strategy the arena had just killed, in the same transaction. Before the reorder
+    /// this could not be expressed at the gate and was patched on the monitor's side instead, by writing
+    /// an offsetting demotion row after the fact (`OverfittingMonitor`'s same-eval note).
+    /// </summary>
+    [Fact]
+    public void D156_AStrategyRetiredThisEvaluation_IsNotPromotedBackToLife()
+    {
+        using var arena = new EvalArena();
+        var dates = EvalArena.Dates(100, new DateOnly(2026, 1, 5));
+        arena.SeedStrategy("buyhold:cw", "baseline", dates, Enumerable.Repeat(0.0, 99).ToArray());
+        arena.SeedStrategy("cand:win", "candidate", dates, Enumerable.Repeat(0.001, 99).ToArray());
+
+        using var db = arena.Open();
+        db.OverfittingStatus.Add(new OverfittingStatusRow
+        {
+            AsOf = dates[^1], StrategyId = "cand:win", Status = "retired", RunKind = "live", TriggerJson = "{}",
+        });
+        db.SaveChanges();
+
+        new EvaluationStep(db, new GateOptions()).Run(dates[^1]);
+
+        Assert.DoesNotContain(db.GoLiveLog.ToList(), g => g.Promoted == "cand:win");
+        Assert.Equal("candidate", db.Strategies.Single(s => s.StrategyId == "cand:win").Status);
+    }
+
+    /// <summary>
+    /// THE HOLE, PINNED ON PURPOSE — this test asserts behaviour that is WRONG by the specification, and
+    /// exists so the next PR has a red to turn green.
+    ///
+    /// <para>OVERFITTING_MONITOR §3 says a Warning permits promotion "only with explicit operator
+    /// acknowledgment (logged)". No acknowledgment surface exists yet, so a Warning strategy still
+    /// promotes silently, exactly as it did before D156. That is not a side effect of the veto — it is
+    /// the untouched half of the rule, and item (b) of 6.5 PR 2 is what closes it.</para>
+    ///
+    /// <para>It is pinned rather than left implied because 123 of the frozen generation's 144 promotions
+    /// were made under Warning: the hole is the DOMINANT path, not a corner. When the acknowledgment rail
+    /// lands, this test must be rewritten to assert a refusal — its failure is the signal that (b) worked,
+    /// and its continued passing is the signal that (b) did not.</para>
+    /// </summary>
+    [Fact]
+    public void D156_AWarningStillPromotes_TheAcknowledgmentRailIsNotBuiltYet()
+    {
+        using var arena = new EvalArena();
+        var dates = EvalArena.Dates(100, new DateOnly(2026, 1, 5));
+        arena.SeedStrategy("buyhold:cw", "baseline", dates, Enumerable.Repeat(0.0, 99).ToArray());
+        arena.SeedStrategy("cand:win", "candidate", dates, Enumerable.Repeat(0.001, 99).ToArray());
+
+        using var db = arena.Open();
+        db.OverfittingStatus.Add(new OverfittingStatusRow
+        {
+            AsOf = dates[^1], StrategyId = "cand:win", Status = "warning", RunKind = "live", TriggerJson = "{}",
+        });
+        db.SaveChanges();
+
+        new EvaluationStep(db, new GateOptions()).Run(dates[^1]);
+
+        Assert.Contains(db.GoLiveLog.ToList(), g => g.Promoted == "cand:win");
+    }
+
+    /// <summary>
+    /// The veto is SAME-EVALUATION, not "has ever been suspect". A strategy suspect on a PRIOR evaluation
+    /// but healthy on this one is promotable — the monitor's own recovery path would be meaningless
+    /// otherwise, and D156's whole subject is that the gate reads THIS evaluation's row.
+    /// </summary>
+    [Fact]
+    public void D156_TheVetoReadsThisEvaluationOnly_NotAnyPriorSuspectRow()
+    {
+        using var arena = new EvalArena();
+        var dates = EvalArena.Dates(100, new DateOnly(2026, 1, 5));
+        arena.SeedStrategy("buyhold:cw", "baseline", dates, Enumerable.Repeat(0.0, 99).ToArray());
+        arena.SeedStrategy("cand:win", "candidate", dates, Enumerable.Repeat(0.001, 99).ToArray());
+
+        using var db = arena.Open();
+        db.OverfittingStatus.Add(new OverfittingStatusRow
+        {
+            AsOf = dates[^40], StrategyId = "cand:win", Status = "suspect", RunKind = "live", TriggerJson = "{}",
+        });
+        db.OverfittingStatus.Add(new OverfittingStatusRow
+        {
+            AsOf = dates[^1], StrategyId = "cand:win", Status = "healthy", RunKind = "live", TriggerJson = "{}",
+        });
+        db.SaveChanges();
+
+        new EvaluationStep(db, new GateOptions()).Run(dates[^1]);
+
+        Assert.Contains(db.GoLiveLog.ToList(), g => g.Promoted == "cand:win");
+    }
 }

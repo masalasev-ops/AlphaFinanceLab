@@ -526,3 +526,41 @@ D150's headline says *"amends D51"*. **D51's Status cell read `active` for a ful
 TEST_PLAN still lacks fixture rows for eight of the thirteen PRs, and five §8 entries name tests that do not exist. Both are now **recorded in the file** rather than invented — writing a fixture row for a test nobody has written is the green-forever shape this whole checkpoint has been about.
 
 *Verification: `check-register` green at **154 rows, D1..D155**; `ci.ps1` green — **1,331 tests**, zero skipped, thirteen guard families.*
+
+---
+
+## v1.9.115 — Phase 6.5 PR 2 (a): the monitor runs first, and Suspect vetoes promotion (2026-08-13)
+
+*Recorded 2026-08-13. **Phase 6 checkpoint 6.5, PR 2 — item (a) of three.** Decision **D156** new; finding **431**. No schema change, no migration, no config key, no stored row altered, no D144 arithmetic bump. Next-free finding after this entry: **432**.*
+
+### finding 431 — the veto the spec states without qualification could not fire
+
+OVERFITTING_MONITOR §3: a Suspect strategy's *"promotion is vetoed **regardless of P&L**"*. `DailyPipeline` ran `EvaluationStep` **before** `OverfittingMonitor`, so the gate could only ever see the **previous** evaluation's status — and the rule's whole subject is *this* evaluation's.
+
+**Consequences:** the monitor now runs first, which is the fix rather than a veto bolted onto the old order, and it is the same-eval coupling `AllocationStep` has had since 3.7 — deliberately the same shape, not a second pattern. **No cycle is created, and that is checkable rather than asserted:** the monitor reads accounts, `trials_registry`, the *prior* `overfitting_status`, `strategies` and `control_equity` — and **no `power_reports` at all**, the only thing the gate writes that it could have wanted. Worth noting `RecomputeHarness` already ran monitor-then-gate, so production and the harness that exists to reproduce it had disagreed about order.
+
+**The `power_reports` verdict still reads `Promoted`, deliberately.** The veto applies after the verdict is computed and persisted: the gate's arithmetic *did* clear the bar, and rewriting the verdict would erase the evidence that a vetoed strategy was winning on P&L — the only thing that makes the veto worth having. What the veto changes is whether the **promotion** happens. `retired` vetoes too, for a different reason: the monitor auto-retired the strategy in this same evaluation, so promoting it would resurrect a strategy the arena had just killed, inside one transaction. That case was previously patched on the monitor's side with an offsetting demotion row; the compensating note is removed and the row kept for its own sake.
+
+**Warning is deliberately not handled, and this entry says so rather than leaving it implied.** §3 also permits a Warning to promote *"only with explicit operator acknowledgment (logged)"*; no acknowledgment surface exists, so a Warning strategy still promotes silently exactly as before. Saying so matters because *"the gate now reads the monitor's status"* would otherwise read as *"the gate now honours every status"*, and the interval before item (b) would be a silent hole in precisely the rail (b) closes. `D156_AWarningStillPromotes_TheAcknowledgmentRailIsNotBuiltYet` **pins the wrong behaviour on purpose** so (b) has a red to turn green; when (b) lands that fixture must be rewritten to assert a refusal, and its continued passing is the signal (b) did not work.
+
+**The divergence is bounded in advance, not explained afterwards.** Measured against the frozen generation at watermark `2026-07-24T22:00:00Z`, over 144 stored promotions and 95,769 status rows:
+
+| promotions made while… | count |
+|---|---|
+| `suspect` (what the veto refuses) | **0** |
+| `retired` (what the veto refuses) | **0** |
+| no status row for that evaluation | **0** |
+| `warning` | 123 |
+| `healthy` | 21 |
+
+**Expected parity divergence: zero** — and unlike D148's zero this is a property of the **data**, not of an unexecuted path. The veto arm ran against all 144 stored promotions and refused none, which is a stronger statement than "the code never ran". A future non-zero is a real failure.
+
+**Falsifier run:** disabling the veto reddens exactly the two veto fixtures (Suspect, Retired) and leaves the three controls green — Healthy promotes, prior-Suspect-now-Healthy promotes, and the pinned Warning hole still promotes.
+
+### What this sets up for items (b) and (c)
+
+**123 of 144 promotions — 85% — were made under Warning.** Recorded here rather than left for (b) to rediscover: the acknowledgment rail governs the dominant path, and **replay has no operator**, so a rail applied to both channels would refuse 85% of calibration's promotions and disable the D64 plant machinery. (b) must be forward-only, the way `strategies.status` mutation already is under D37.
+
+Item **(c)** — `MonitorSignals.Aggregate` is pure `max`, so §3's *"Suspect = ≥1 critical **or ≥3 elevated**"* escalation is not implemented at all, and `AutoRetireConsecutiveSuspect = 4` sits on top of that — stays isolated **for attribution**: it is the only one of the three that perturbs stored evaluation history, so it is the only one whose parity measurement must be interpretable, and a measurement is interpretable only when one thing changed.
+
+*Verification: `check-register` green at **156 rows, D1..D156**; `ci.ps1` green — **1,336 tests**, zero skipped.*

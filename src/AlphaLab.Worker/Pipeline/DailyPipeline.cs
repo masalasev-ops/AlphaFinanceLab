@@ -691,14 +691,26 @@ public sealed class DailyPipeline(
         try
         {
             using var txn = db.Database.BeginTransaction();
-            var evaluations = new EvaluationStep(db, gate).Run(asOf, runKind: runKindToken);
-            // The overfitting monitor (S2/S3/S6) runs in the same evaluation transaction. Each strategy
-            // is matched to the cost-on population of ITS OWN declared cadence family (6.3) — the
-            // Phase-3 simplification that sent every promotable strategy to the daily null is gone.
+            // THE MONITOR RUNS FIRST (D156), and the order is the point. OVERFITTING_MONITOR §3 says a
+            // Suspect strategy's "promotion is vetoed regardless of P&L" — a rule about THIS evaluation's
+            // status governing THIS evaluation's gate. With the gate first, it could only ever see the
+            // PREVIOUS evaluation's status, so the rule was unimplementable where it is written; the
+            // consequence was patched on the monitor's side instead, by writing an offsetting demotion
+            // row after a promote-then-retire in the same evaluation. This is the same-eval coupling
+            // AllocationStep has had since 3.7, now applied one step earlier in the chain.
+            //
+            // NO CYCLE IS CREATED, and that is checkable rather than asserted: the monitor reads
+            // accounts, trials_registry, the PRIOR overfitting_status, strategies and control_equity —
+            // and no `power_reports` at all, which is the only thing the gate writes that it could want.
+            //
+            // Each strategy is matched to the cost-on population of ITS OWN declared cadence family (6.3)
+            // — the Phase-3 simplification that sent every promotable strategy to the daily null is gone.
             // Rows frozen before the declaration existed resolve to daily by the recorded compatibility
             // rule, so the frozen generation is judged exactly as it was.
             var monitored = new OverfittingMonitor(db, gate).Run(
                 asOf, EvaluationStep.DefaultBenchmarkStrategyId, PopulationMatcher.ByDeclaration(db), runKindToken, watermark);
+
+            var evaluations = new EvaluationStep(db, gate).Run(asOf, runKind: runKindToken);
 
             // Turnover-match verification (finding 115): re-simulate the daily population's turnover vs each
             // strategy's trades over the recent window, and persist the status-neutral caveat rows.
